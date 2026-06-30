@@ -407,6 +407,7 @@ p { margin-bottom: .5rem; }
   gap: .75rem;
 }
 .form-group { display: flex; flex-direction: column; gap: .3rem; }
+.form-error { font-size: .8rem; color: #f87171; margin-top: .25rem; }
 .form-group-wide { grid-column: 1 / -1; }
 .form-group label { font-size: .8rem; font-weight: 500; color: var(--muted); }
 .form-group input,

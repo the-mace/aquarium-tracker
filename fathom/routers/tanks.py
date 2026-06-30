@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
-from database import get_db, rows_to_list, row_to_dict
+from database import get_db, rows_to_list, row_to_dict, seed_schedule_data
 
 router = APIRouter(prefix="/tanks", tags=["tanks"])
 
@@ -18,7 +18,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 TANK_TABLES = [
     "test_results", "events", "inhabitants", "population_events",
     "purchases", "observations", "issues", "tank_state_summary",
-    "plants", "hardscape",
+    "plants", "hardscape", "recurring_schedule",
 ]
 
 
@@ -237,6 +237,7 @@ async def reset_tank_data(tank_id: int, confirmation: str = Form(...)):
     with get_db() as conn:
         for table in TANK_TABLES:
             conn.execute(f"DELETE FROM {table} WHERE tank_id = ?", (tank_id,))
+        seed_schedule_data(conn)
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
 
 

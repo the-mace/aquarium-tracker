@@ -243,10 +243,10 @@ def init_db():
                 "ALTER TABLE events ADD COLUMN schedule_id INTEGER REFERENCES recurring_schedule(id) ON DELETE SET NULL"
             )
 
-        _seed_schedule_data(conn)
+        seed_schedule_data(conn)
 
 
-def _seed_schedule_data(conn):
+def seed_schedule_data(conn):
     """One-time seed of schedule entries for known production tanks."""
     tank_5g = conn.execute("SELECT id FROM tanks WHERE name='Fish Tank 5G'").fetchone()
     if tank_5g and conn.execute(
@@ -268,7 +268,7 @@ def _seed_schedule_data(conn):
                 (tid, 'feeding', 'reference_only', 'fri', 'No feeding',                           None, None, None, None, 1, None),
                 (tid, 'feeding', 'reference_only', 'sat', 'Algae wafer 1/2 mini + Zucchini',     None, None, None, None, 1, None),
                 (tid, 'feeding', 'reference_only', 'sun', 'Bacter AE 1/16 tsp',                  None, None, None, None, 1, None),
-                (tid, 'dosing',  'reference_only', None,  '5ml Flourish weekly',                  None, None, None, None, 1, None),
+                (tid, 'dosing',  'reference_only', 'thu', '5ml Flourish weekly',                  None, None, None, None, 1, None),
             ],
         )
 
@@ -293,9 +293,9 @@ def _seed_schedule_data(conn):
                 (tid, 'feeding',     'reference_only', 'fri', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
                 (tid, 'feeding',     'reference_only', 'sat', 'Vibra Bites + Zucchini',                         None,           None, None,         None,         1, None),
                 (tid, 'feeding',     'reference_only', 'sun', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
-                (tid, 'dosing',      'reference_only', None,  '2/3 cap Flourish + 1/2 cap Potassium + 1/2 cap Iron, weekly', None, None, None,   None,         1, None),
-                (tid, 'maintenance', 'logged',         None,  'Clean pre-filter',                               'interval_days', 30, '2026-05-29', '2026-06-29', 1, None),
-                (tid, 'maintenance', 'logged',         None,  'Clean all stages',                               'interval_days', 75, '2026-05-29', '2026-08-30', 1, None),
+                (tid, 'dosing',      'reference_only', 'thu', '2/3 cap Flourish + 1/2 cap Potassium + 1/2 cap Iron, weekly', None, None, None,   None,         1, None),
+                (tid, 'maintenance', 'logged',         None,  'Clean pre-filter',                               'interval_days', 30, '2026-05-29', '2026-07-02', 1, None),
+                (tid, 'maintenance', 'logged',         None,  'Clean all stages',                               'interval_days', 75, '2026-05-29', '2026-08-13', 1, None),
                 (tid, 'maintenance', 'logged',         None,  'Squeeze out filter intake sponge',               None,           None, None,         None,         1, 'Frequency unclear — no auto-tracking, manual reminder only'),
             ],
         )

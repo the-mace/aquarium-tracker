@@ -12,6 +12,13 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 DOW_LABELS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
                "fri": "Friday", "sat": "Saturday", "sun": "Sunday"}
 
+def _next_weekday(d, weekday):
+    """Return d advanced to the next occurrence of weekday (0=Mon … 6=Sun), or d if already that day."""
+    days_ahead = weekday - d.weekday()
+    if days_ahead < 0:
+        days_ahead += 7
+    return d + timedelta(days=days_ahead)
+
 
 @router.get("", response_class=HTMLResponse)
 async def schedule_page(request: Request, tank_id: int):
@@ -113,7 +120,8 @@ async def mark_done(tank_id: int, sch_id: int):
         today = date.today().isoformat()
         next_due = None
         if sched.get("interval_days"):
-            next_due = (date.today() + timedelta(days=sched["interval_days"])).isoformat()
+            raw = date.today() + timedelta(days=sched["interval_days"])
+            next_due = _next_weekday(raw, 3).isoformat()  # snap to Thursday (water change day)
 
         conn.execute(
             "INSERT INTO events (tank_id, event_type, notes, schedule_id, timestamp) VALUES (?,?,?,?,?)",

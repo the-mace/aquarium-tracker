@@ -462,8 +462,9 @@
   <div class="modal-box modal-box-sm">
     <div class="modal-header"><h3>Reset Tank Data</h3><button class="modal-close" onclick="closeModal('modal-reset')">×</button></div>
     <p>This will permanently delete all test results, events, inhabitants, purchases, observations, and issues for <strong>{{ tank.name }}</strong>. The tank and equipment records will be kept.</p>
-    <form method="post" action="/tanks/{{ tank.id }}/reset">
-      <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" required></div>
+    <form method="post" action="/tanks/{{ tank.id }}/reset" onsubmit="return checkConfirm(this,'{{ tank.name }}','reset-err')">
+      <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" autocomplete="off"></div>
+      <div id="reset-err" class="form-error" style="display:none">Name does not match — please try again.</div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-reset')">Cancel</button><button class="btn btn-danger" type="submit">Reset Data</button></div>
     </form>
   </div>
@@ -473,8 +474,9 @@
   <div class="modal-box modal-box-sm">
     <div class="modal-header"><h3>Delete Tank</h3><button class="modal-close" onclick="closeModal('modal-delete')">×</button></div>
     <p>This will permanently delete <strong>{{ tank.name }}</strong> and ALL associated data. This cannot be undone.</p>
-    <form method="post" action="/tanks/{{ tank.id }}/delete">
-      <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" required></div>
+    <form method="post" action="/tanks/{{ tank.id }}/delete" onsubmit="return checkConfirm(this,'{{ tank.name }}','delete-err')">
+      <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" autocomplete="off"></div>
+      <div id="delete-err" class="form-error" style="display:none">Name does not match — please try again.</div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-delete')">Cancel</button><button class="btn btn-danger" type="submit">Delete Tank</button></div>
     </form>
   </div>
@@ -505,6 +507,14 @@
 <script>
 const TANK_ID = {{ tank.id }};
 initDashboard(TANK_ID);
+
+function checkConfirm(form, expected, errId) {
+  const val = form.querySelector('[name="confirmation"]').value;
+  const err = document.getElementById(errId);
+  if (val !== expected) { err.style.display = ''; return false; }
+  err.style.display = 'none';
+  return true;
+}
 
 function submitQuickLog() {
   const text = document.getElementById('quick-log-text').value.trim();
