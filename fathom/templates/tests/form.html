@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Add Test Result — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "tests" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Add Test Result</h1>
+  <span class="muted">{{ tank.name }}</span>
+</div>
+
+<form method="post" action="/tanks/{{ tank.id }}/tests" class="form-card">
+  <div class="form-section">
+    <div class="form-group">
+      <label>Timestamp (leave blank for now)</label>
+      <input type="datetime-local" name="timestamp">
+    </div>
+  </div>
+  <div class="form-section">
+    <h3>Parameters</h3>
+    <div class="form-grid">
+      <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph" placeholder="7.0"></div>
+      <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh"></div>
+      <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh"></div>
+      <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia" placeholder="0.0"></div>
+      <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite" placeholder="0.0"></div>
+      <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" name="nitrate"></div>
+      <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds"></div>
+      <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp"></div>
+    </div>
+  </div>
+  <div class="form-section">
+    <div class="form-group"><label>Notes</label><textarea name="notes" rows="3"></textarea></div>
+  </div>
+  <div class="form-actions">
+    <a href="/tanks/{{ tank.id }}" class="btn btn-ghost">Cancel</a>
+    <button type="submit" class="btn btn-primary">Save Test Result</button>
+  </div>
+</form>
+{% endblock %}

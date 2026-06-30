@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Inhabitants — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "inhabitants" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Inhabitants — {{ tank.name }}</h1>
+  <button class="btn btn-primary" onclick="openModal('modal-add-inh')">+ Add Inhabitant</button>
+</div>
+
+{% if inhabitants %}
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Count</th>
+        <th>Common Name</th>
+        <th>Species</th>
+        <th>Added</th>
+        <th>Source</th>
+        <th>Notes</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inh in inhabitants %}
+      <tr id="inh-row-{{ inh.id }}">
+        <td>
+          <span class="count-badge">{{ inh.count }}</span>
+        </td>
+        <td><strong>{{ inh.common_name or '—' }}</strong></td>
+        <td class="muted italic">{{ inh.species or '—' }}</td>
+        <td class="nowrap">{{ inh.added_date or '—' }}</td>
+        <td>{{ inh.source or '—' }}</td>
+        <td class="muted">{{ inh.notes or '' }}</td>
+        <td class="actions-cell">
+          <button class="btn btn-xs btn-ghost" onclick="openPopEvent({{ inh.id }}, '{{ inh.common_name or inh.species }}')">Log Event</button>
+          <button class="btn btn-xs btn-ghost" onclick="openEditInh({{ inh.id }}, {{ inh.count }}, '{{ inh.common_name or '' }}', '{{ inh.species or '' }}')">Edit</button>
+          <form method="post" action="/tanks/{{ tank.id }}/inhabitants/{{ inh.id }}/delete" style="display:inline" onsubmit="return confirm('Remove {{ inh.common_name or inh.species }}?')">
+            <button class="btn btn-xs btn-danger" type="submit">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No inhabitants recorded</h2>
+  <button class="btn btn-primary" onclick="openModal('modal-add-inh')">Add First Inhabitant</button>
+</div>
+{% endif %}
+
+{% if pop_events %}
+<div class="panel" style="margin-top:2rem">
+  <div class="panel-header"><h3>Population Event Log</h3></div>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead><tr><th>Time</th><th>Species</th><th>Event</th><th>Count</th><th>Notes</th></tr></thead>
+      <tbody>
+        {% for ev in pop_events %}
+        <tr>
+          <td class="nowrap">{{ ev.timestamp }}</td>
+          <td>{{ ev.common_name or ev.species or '—' }}</td>
+          <td><span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span></td>
+          <td>{{ ev.count }}</td>
+          <td class="muted">{{ ev.notes or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Add Inhabitant Modal -->
+<div id="modal-add-inh" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Inhabitant</h3><button class="modal-close" onclick="closeModal('modal-add-inh')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/inhabitants">
+      <div class="form-grid">
+        <div class="form-group"><label>Common Name</label><input type="text" name="common_name"></div>
+        <div class="form-group"><label>Species</label><input type="text" name="species" placeholder="Scientific name"></div>
+        <div class="form-group"><label>Count</label><input type="number" name="count" value="1" min="0"></div>
+        <div class="form-group"><label>Added Date</label><input type="date" name="added_date"></div>
+        <div class="form-group"><label>Source</label><input type="text" name="source" placeholder="LFS, breeder, friend…"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-inh')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Inhabitant Modal -->
+<div id="modal-edit-inh" class="modal" style="display:none">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header"><h3>Edit Inhabitant</h3><button class="modal-close" onclick="closeModal('modal-edit-inh')">×</button></div>
+    <form id="edit-inh-form" method="post" action="">
+      <div class="form-grid">
+        <div class="form-group"><label>Common Name</label><input type="text" name="common_name" id="edit-inh-common"></div>
+        <div class="form-group"><label>Species</label><input type="text" name="species" id="edit-inh-species"></div>
+        <div class="form-group"><label>Count</label><input type="number" name="count" id="edit-inh-count" min="0"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-inh-notes"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-inh')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Population Event Modal -->
+<div id="modal-pop-event" class="modal" style="display:none">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header"><h3>Log Population Event</h3><button class="modal-close" onclick="closeModal('modal-pop-event')">×</button></div>
+    <form id="pop-event-form" method="post" action="">
+      <p id="pop-event-subject" class="muted"></p>
+      <div class="form-grid">
+        <div class="form-group"><label>Event</label>
+          <select name="event_type">
+            <option value="added">Added</option>
+            <option value="died">Died</option>
+            <option value="removed">Removed</option>
+            <option value="born">Born</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Count</label><input type="number" name="count" value="1" min="1"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-pop-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openPopEvent(inhId, name) {
+  document.getElementById('pop-event-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/event`;
+  document.getElementById('pop-event-subject').textContent = name;
+  openModal('modal-pop-event');
+}
+function openEditInh(inhId, count, commonName, species) {
+  document.getElementById('edit-inh-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/update`;
+  document.getElementById('edit-inh-common').value = commonName;
+  document.getElementById('edit-inh-species').value = species;
+  document.getElementById('edit-inh-count').value = count;
+  openModal('modal-edit-inh');
+}
+</script>
+{% endblock %}

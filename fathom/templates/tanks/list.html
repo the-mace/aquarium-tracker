@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}My Tanks — Fathom{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>My Tanks</h1>
+  <a href="/tanks/new" class="btn btn-primary">+ New Tank</a>
+</div>
+
+{% if tanks %}
+<div class="tank-grid">
+  {% for t in tanks %}
+  <a href="/tanks/{{ t.id }}" class="tank-card">
+    <div class="tank-card-header">
+      <span class="tank-name">{{ t.name }}</span>
+      <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+    </div>
+    <div class="tank-card-meta">
+      <span class="meta-chip">{{ t.water_type or 'unknown' }}</span>
+      {% if t.volume_gallons %}<span class="meta-chip">{{ t.volume_gallons }}g</span>{% endif %}
+    </div>
+    <div class="tank-card-stats">
+      <div class="stat">
+        <span class="stat-value">{{ t.inhabitant_types or 0 }}</span>
+        <span class="stat-label">species</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value {% if t.open_issues > 0 %}text-warning{% endif %}">{{ t.open_issues or 0 }}</span>
+        <span class="stat-label">open issues</span>
+      </div>
+    </div>
+    {% if t.notes %}
+    <p class="tank-card-notes">{{ t.notes[:80] }}{% if t.notes|length > 80 %}…{% endif %}</p>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">⬡</div>
+  <h2>No tanks yet</h2>
+  <p>Add your first aquarium to start tracking.</p>
+  <a href="/tanks/new" class="btn btn-primary">+ Add Tank</a>
+</div>
+{% endif %}
+{% endblock %}

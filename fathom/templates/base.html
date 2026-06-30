@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Fathom{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <a href="/tanks" class="brand">
+        <span class="brand-icon">⬡</span>
+        <span class="brand-name">Fathom</span>
+      </a>
+    </div>
+    <div class="sidebar-body">
+      {% if tank is defined and tank %}
+      <div class="sidebar-section">
+        <span class="sidebar-label">This Tank</span>
+        <a href="/tanks/{{ tank.id }}" class="sidebar-link {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/tanks/{{ tank.id }}/tests/new" class="sidebar-link {% if active == 'tests' %}active{% endif %}">Add Test</a>
+        <a href="/tanks/{{ tank.id }}/inhabitants" class="sidebar-link {% if active == 'inhabitants' %}active{% endif %}">Inhabitants</a>
+        <a href="/tanks/{{ tank.id }}/equipment" class="sidebar-link {% if active == 'equipment' %}active{% endif %}">Equipment</a>
+        <a href="/tanks/{{ tank.id }}/purchases" class="sidebar-link {% if active == 'purchases' %}active{% endif %}">Purchases</a>
+        <a href="/tanks/{{ tank.id }}/issues" class="sidebar-link {% if active == 'issues' %}active{% endif %}">Issues</a>
+        <a href="/tanks/{{ tank.id }}/observations" class="sidebar-link {% if active == 'observations' %}active{% endif %}">Observations</a>
+      </div>
+      {% endif %}
+      <div class="sidebar-section">
+        <span class="sidebar-label">Tanks</span>
+        <a href="/tanks" class="sidebar-link {% if active == 'tanks' %}active{% endif %}">All Tanks</a>
+        <a href="/tanks/new" class="sidebar-link">+ New Tank</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="main">
+    {% block breadcrumb %}{% endblock %}
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

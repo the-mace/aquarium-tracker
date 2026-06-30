@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}{{ tank.name }} — Fathom{% endblock %}
+{% set active = "dashboard" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ tank.name }}</h1>
+    <div class="tank-meta-row">
+      <span class="meta-chip">{{ tank.water_type or 'unknown' }}</span>
+      {% if tank.volume_gallons %}<span class="meta-chip">{{ tank.volume_gallons }}g</span>{% endif %}
+      <span class="badge badge-{{ tank.status }}">{{ tank.status }}</span>
+      {% if tank.setup_date %}<span class="meta-chip">Setup {{ tank.setup_date }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost" onclick="openChatPanel()">Ask AI</button>
+    <a href="/tanks/{{ tank.id }}/edit" class="btn btn-ghost">Edit</a>
+  </div>
+</div>
+
+<!-- Summary Banner -->
+{% if summary and summary.summary_text %}
+<div class="summary-card">
+  <div class="summary-header">
+    <span class="summary-icon">✦</span>
+    <span>AI Summary</span>
+    <span class="summary-time">{{ summary.generated_at }}</span>
+  </div>
+  <p class="summary-text">{{ summary.summary_text }}</p>
+</div>
+{% endif %}
+
+<!-- Quick Stats Row -->
+<div class="stats-row">
+  {% if latest_test %}
+  <div class="stat-card">
+    <div class="stat-card-title">Latest Parameters</div>
+    <div class="param-grid">
+      {% if latest_test.ph is not none %}<div class="param-item"><span class="param-label">pH</span><span class="param-value">{{ latest_test.ph }}</span></div>{% endif %}
+      {% if latest_test.ammonia is not none %}<div class="param-item"><span class="param-label">NH₃</span><span class="param-value {% if latest_test.ammonia > 0.25 %}param-danger{% elif latest_test.ammonia > 0 %}param-warn{% endif %}">{{ latest_test.ammonia }}</span></div>{% endif %}
+      {% if latest_test.nitrite is not none %}<div class="param-item"><span class="param-label">NO₂</span><span class="param-value {% if latest_test.nitrite > 0.1 %}param-danger{% endif %}">{{ latest_test.nitrite }}</span></div>{% endif %}
+      {% if latest_test.nitrate is not none %}<div class="param-item"><span class="param-label">NO₃</span><span class="param-value {% if latest_test.nitrate > 40 %}param-warn{% endif %}">{{ latest_test.nitrate }}</span></div>{% endif %}
+      {% if latest_test.gh is not none %}<div class="param-item"><span class="param-label">GH</span><span class="param-value">{{ latest_test.gh }}</span></div>{% endif %}
+      {% if latest_test.kh is not none %}<div class="param-item"><span class="param-label">KH</span><span class="param-value">{{ latest_test.kh }}</span></div>{% endif %}
+      {% if latest_test.temp is not none %}<div class="param-item"><span class="param-label">Temp</span><span class="param-value">{{ latest_test.temp }}°</span></div>{% endif %}
+      {% if latest_test.tds is not none %}<div class="param-item"><span class="param-label">TDS</span><span class="param-value">{{ latest_test.tds }}</span></div>{% endif %}
+    </div>
+    <div class="stat-card-footer">{{ latest_test.timestamp }}</div>
+  </div>
+  {% else %}
+  <div class="stat-card stat-card-empty">
+    <div class="stat-card-title">Water Parameters</div>
+    <p>No test results yet.</p>
+    <a href="/tanks/{{ tank.id }}/tests/new" class="btn btn-sm btn-primary">Add Test</a>
+  </div>
+  {% endif %}
+
+  <div class="stat-card">
+    <div class="stat-card-title">Inhabitants ({{ inhabitants|length }} species)</div>
+    {% if inhabitants %}
+    <div class="inhabitant-list">
+      {% for inh in inhabitants %}
+      <div class="inhabitant-row">
+        <span class="inh-count">{{ inh.count }}</span>
+        <span class="inh-name">{{ inh.common_name or inh.species or 'Unknown' }}</span>
+        {% if inh.species and inh.common_name %}<span class="inh-species">{{ inh.species }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No inhabitants recorded.</p>
+    {% endif %}
+    <div class="stat-card-footer">
+      <a href="/tanks/{{ tank.id }}/inhabitants" class="link-sm">Manage →</a>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-card-title">
+      Open Issues
+      {% if open_issues %}<span class="badge badge-warning">{{ open_issues|length }}</span>{% endif %}
+    </div>
+    {% if open_issues %}
+    <div class="issue-list">
+      {% for issue in open_issues %}
+      <div class="issue-row">
+        <span class="issue-status-dot status-{{ issue.status }}"></span>
+        <span class="issue-title">{{ issue.title }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No open issues.</p>
+    {% endif %}
+    <div class="stat-card-footer">
+      <a href="/tanks/{{ tank.id }}/issues" class="link-sm">Manage →</a>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="quick-actions">
+  <button class="action-btn" onclick="openModal('modal-test')">
+    <span class="action-icon">🧪</span> Log Test
+  </button>
+  <button class="action-btn" onclick="openModal('modal-event')">
+    <span class="action-icon">📋</span> Log Event
+  </button>
+  <button class="action-btn" onclick="openModal('modal-observation')">
+    <span class="action-icon">👁</span> Note
+  </button>
+  <button class="action-btn" onclick="openModal('modal-purchase')">
+    <span class="action-icon">🛒</span> Purchase
+  </button>
+  <a href="/tanks/{{ tank.id }}/inhabitants" class="action-btn">
+    <span class="action-icon">🐠</span> Inhabitants
+  </a>
+  <a href="/tanks/{{ tank.id }}/import-page" class="action-btn">
+    <span class="action-icon">📥</span> Import
+  </a>
+</div>
+
+<!-- Charts Row -->
+<div class="charts-row">
+  <div class="chart-card">
+    <div class="chart-header">
+      <h3>Water Parameters</h3>
+      <div class="chart-toggles" id="param-toggles"></div>
+    </div>
+    <canvas id="waterChart" height="160"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Population</h3>
+    <canvas id="popChart" height="160"></canvas>
+  </div>
+</div>
+<div class="charts-row">
+  <div class="chart-card">
+    <h3>Spending by Category</h3>
+    <canvas id="costChart" height="160"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Monthly Spending</h3>
+    <canvas id="monthlyChart" height="160"></canvas>
+  </div>
+</div>
+
+<!-- Observations & Events Row -->
+<div class="two-col-row">
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Recent Observations</h3>
+      <a href="/tanks/{{ tank.id }}/observations" class="link-sm">All →</a>
+    </div>
+    {% if recent_observations %}
+    {% for obs in recent_observations %}
+    <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
+      <div class="obs-meta">
+        <span class="obs-source">{{ 'AI' if obs.source == 'auto' else 'Manual' }}</span>
+        <span class="obs-time">{{ obs.created_at }}</span>
+      </div>
+      <p class="obs-text">{{ obs.text }}</p>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="muted panel-empty">No observations yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Recent Events</h3>
+    </div>
+    {% if recent_events %}
+    <div class="event-list">
+      {% for ev in recent_events %}
+      <div class="event-row">
+        <span class="event-type">{{ ev.event_type.replace('_',' ') }}</span>
+        {% if ev.amount %}<span class="event-amount">{{ ev.amount }}</span>{% endif %}
+        <span class="event-time">{{ ev.timestamp }}</span>
+        {% if ev.notes %}<span class="event-notes">{{ ev.notes[:60] }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted panel-empty">No events yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Equipment -->
+{% if equipment %}
+<div class="panel">
+  <div class="panel-header">
+    <h3>Active Equipment</h3>
+    <a href="/tanks/{{ tank.id }}/equipment" class="link-sm">Manage →</a>
+  </div>
+  <div class="equipment-grid">
+    {% for eq in equipment %}
+    <div class="equipment-item">
+      <span class="eq-category">{{ eq.category }}</span>
+      <span class="eq-name">{{ eq.brand or '' }} {{ eq.model or '' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Danger Zone -->
+<details class="danger-zone">
+  <summary>Danger Zone</summary>
+  <div class="danger-content">
+    <div class="danger-item">
+      <div>
+        <strong>Reset Tank Data</strong>
+        <p>Wipes all test results, events, inhabitants, purchases, observations, and issues. Keeps tank and equipment.</p>
+      </div>
+      <button class="btn btn-danger" onclick="openModal('modal-reset')">Reset Data</button>
+    </div>
+    <div class="danger-item">
+      <div>
+        <strong>Delete Tank</strong>
+        <p>Permanently deletes this tank and all associated data.</p>
+      </div>
+      <button class="btn btn-danger" onclick="openModal('modal-delete')">Delete Tank</button>
+    </div>
+  </div>
+</details>
+
+<!-- Modals -->
+<div id="modal-test" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Log Water Test</h3><button class="modal-close" onclick="closeModal('modal-test')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/tests">
+      <div class="form-grid">
+        <div class="form-group"><label>Timestamp</label><input type="datetime-local" name="timestamp"></div>
+        <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph" placeholder="7.0"></div>
+        <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh"></div>
+        <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh"></div>
+        <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia" placeholder="0.0"></div>
+        <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite" placeholder="0.0"></div>
+        <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" name="nitrate"></div>
+        <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds"></div>
+        <div class="form-group"><label>Temp (°F)</label><input type="number" step="0.1" name="temp"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-test')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-event" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Log Event</h3><button class="modal-close" onclick="closeModal('modal-event')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/events">
+      <div class="form-group"><label>Type</label>
+        <select name="event_type">
+          <option value="water_change">Water Change</option>
+          <option value="feeding">Feeding</option>
+          <option value="treatment">Treatment</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="observation">Observation</option>
+          <option value="purchase">Purchase</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Amount (gallons / dose)</label><input type="number" step="0.1" name="amount"></div>
+      <div class="form-group"><label>Timestamp</label><input type="datetime-local" name="timestamp"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="3"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-observation" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Observation</h3><button class="modal-close" onclick="closeModal('modal-observation')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/observations">
+      <div class="form-group"><label>Observation</label><textarea name="text" rows="5" placeholder="What did you notice?"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-observation')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-purchase" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Log Purchase</h3><button class="modal-close" onclick="closeModal('modal-purchase')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/purchases">
+      <div class="form-group"><label>Item</label><input type="text" name="item" required></div>
+      <div class="form-group"><label>Category</label>
+        <select name="category">
+          <option value="equipment">Equipment</option>
+          <option value="livestock">Livestock</option>
+          <option value="plants">Plants</option>
+          <option value="hardscape">Hardscape</option>
+          <option value="consumables">Consumables</option>
+          <option value="food">Food</option>
+          <option value="decor">Decor</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Vendor</label><input type="text" name="vendor"></div>
+      <div class="form-group"><label>Cost ($)</label><input type="number" step="0.01" name="cost"></div>
+      <div class="form-group"><label>Purchase Date</label><input type="date" name="purchase_date"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-purchase')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-reset" class="modal" style="display:none">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header"><h3>Reset Tank Data</h3><button class="modal-close" onclick="closeModal('modal-reset')">×</button></div>
+    <p>This will permanently delete all test results, events, inhabitants, purchases, observations, and issues for <strong>{{ tank.name }}</strong>. The tank and equipment records will be kept.</p>
+    <form method="post" action="/tanks/{{ tank.id }}/reset">
+      <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" required></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-reset')">Cancel</button><button class="btn btn-danger" type="submit">Reset Data</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-delete" class="modal" style="display:none">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header"><h3>Delete Tank</h3><button class="modal-close" onclick="closeModal('modal-delete')">×</button></div>
+    <p>This will permanently delete <strong>{{ tank.name }}</strong> and ALL associated data. This cannot be undone.</p>
+    <form method="post" action="/tanks/{{ tank.id }}/delete">
+      <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" required></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-delete')">Cancel</button><button class="btn btn-danger" type="submit">Delete Tank</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- Chat Panel -->
+<div id="chat-panel" class="chat-panel" style="display:none">
+  <div class="chat-header">
+    <span>Ask AI about {{ tank.name }}</span>
+    <button class="modal-close" onclick="closeChatPanel()">×</button>
+  </div>
+  <div id="chat-messages" class="chat-messages"></div>
+  <div class="chat-input-row">
+    <input type="text" id="chat-input" placeholder="Ask anything about this tank…" onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="btn btn-primary" onclick="sendChat()">Send</button>
+  </div>
+  <div class="chat-footer">
+    <button class="btn btn-ghost btn-xs" onclick="clearChat()">Clear conversation</button>
+  </div>
+</div>
+<div id="chat-overlay" class="chat-overlay" style="display:none" onclick="closeChatPanel()"></div>
+
+<!-- Import Page Link -->
+<a href="/tanks/{{ tank.id }}/import-page" style="display:none" id="import-page-link"></a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TANK_ID = {{ tank.id }};
+initDashboard(TANK_ID);
+</script>
+{% endblock %}

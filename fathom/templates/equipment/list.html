@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Equipment — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "equipment" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Equipment — {{ tank.name }}</h1>
+  <button class="btn btn-primary" onclick="openModal('modal-add-eq')">+ Add Equipment</button>
+</div>
+
+{% if equipment %}
+<div class="table-wrapper">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Brand</th>
+        <th>Model</th>
+        <th>Installed</th>
+        <th>Status</th>
+        <th>Notes</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for eq in equipment %}
+      <tr>
+        <td><span class="badge badge-cat">{{ eq.category }}</span></td>
+        <td>{{ eq.brand or '—' }}</td>
+        <td>{{ eq.model or '—' }}</td>
+        <td>{{ eq.installed_date or '—' }}</td>
+        <td><span class="badge {% if eq.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ 'active' if eq.is_active else 'inactive' }}</span></td>
+        <td class="muted">{{ eq.notes or '' }}</td>
+        <td>
+          <form method="post" action="/tanks/{{ tank.id }}/equipment/{{ eq.id }}/delete" style="display:inline" onsubmit="return confirm('Remove this equipment?')">
+            <button class="btn btn-xs btn-danger" type="submit">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No equipment recorded</h2>
+  <button class="btn btn-primary" onclick="openModal('modal-add-eq')">Add Equipment</button>
+</div>
+{% endif %}
+
+<div id="modal-add-eq" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Equipment</h3><button class="modal-close" onclick="closeModal('modal-add-eq')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/equipment">
+      <div class="form-grid">
+        <div class="form-group"><label>Category *</label>
+          <select name="category" required>
+            <option value="filter">Filter</option>
+            <option value="heater">Heater</option>
+            <option value="light">Light</option>
+            <option value="uv">UV Sterilizer</option>
+            <option value="pump">Pump</option>
+            <option value="co2">CO₂</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Brand</label><input type="text" name="brand"></div>
+        <div class="form-group"><label>Model</label><input type="text" name="model"></div>
+        <div class="form-group"><label>Installed Date</label><input type="date" name="installed_date"></div>
+        <div class="form-group"><label>Status</label>
+          <select name="is_active">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Specs (JSON or description)</label><textarea name="specs" rows="2" placeholder='{"flow_rate": "500 gph", "wattage": "20W"}'></textarea></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-eq')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

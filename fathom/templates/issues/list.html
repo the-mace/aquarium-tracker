@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Issues — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "issues" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Issues — {{ tank.name }}</h1>
+  <button class="btn btn-primary" onclick="openModal('modal-add-issue')">+ New Issue</button>
+</div>
+
+{% if issues %}
+<div class="issue-cards">
+  {% for issue in issues %}
+  <div class="issue-card status-{{ issue.status }}">
+    <div class="issue-card-header">
+      <h3>{{ issue.title }}</h3>
+      <span class="badge badge-issue-{{ issue.status }}">{{ issue.status }}</span>
+    </div>
+    {% if issue.description %}<p class="issue-desc">{{ issue.description }}</p>{% endif %}
+    {% if issue.notes %}<p class="issue-notes muted">{{ issue.notes }}</p>{% endif %}
+    <div class="issue-card-footer">
+      <span class="muted">Opened {{ issue.opened_at }}</span>
+      {% if issue.resolved_at %}<span class="muted">Resolved {{ issue.resolved_at }}</span>{% endif %}
+      <div class="issue-actions">
+        <form method="post" action="/tanks/{{ tank.id }}/issues/{{ issue.id }}/update" style="display:inline">
+          <input type="hidden" name="status" value="{% if issue.status == 'open' %}monitoring{% elif issue.status == 'monitoring' %}resolved{% else %}open{% endif %}">
+          <input type="hidden" name="title" value="{{ issue.title }}">
+          <button class="btn btn-xs btn-ghost" type="submit">
+            {% if issue.status == 'open' %}→ Monitoring{% elif issue.status == 'monitoring' %}→ Resolved{% else %}Re-open{% endif %}
+          </button>
+        </form>
+        <form method="post" action="/tanks/{{ tank.id }}/issues/{{ issue.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this issue?')">
+          <button class="btn btn-xs btn-danger" type="submit">✕</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No issues recorded</h2>
+  <p class="muted">Good news — everything looks fine, or nothing's been logged yet.</p>
+  <button class="btn btn-primary" onclick="openModal('modal-add-issue')">Log an Issue</button>
+</div>
+{% endif %}
+
+<div id="modal-add-issue" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>New Issue</h3><button class="modal-close" onclick="closeModal('modal-add-issue')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/issues">
+      <div class="form-group"><label>Title *</label><input type="text" name="title" required placeholder="e.g. Elevated nitrates"></div>
+      <div class="form-group"><label>Status</label>
+        <select name="status">
+          <option value="open">Open</option>
+          <option value="monitoring">Monitoring</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Description</label><textarea name="description" rows="3"></textarea></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-issue')">Cancel</button><button class="btn btn-primary" type="submit">Create Issue</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

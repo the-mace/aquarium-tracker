@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Observations — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "observations" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Observations — {{ tank.name }}</h1>
+  <button class="btn btn-primary" onclick="openModal('modal-add-obs')">+ Add Note</button>
+</div>
+
+{% if observations %}
+<div class="observations-list">
+  {% for obs in observations %}
+  <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
+    <div class="obs-meta">
+      <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% endif %}">
+        {{ 'AI Analysis' if obs.source == 'auto' else 'Manual Note' }}
+      </span>
+      <span class="obs-time">{{ obs.created_at }}</span>
+      {% if obs.related_test_id %}<span class="obs-link muted">linked to test #{{ obs.related_test_id }}</span>{% endif %}
+      {% if obs.related_event_id %}<span class="obs-link muted">linked to event #{{ obs.related_event_id }}</span>{% endif %}
+    </div>
+    <div class="obs-body">{{ obs.text }}</div>
+    <div class="obs-actions">
+      <button class="btn btn-xs btn-ghost" onclick="deleteObs({{ obs.id }}, this)">✕ Remove</button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No observations yet</h2>
+  <p>Observations are added automatically when you log tests or events, or you can add them manually.</p>
+  <button class="btn btn-primary" onclick="openModal('modal-add-obs')">Add Observation</button>
+</div>
+{% endif %}
+
+<div id="modal-add-obs" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Observation</h3><button class="modal-close" onclick="closeModal('modal-add-obs')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/observations">
+      <div class="form-group"><label>Observation</label><textarea name="text" rows="6" placeholder="What did you notice?"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deleteObs(id, btn) {
+  if (!confirm('Delete this observation?')) return;
+  fetch(`/tanks/{{ tank.id }}/observations/${id}/delete`, {method:'POST'})
+    .then(() => location.reload());
+}
+</script>
+{% endblock %}

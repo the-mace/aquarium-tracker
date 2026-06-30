@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Import Data — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "import" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Import Data</h1>
+  <span class="muted">{{ tank.name }}</span>
+</div>
+
+<div class="form-card">
+  <p>Upload an Apple Notes export (HTML or plain text) or any text file containing aquarium records. Claude will extract test results, events, purchases, inhabitants, and equipment into a preview for your review.</p>
+
+  <div id="upload-section">
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".html,.htm,.txt" style="display:none">
+      <div class="drop-zone-content">
+        <div class="drop-icon">📄</div>
+        <p>Drop a file here or <button class="btn-link" onclick="document.getElementById('file-input').click()">browse</button></p>
+        <p class="muted">Accepts HTML or plain text files</p>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="parse-btn" onclick="parseFile()" disabled>Parse with AI</button>
+  </div>
+
+  <div id="preview-section" style="display:none">
+    <div class="preview-header">
+      <h3>Preview</h3>
+      <button class="btn btn-ghost" onclick="resetImport()">← Start Over</button>
+    </div>
+    <div id="preview-counts" class="preview-counts"></div>
+    <div id="preview-data" class="preview-data"></div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" onclick="resetImport()">Cancel</button>
+      <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">Import All</button>
+    </div>
+  </div>
+
+  <div id="import-result" style="display:none" class="success-banner"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TANK_ID = {{ tank.id }};
+let previewData = null;
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const parseBtn = document.getElementById('parse-btn');
+let selectedFile = null;
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) setFile(file);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+function setFile(file) {
+  selectedFile = file;
+  dropZone.querySelector('p').textContent = `Selected: ${file.name}`;
+  parseBtn.disabled = false;
+}
+
+async function parseFile() {
+  if (!selectedFile) return;
+  parseBtn.disabled = true;
+  parseBtn.textContent = 'Parsing…';
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  try {
+    const res = await fetch(`/tanks/${TANK_ID}/import`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Parse failed');
+    previewData = data.preview;
+    showPreview(data.preview, data.counts);
+  } catch (e) {
+    alert('Error: ' + e.message);
+    parseBtn.disabled = false;
+    parseBtn.textContent = 'Parse with AI';
+  }
+}
+
+function showPreview(preview, counts) {
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('preview-section').style.display = 'block';
+
+  const countsEl = document.getElementById('preview-counts');
+  countsEl.innerHTML = Object.entries(counts).map(([k, v]) =>
+    `<span class="count-chip"><strong>${v}</strong> ${k.replace('_', ' ')}</span>`
+  ).join('');
+
+  const dataEl = document.getElementById('preview-data');
+  dataEl.innerHTML = '';
+  for (const [key, items] of Object.entries(preview)) {
+    if (!items || items.length === 0) continue;
+    dataEl.innerHTML += `<h4>${key.replace('_', ' ')}</h4><pre class="preview-json">${JSON.stringify(items, null, 2)}</pre>`;
+  }
+}
+
+async function confirmImport() {
+  if (!previewData) return;
+  document.getElementById('confirm-btn').disabled = true;
+  document.getElementById('confirm-btn').textContent = 'Importing…';
+  try {
+    const res = await fetch(`/tanks/${TANK_ID}/import/confirm`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ preview: previewData }),
+    });
+    const data = await res.json();
+    document.getElementById('preview-section').style.display = 'none';
+    const result = document.getElementById('import-result');
+    result.style.display = 'block';
+    result.innerHTML = `<strong>Import complete!</strong> ${Object.entries(data.inserted).map(([k,v]) => `${v} ${k}`).join(', ')} imported. <a href="/tanks/${TANK_ID}">Go to dashboard →</a>`;
+  } catch (e) {
+    alert('Import failed: ' + e.message);
+    document.getElementById('confirm-btn').disabled = false;
+    document.getElementById('confirm-btn').textContent = 'Import All';
+  }
+}
+
+function resetImport() {
+  previewData = null;
+  selectedFile = null;
+  fileInput.value = '';
+  parseBtn.disabled = true;
+  parseBtn.textContent = 'Parse with AI';
+  dropZone.querySelector('p').textContent = 'Drop a file here or browse';
+  document.getElementById('upload-section').style.display = 'block';
+  document.getElementById('preview-section').style.display = 'none';
+  document.getElementById('import-result').style.display = 'none';
+}
+</script>
+{% endblock %}

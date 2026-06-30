@@ -1,0 +1,227 @@
+import sqlite3
+import os
+from contextlib import contextmanager
+
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(os.path.dirname(__file__), "data", "fathom.db"),
+)
+
+
+def get_connection():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
+@contextmanager
+def get_db():
+    conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_db():
+    with get_db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS tanks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                water_type TEXT CHECK(water_type IN ('fresh', 'salt', 'brackish')),
+                volume_gallons REAL,
+                dimensions_l REAL,
+                dimensions_w REAL,
+                dimensions_h REAL,
+                shape TEXT,
+                manufacturer TEXT,
+                model TEXT,
+                substrate_type TEXT,
+                substrate_brand TEXT,
+                substrate_depth_inches REAL,
+                setup_date TEXT,
+                status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'archived')),
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS tank_equipment (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                category TEXT CHECK(category IN ('filter','heater','light','uv','pump','co2','other')),
+                brand TEXT,
+                model TEXT,
+                specs TEXT,
+                installed_date TEXT,
+                removed_date TEXT,
+                is_active INTEGER DEFAULT 1,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS test_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                timestamp TEXT DEFAULT (datetime('now')),
+                ph REAL,
+                gh REAL,
+                kh REAL,
+                ammonia REAL,
+                nitrite REAL,
+                nitrate REAL,
+                tds REAL,
+                temp REAL,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS inhabitants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                species TEXT,
+                common_name TEXT,
+                count INTEGER DEFAULT 0,
+                added_date TEXT,
+                source TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS population_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                inhabitant_id INTEGER,
+                event_type TEXT CHECK(event_type IN ('added','died','removed','born')),
+                count INTEGER,
+                timestamp TEXT DEFAULT (datetime('now')),
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE,
+                FOREIGN KEY (inhabitant_id) REFERENCES inhabitants(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS purchases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER,
+                item TEXT,
+                category TEXT CHECK(category IN ('equipment','livestock','plants','hardscape','consumables','food','decor','other')),
+                vendor TEXT,
+                cost REAL,
+                purchase_date TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                timestamp TEXT DEFAULT (datetime('now')),
+                event_type TEXT CHECK(event_type IN ('water_change','feeding','purchase','observation','treatment','maintenance','other')),
+                notes TEXT,
+                amount REAL,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                title TEXT,
+                description TEXT,
+                status TEXT DEFAULT 'open' CHECK(status IN ('open','monitoring','resolved')),
+                opened_at TEXT DEFAULT (datetime('now')),
+                resolved_at TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                related_event_id INTEGER,
+                related_test_id INTEGER,
+                source TEXT DEFAULT 'manual' CHECK(source IN ('auto','manual')),
+                text TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS tank_state_summary (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL UNIQUE,
+                summary_text TEXT,
+                generated_at TEXT DEFAULT (datetime('now')),
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS plants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                species TEXT,
+                common_name TEXT,
+                added_date TEXT,
+                source TEXT,
+                notes TEXT,
+                status TEXT DEFAULT 'active' CHECK(status IN ('active', 'removed')),
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS hardscape (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                item TEXT NOT NULL,
+                quantity INTEGER DEFAULT 1,
+                source TEXT,
+                cost REAL,
+                added_date TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_test_results_tank_ts ON test_results(tank_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_events_tank_ts ON events(tank_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_issues_tank_status ON issues(tank_id, status);
+            CREATE INDEX IF NOT EXISTS idx_inhabitants_tank ON inhabitants(tank_id);
+            CREATE INDEX IF NOT EXISTS idx_population_events_tank ON population_events(tank_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_plants_tank ON plants(tank_id);
+            CREATE INDEX IF NOT EXISTS idx_hardscape_tank ON hardscape(tank_id);
+        """)
+
+
+def row_to_dict(row):
+    if row is None:
+        return None
+    return dict(row)
+
+
+def rows_to_list(rows):
+    return [dict(r) for r in rows]

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{% if action == 'edit' %}Edit {{ tank.name }}{% else %}New Tank{% endif %} — Fathom{% endblock %}
+{% if tank %}{% set active = "edit" %}{% endif %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{% if action == 'edit' %}Edit {{ tank.name }}{% else %}New Tank{% endif %}</h1>
+</div>
+
+<form method="post" action="{% if action == 'edit' %}/tanks/{{ tank.id }}/edit{% else %}/tanks{% endif %}" class="form-card">
+  <div class="form-section">
+    <h3>Basic Info</h3>
+    <div class="form-grid">
+      <div class="form-group form-group-wide">
+        <label>Tank Name *</label>
+        <input type="text" name="name" value="{{ tank.name if tank else '' }}" required placeholder="e.g. Living Room 75G">
+      </div>
+      <div class="form-group">
+        <label>Water Type</label>
+        <select name="water_type">
+          {% for wt in ['fresh', 'salt', 'brackish'] %}
+          <option value="{{ wt }}" {% if tank and tank.water_type == wt %}selected{% endif %}>{{ wt|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          {% for s in ['active', 'inactive', 'archived'] %}
+          <option value="{{ s }}" {% if tank and tank.status == s %}selected{% elif not tank and s == 'active' %}selected{% endif %}>{{ s|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Volume (gallons)</label>
+        <input type="number" step="0.1" name="volume_gallons" value="{{ tank.volume_gallons if tank and tank.volume_gallons is not none else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Setup Date</label>
+        <input type="date" name="setup_date" value="{{ tank.setup_date if tank and tank.setup_date else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h3>Dimensions</h3>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Length (in)</label>
+        <input type="number" step="0.1" name="dimensions_l" value="{{ tank.dimensions_l if tank and tank.dimensions_l is not none else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Width (in)</label>
+        <input type="number" step="0.1" name="dimensions_w" value="{{ tank.dimensions_w if tank and tank.dimensions_w is not none else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Height (in)</label>
+        <input type="number" step="0.1" name="dimensions_h" value="{{ tank.dimensions_h if tank and tank.dimensions_h is not none else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Shape</label>
+        <input type="text" name="shape" value="{{ tank.shape if tank and tank.shape else '' }}" placeholder="rectangle, cube, bow-front…">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h3>Hardware</h3>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Manufacturer</label>
+        <input type="text" name="manufacturer" value="{{ tank.manufacturer if tank and tank.manufacturer else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Model</label>
+        <input type="text" name="model" value="{{ tank.model if tank and tank.model else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h3>Substrate</h3>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Type</label>
+        <input type="text" name="substrate_type" value="{{ tank.substrate_type if tank and tank.substrate_type else '' }}" placeholder="sand, gravel, soil…">
+      </div>
+      <div class="form-group">
+        <label>Brand</label>
+        <input type="text" name="substrate_brand" value="{{ tank.substrate_brand if tank and tank.substrate_brand else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Depth (inches)</label>
+        <input type="number" step="0.25" name="substrate_depth_inches" value="{{ tank.substrate_depth_inches if tank and tank.substrate_depth_inches is not none else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea name="notes" rows="4">{{ tank.notes if tank and tank.notes else '' }}</textarea>
+    </div>
+  </div>
+
+  <div class="form-actions">
+    <a href="{% if tank %}/tanks/{{ tank.id }}{% else %}/tanks{% endif %}" class="btn btn-ghost">Cancel</a>
+    <button type="submit" class="btn btn-primary">{% if action == 'edit' %}Save Changes{% else %}Create Tank{% endif %}</button>
+  </div>
+</form>
+{% endblock %}
