@@ -21,6 +21,14 @@
       </div>
     </div>
     <button class="btn btn-primary" id="parse-btn" onclick="parseFile()" disabled>Parse with AI</button>
+
+    <div id="progress-area" style="display:none; margin-top:1.25rem">
+      <div id="phase-label" style="font-size:.85rem; color:var(--muted); margin-bottom:.6rem">Sending to AI…</div>
+      <div style="height:8px; background:var(--border); border-radius:4px; overflow:hidden">
+        <div id="progress-fill" style="height:100%; width:0%; background:var(--primary); border-radius:4px; transition:width .25s ease"></div>
+      </div>
+      <div id="progress-pct" style="font-size:.72rem; color:var(--muted); margin-top:.3rem; text-align:right">0%</div>
+    </div>
   </div>
 
   <div id="preview-section" style="display:none">
@@ -29,8 +37,9 @@
       <button class="btn btn-ghost" type="button" onclick="resetImport()">← Start Over</button>
     </div>
     <div id="preview-flags" class="preview-flags"></div>
+    <div id="preview-dups" class="preview-dups"></div>
     <div id="preview-counts" class="preview-counts"></div>
-    <p class="muted" style="font-size:.8rem;margin-bottom:.75rem">Check or uncheck rows to include/exclude. Edit values inline before importing.</p>
+    <p class="muted" style="font-size:.8rem;margin-bottom:.75rem">Checkboxes select rows to import — uncheck any you want to skip. Edit values inline before importing.</p>
     <div id="preview-data" class="preview-data"></div>
     <div class="form-actions">
       <button class="btn btn-ghost" type="button" onclick="resetImport()">Cancel</button>
@@ -72,17 +81,73 @@ function setFile(file) {
 async function parseFile() {
   if (!selectedFile) return;
   parseBtn.disabled = true;
-  parseBtn.textContent = 'Parsing with AI…';
+  parseBtn.textContent = 'Parsing…';
+
+  const progressArea = document.getElementById('progress-area');
+  const phaseLabel  = document.getElementById('phase-label');
+  const fill        = document.getElementById('progress-fill');
+  const pct         = document.getElementById('progress-pct');
+
+  progressArea.style.display = 'block';
+  phaseLabel.textContent = 'Sending to AI…';
+  fill.style.width = '0%';
+  pct.textContent  = '0%';
+
   const fd = new FormData();
   fd.append('file', selectedFile);
+
+  function setProgress(current, total, label) {
+    if (label) phaseLabel.textContent = label;
+    const p = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+    fill.style.width = p + '%';
+    pct.textContent  = p + '%';
+  }
+
   try {
     const res = await fetch(`/tanks/${TANK_ID}/import`, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Parse failed');
-    previewData = data.preview;
-    serverFlags = data.flags || [];
-    showPreview(data.preview, data.counts, serverFlags);
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.detail || 'Parse failed');
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop();
+
+      for (const part of parts) {
+        if (!part.startsWith('data: ')) continue;
+        const event = JSON.parse(part.slice(6));
+
+        if (event.phase === 'analyzing' || event.phase === 'processing') {
+          setProgress(event.current ?? 0, event.total ?? 1, event.label);
+        } else if (event.phase === 'error') {
+          throw new Error(event.message);
+        } else if (event.phase === 'complete') {
+          setProgress(1, 1, 'Done');
+          result = event;
+        }
+      }
+    }
+
+    if (!result) throw new Error('No response received from server.');
+
+    previewData = result.preview;
+    serverFlags = result.flags || [];
+    progressArea.style.display = 'none';
+    showPreview(result.preview, result.counts, serverFlags);
+    checkDuplicates(result.preview);
+
   } catch (e) {
+    progressArea.style.display = 'none';
     alert('Error: ' + e.message);
     parseBtn.disabled = false;
     parseBtn.textContent = 'Parse with AI';
@@ -94,14 +159,14 @@ const SECTION_CONFIG = {
   test_results: {
     label: 'Test Results',
     fields:  ['timestamp','ph','gh','kh','ammonia','nitrite','nitrate','tds','temp','notes'],
-    headers: ['Date/Time','pH','GH','KH','NH₃','NO₂','NO₃','TDS','Temp','Notes'],
+    headers: ['Date','pH','GH','KH','NH₃','NO₂','NO₃','TDS','Temp','Notes'],
     types:   ['text','num','num','num','num','num','num','num','num','text'],
     widths:  ['130px','55px','55px','55px','60px','60px','60px','60px','60px','120px'],
   },
   events: {
     label: 'Events',
     fields:  ['timestamp','event_type','amount','notes'],
-    headers: ['Date/Time','Type','Amount','Notes'],
+    headers: ['Date','Type','Amount','Notes'],
     types:   ['text','text','num','text'],
     widths:  ['130px','110px','70px','180px'],
   },
@@ -150,7 +215,7 @@ const SECTION_CONFIG = {
   observations: {
     label: 'Observations / Journal',
     fields:  ['created_at','text'],
-    headers: ['Date/Time','Text'],
+    headers: ['Date','Text'],
     types:   ['text','text'],
     widths:  ['130px','300px'],
   },
@@ -184,7 +249,7 @@ function showPreview(preview, counts, flags) {
   const flagsEl = document.getElementById('preview-flags');
   if (flags && flags.length > 0) {
     flagsEl.style.display = 'block';
-    flagsEl.innerHTML = `<strong>⚠ ${flags.length} item${flags.length !== 1 ? 's' : ''} flagged for review</strong> — check highlighted rows below before importing.`;
+    flagsEl.innerHTML = `<strong>⚠ ${flags.length} item${flags.length !== 1 ? 's' : ''} flagged for review</strong> — verify the highlighted rows below before importing.`;
   }
 
   const dataEl = document.getElementById('preview-data');
@@ -295,7 +360,11 @@ function renderSection(key, config, items, flagMap) {
         const displayVal = val !== null && val !== undefined ? esc(String(val)) : '';
         cells += `<td><input type="text" data-field="${field}" value="${displayVal}" style="width:${w}"></td>`;
       } else {
-        const displayVal = val !== null && val !== undefined ? esc(String(val)) : '';
+        let rawVal = val !== null && val !== undefined ? String(val) : '';
+        if ((field === 'timestamp' || field === 'created_at') && rawVal.includes(' ')) {
+          rawVal = rawVal.split(' ')[0];
+        }
+        const displayVal = esc(rawVal);
         cells += `<td><input type="${inputType}"${stepAttr} data-field="${field}" value="${displayVal}" style="width:${w}"></td>`;
       }
     });
@@ -365,9 +434,45 @@ function getEditedData() {
   return result;
 }
 
+// ── Convert accepted flags to observations ──────────────────────────────────
+const FLAG_DATE_FIELD = {
+  test_results: 'timestamp', events: 'timestamp', purchases: 'purchase_date',
+  inhabitants: 'added_date', plants: 'added_date', equipment: 'installed_date',
+  hardscape: 'added_date', issues: 'opened_at', observations: 'created_at',
+};
+
+function getSelectedFlagObservations() {
+  const obs = [];
+  for (const flag of serverFlags) {
+    const table = document.getElementById(`table-${flag.section}`);
+    if (!table) continue;
+    const tr = table.querySelector(`tbody tr[data-idx="${flag.index}"]`);
+    if (!tr) continue;
+    const cb = tr.querySelector('.row-check');
+    if (!cb || !cb.checked) continue;
+
+    let dateStr = null;
+    const dateField = FLAG_DATE_FIELD[flag.section];
+    if (dateField) {
+      const inp = tr.querySelector(`[data-field="${dateField}"]`);
+      if (inp && inp.value) dateStr = inp.value.split(' ')[0];
+    }
+
+    obs.push({
+      text: `Import note: ${flag.message}`,
+      created_at: dateStr ? `${dateStr} 00:00:00` : null,
+    });
+  }
+  return obs;
+}
+
 // ── Confirm import ──────────────────────────────────────────────────────────
 async function confirmImport() {
   const editedData = getEditedData();
+  const flagObs = getSelectedFlagObservations();
+  if (flagObs.length > 0) {
+    editedData.observations = [...(editedData.observations || []), ...flagObs];
+  }
   const totalRows = Object.values(editedData).reduce((s, v) => s + (Array.isArray(v) ? v.length : 0), 0);
   if (totalRows === 0 && !editedData.tank_specs) {
     alert('No rows selected to import.');
@@ -395,6 +500,47 @@ async function confirmImport() {
   }
 }
 
+// ── Duplicate detection ─────────────────────────────────────────────────────
+async function checkDuplicates(preview) {
+  try {
+    const res = await fetch(`/tanks/${TANK_ID}/import/check-duplicates`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ preview }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const dups = data.duplicates || [];
+    if (dups.length > 0) applyDuplicates(dups);
+  } catch (e) {
+    // silent — dup check is best-effort
+  }
+}
+
+function applyDuplicates(dups) {
+  const dupsEl = document.getElementById('preview-dups');
+  dupsEl.style.display = 'block';
+  const n = dups.length;
+  dupsEl.innerHTML = `<strong>↔ ${n} probable duplicate${n !== 1 ? 's' : ''} found</strong> — rows unchecked by default. Re-check to import anyway (e.g. two water changes same day).`;
+
+  for (const dup of dups) {
+    const table = document.getElementById(`table-${dup.section}`);
+    if (!table) continue;
+    const tr = table.querySelector(`tbody tr[data-idx="${dup.index}"]`);
+    if (!tr) continue;
+
+    const cb = tr.querySelector('.row-check');
+    if (cb) cb.checked = false;
+    tr.classList.add('dup-row');
+
+    const colCount = tr.querySelectorAll('td').length;
+    const dupTr = document.createElement('tr');
+    dupTr.className = 'dup-flag-row';
+    dupTr.innerHTML = `<td></td><td colspan="${colCount - 1}" class="dup-row-msg">↔ ${esc(dup.message)} — check to import anyway</td>`;
+    tr.insertAdjacentElement('afterend', dupTr);
+  }
+}
+
 // ── Reset ───────────────────────────────────────────────────────────────────
 function resetImport() {
   previewData = null;
@@ -405,9 +551,11 @@ function resetImport() {
   parseBtn.textContent = 'Parse with AI';
   document.getElementById('drop-label').textContent = 'Drop a file here or browse';
   document.getElementById('upload-section').style.display = 'block';
+  document.getElementById('progress-area').style.display = 'none';
   document.getElementById('preview-section').style.display = 'none';
   document.getElementById('import-result').style.display = 'none';
   document.getElementById('preview-flags').style.display = 'none';
+  document.getElementById('preview-dups').style.display = 'none';
   document.getElementById('preview-data').innerHTML = '';
   document.getElementById('preview-counts').innerHTML = '';
 }
