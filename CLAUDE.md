@@ -107,7 +107,17 @@ Import robustness: strips markdown code fences, falls back to regex `{...}` extr
 
 ## Production deployment
 
-Mac mini at `192.168.50.205`, SSH via `ssh -A rob@192.168.50.205`. Repo path same as dev. Run as launchd service — see README.md for plist.
+Mac mini at `192.168.50.205`, SSH via `ssh -A rob@192.168.50.205`. Repo at `/Users/rob/aquarium-tracker` (same layout as dev). Run as a launchd system service:
+
+- Plist: `/Library/LaunchDaemons/com.fathom.plist`
+- Uvicorn binary: `/Users/rob/aquarium-tracker/.venv/bin/uvicorn`
+- Working dir: `/Users/rob/aquarium-tracker/fathom`
+- Env: `DOTENV_PATH=/Users/rob/aquarium-tracker/.env`
+- Logs: `/tmp/fathom.log` / `/tmp/fathom.err`
+
+Reload after deploy: `ssh -A rob@192.168.50.205 "sudo launchctl unload /Library/LaunchDaemons/com.fathom.plist && sudo launchctl load /Library/LaunchDaemons/com.fathom.plist"`
+
+S3 backup cron (3am daily): `0 3 * * * cd /Users/rob/aquarium-tracker && bash fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1`
 
 ## Database schema (12 tables)
 

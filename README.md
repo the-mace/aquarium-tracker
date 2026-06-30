@@ -49,26 +49,13 @@ Open `http://localhost:8000`.
 - **Equipment, purchases, issues** management
 - **Cost charts**: spending by category and by month
 
-## Production Deployment (Mac mini)
+## Running as a Service
 
-The Mac mini at `192.168.50.205` is the production deployment. SSH via `ssh -A rob@192.168.50.205`.
+For always-on access (home server, NAS, spare Mac, etc.), run Fathom as a background service.
 
-### Initial setup on Mac mini
+### macOS — launchd
 
-```bash
-ssh -A rob@192.168.50.205
-git clone git@github.com:the-mace/aquarium-tracker.git
-cd aquarium-tracker
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# add keys to .env
-```
-
-### Run as a service
-
-Create `/Library/LaunchDaemons/com.fathom.plist` (or use `launchctl` as the user):
+Create a plist at `~/Library/LaunchAgents/com.fathom.plist` (user service) or `/Library/LaunchDaemons/com.fathom.plist` (system service). Replace `/path/to/aquarium-tracker` with your actual clone path.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -78,15 +65,15 @@ Create `/Library/LaunchDaemons/com.fathom.plist` (or use `launchctl` as the user
   <key>Label</key><string>com.fathom</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/rob/aquarium-tracker/.venv/bin/uvicorn</string>
+    <string>/path/to/aquarium-tracker/.venv/bin/uvicorn</string>
     <string>main:app</string>
     <string>--host</string><string>0.0.0.0</string>
     <string>--port</string><string>8000</string>
   </array>
-  <key>WorkingDirectory</key><string>/Users/rob/aquarium-tracker/fathom</string>
+  <key>WorkingDirectory</key><string>/path/to/aquarium-tracker/fathom</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>DOTENV_PATH</key><string>/Users/rob/aquarium-tracker/.env</string>
+    <key>DOTENV_PATH</key><string>/path/to/aquarium-tracker/.env</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -95,6 +82,26 @@ Create `/Library/LaunchDaemons/com.fathom.plist` (or use `launchctl` as the user
 </dict>
 </plist>
 ```
+
+Load it with `launchctl load ~/Library/LaunchAgents/com.fathom.plist`.
+
+### Linux — systemd
+
+```ini
+[Unit]
+Description=Fathom aquarium tracker
+After=network.target
+
+[Service]
+WorkingDirectory=/path/to/aquarium-tracker/fathom
+ExecStart=/path/to/aquarium-tracker/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Place in `/etc/systemd/system/fathom.service`, then `systemctl enable --now fathom`.
 
 ## S3 Backup
 
@@ -106,14 +113,13 @@ The backup script at `fathom/scripts/backup_db.sh` gzips the SQLite database and
 2. Ensure AWS credentials are configured for the profile
 3. Test manually: `bash fathom/scripts/backup_db.sh`
 
-### Cron on Mac mini
+### Schedule with cron
 
 ```bash
-# Edit crontab
 crontab -e
 
-# Add a daily backup at 3am
-0 3 * * * cd /Users/rob/aquarium-tracker && bash fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1
+# Daily backup at 3am
+0 3 * * * cd /path/to/aquarium-tracker && bash fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1
 ```
 
 ## Project Structure
