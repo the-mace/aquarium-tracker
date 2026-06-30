@@ -21,20 +21,22 @@ def maybe_fetch_reference_info(
     entity_name: str,
     display_name: str = "",
 ):
-    """Queue a reference info fetch only if no entry exists for this entity yet."""
+    """Queue a reference info fetch if no entry exists yet OR if a placeholder exists but was never fetched."""
     if not entity_name:
         return
     with get_db() as conn:
-        existing = conn.execute(
-            "SELECT id FROM reference_info WHERE entity_type=? AND entity_name=?",
+        existing = row_to_dict(conn.execute(
+            "SELECT id, fetched_at FROM reference_info WHERE entity_type=? AND entity_name=?",
             (entity_type, entity_name),
-        ).fetchone()
-        if existing:
-            return
-        conn.execute(
-            "INSERT OR IGNORE INTO reference_info (entity_type, entity_name, common_name) VALUES (?,?,?)",
-            (entity_type, entity_name, display_name or None),
-        )
+        ).fetchone())
+        if existing and existing.get("fetched_at"):
+            return  # Already fetched — skip
+        if not existing:
+            conn.execute(
+                "INSERT OR IGNORE INTO reference_info (entity_type, entity_name, common_name) VALUES (?,?,?)",
+                (entity_type, entity_name, display_name or None),
+            )
+    # Queue whether inserting fresh placeholder or re-queuing a stuck one
     background_tasks.add_task(fetch_reference_info_bg, entity_type, entity_name, display_name)
 
 

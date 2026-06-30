@@ -83,12 +83,25 @@ def test_maybe_fetch_inserts_placeholder(client, tank_id):
     bt.add_task.assert_called_once()
 
 
-def test_maybe_fetch_skips_if_row_exists(client, tank_id):
+def test_maybe_fetch_skips_if_already_fetched(client, tank_id):
     from unittest.mock import MagicMock
-    _seed_ref(_db.DB_PATH, "species", "neon tetra")
+    _seed_ref(_db.DB_PATH, "species", "neon tetra")  # fetched_at set by _seed_ref
     bt = MagicMock()
     _ref.maybe_fetch_reference_info(bt, "species", "neon tetra", "Neon Tetra")
     bt.add_task.assert_not_called()
+
+
+def test_maybe_fetch_requeues_stuck_placeholder(client, tank_id):
+    """A placeholder row with fetched_at=NULL (e.g. after server restart) must be re-queued."""
+    from unittest.mock import MagicMock
+    conn = __import__("sqlite3").connect(_db.DB_PATH)
+    conn.execute(
+        "INSERT INTO reference_info (entity_type, entity_name) VALUES ('species', 'cherry shrimp')"
+    )
+    conn.commit(); conn.close()
+    bt = MagicMock()
+    _ref.maybe_fetch_reference_info(bt, "species", "cherry shrimp", "Cherry Shrimp")
+    bt.add_task.assert_called_once()  # should re-queue despite row existing
 
 
 # ── Inhabitants list joins reference_info ─────────────────────────────────

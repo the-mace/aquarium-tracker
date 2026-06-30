@@ -56,16 +56,16 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
                ORDER BY h.item""",
             (tank_id,),
         ).fetchall())
-    # Queue reference info fetch for any entity not yet in reference_info
+    # Queue reference info fetch for any entity not yet fetched (no row, or stuck placeholder)
     for pl in plants:
-        if pl.get("ref_entity_name") is None:
+        if pl.get("ref_fetched_at") is None:
             entity_name = _canonical(pl.get("species") or pl.get("common_name") or "")
             if entity_name:
                 display = pl.get("common_name") or pl.get("species") or ""
                 maybe_fetch_reference_info(background_tasks, "plant", entity_name, display)
 
     for hs in hardscape:
-        if hs.get("ref_entity_name") is None:
+        if hs.get("ref_fetched_at") is None:
             entity_name = _canonical(hs.get("item") or "")
             if entity_name:
                 maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, hs.get("item", ""))

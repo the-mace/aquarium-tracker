@@ -43,9 +43,9 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
             " WHERE pe.tank_id = ? ORDER BY pe.timestamp DESC LIMIT 20",
             (tank_id,),
         ).fetchall())
-    # Queue reference info fetch for any inhabitant not yet in reference_info
+    # Queue reference info fetch for any inhabitant not yet fetched (no row, or stuck placeholder)
     for inh in inhabitants:
-        if inh.get("ref_entity_name") is None:
+        if inh.get("ref_fetched_at") is None:
             entity_name = _canonical(inh.get("species") or inh.get("common_name") or "")
             if entity_name:
                 display = inh.get("common_name") or inh.get("species") or ""
