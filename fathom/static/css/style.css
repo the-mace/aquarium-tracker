@@ -257,6 +257,8 @@ p { margin-bottom: .5rem; }
   text-decoration: none;
 }
 .action-btn:hover { background: var(--card-alt); border-color: var(--primary); color: var(--text); text-decoration: none; }
+.action-btn-primary { background: var(--primary); border-color: var(--primary); color: #000; font-weight: 600; }
+.action-btn-primary:hover { background: var(--primary-dim, #00a88a); border-color: var(--primary-dim, #00a88a); color: #000; }
 .action-icon { font-size: 1rem; }
 
 /* ── Charts ─────────────────────────────────────────────────────────────── */

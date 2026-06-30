@@ -182,6 +182,135 @@ def _strip_html(html_content: str) -> str:
     return text.strip()
 
 
+async def _extraction_sse_stream(content: str, api_key: str):
+    """Async generator yielding SSE event strings for Claude-based text extraction."""
+    import anthropic
+    import re as _re
+
+    chunks = _split_chunks(content, max_chars=8000)
+    n_chunks = len(chunks)
+    chunk_line_counts = [max(1, c.count('\n') + 1) for c in chunks]
+    total_lines = sum(chunk_line_counts)
+
+    def evt(payload):
+        return f'data: {json.dumps(payload)}\n\n'
+
+    yield evt({"phase": "analyzing", "label": "Analyzing with AI…", "current": 0, "total": total_lines})
+
+    try:
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+        chunk_results = []
+        lines_done = 0
+
+        for i, chunk in enumerate(chunks):
+            label = f"Analyzing part {i + 1} of {n_chunks}…" if n_chunks > 1 else "Analyzing with AI…"
+            chunk_total = chunk_line_counts[i]
+            chunk_current = 0
+            chunk_header = (
+                f"[Part {i + 1} of {n_chunks} — extract all data found in this section]\n\n"
+                if n_chunks > 1 else ""
+            )
+            full_text = ''
+            chars_since_update = 0
+
+            yield evt({"phase": "analyzing", "label": label, "current": lines_done, "total": total_lines})
+
+            async with client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=32000,
+                messages=[{"role": "user", "content": IMPORT_PROMPT + chunk_header + chunk}],
+            ) as stream:
+                async for text in stream.text_stream:
+                    full_text += text
+                    new_lines = text.count('\n')
+                    chars_since_update += len(text)
+                    if new_lines > 0:
+                        chunk_current += new_lines
+                        chars_since_update = 0
+                        bar_pos = min(chunk_current, chunk_total)
+                        if chunk_current > chunk_total:
+                            active_label = (
+                                f"Receiving response, part {i + 1} of {n_chunks}… ({chunk_current} lines)"
+                                if n_chunks > 1 else f"Receiving AI response… ({chunk_current} lines)"
+                            )
+                        else:
+                            active_label = label
+                        yield evt({"phase": "analyzing", "label": active_label,
+                                   "current": lines_done + bar_pos, "total": total_lines})
+                    elif chars_since_update >= 400:
+                        chars_since_update = 0
+                        bar_pos = min(chunk_current, chunk_total)
+                        char_label = (
+                            f"Analyzing part {i + 1} of {n_chunks}… ({len(full_text):,} chars)"
+                            if n_chunks > 1 else f"Analyzing with AI… ({len(full_text):,} chars)"
+                        )
+                        yield evt({"phase": "analyzing", "label": char_label,
+                                   "current": lines_done + bar_pos, "total": total_lines})
+                finish_label = (f"Finishing part {i + 1} of {n_chunks} response…"
+                                if n_chunks > 1 else "Finishing AI response…")
+                yield evt({"phase": "analyzing", "label": finish_label,
+                           "current": lines_done + chunk_total, "total": total_lines})
+                final_msg = await stream.get_final_message()
+
+            if final_msg.stop_reason == 'max_tokens':
+                logger.warning("Extraction chunk %d/%d truncated at max_tokens", i + 1, n_chunks)
+                suffix = f" (part {i + 1} of {n_chunks})" if n_chunks > 1 else ""
+                yield evt({"phase": "error",
+                           "message": f"Claude's response was cut off{suffix} — this section may be unusually dense."})
+                return
+
+            parse_label = (f"Processing part {i + 1} of {n_chunks} response…"
+                           if n_chunks > 1 else "Processing response…")
+            yield evt({"phase": "analyzing", "label": parse_label,
+                       "current": lines_done + chunk_total, "total": total_lines})
+
+            raw_json = full_text.strip()
+            logger.debug("Extraction chunk %d raw response (first 300): %s", i + 1, raw_json[:300])
+            raw_json = _re.sub(r"```json\s*", "", raw_json)
+            raw_json = _re.sub(r"```\s*", "", raw_json)
+            raw_json = raw_json.strip()
+            try:
+                parsed_chunk = json.loads(raw_json)
+            except json.JSONDecodeError:
+                match = _re.search(r'\{.*\}', raw_json, _re.DOTALL)
+                if not match:
+                    logger.error("Extraction JSON parse error in chunk %d", i + 1)
+                    yield evt({"phase": "error",
+                               "message": f"Claude returned invalid JSON for part {i + 1}."})
+                    return
+                parsed_chunk = json.loads(match.group())
+
+            chunk_results.append(parsed_chunk)
+            lines_done += chunk_total
+            if i + 1 < n_chunks:
+                next_label = f"Starting part {i + 2} of {n_chunks}…"
+                yield evt({"phase": "analyzing", "label": next_label,
+                           "current": lines_done, "total": total_lines})
+
+    except Exception as e:
+        logger.error("Extraction stream error: %s", e)
+        yield evt({"phase": "error", "message": str(e)})
+        return
+
+    merge_label = "Merging results…" if n_chunks > 1 else "Processing results…"
+    yield evt({"phase": "processing", "label": merge_label, "current": total_lines, "total": total_lines})
+
+    parsed, flags = _merge_results(chunk_results)
+    logger.debug("Extraction merged %d chunks: %s", n_chunks,
+                 {k: len(v) for k, v in parsed.items() if isinstance(v, list)})
+
+    counts = {}
+    for k, v in parsed.items():
+        if isinstance(v, list) and v:
+            counts[k] = len(v)
+        elif k == "tank_specs" and isinstance(v, dict):
+            non_null = sum(1 for val in v.values() if val is not None)
+            if non_null:
+                counts[k] = non_null
+
+    yield evt({"phase": "complete", "preview": parsed, "counts": counts, "flags": flags})
+
+
 @router.post("/tanks/{tank_id}/import")
 async def import_preview(tank_id: int, file: UploadFile = File(...)):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -206,135 +335,47 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
     if len(content) > 100000:
         content = content[:100000] + "\n...[truncated]"
 
-    chunks = _split_chunks(content, max_chars=8000)
-    n_chunks = len(chunks)
-    chunk_line_counts = [max(1, c.count('\n') + 1) for c in chunks]
-    total_lines = sum(chunk_line_counts)
+    return StreamingResponse(
+        _extraction_sse_stream(content, api_key),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
-    async def generate():
-        import anthropic
-        import re as _re
 
-        def evt(payload):
-            return f'data: {json.dumps(payload)}\n\n'
+@router.get("/tanks/{tank_id}/quick-log-page", response_class=HTMLResponse)
+async def quick_log_page(request: Request, tank_id: int):
+    with get_db() as conn:
+        tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
+    return templates.TemplateResponse("tanks/quick_log.html", {"request": request, "tank": tank})
 
-        yield evt({"phase": "analyzing", "label": "Analyzing with AI…", "current": 0, "total": total_lines})
 
-        try:
-            client = anthropic.AsyncAnthropic(api_key=api_key)
-            chunk_results = []
-            lines_done = 0
+@router.post("/tanks/{tank_id}/quick-log")
+async def quick_log(tank_id: int, request: Request):
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
 
-            for i, chunk in enumerate(chunks):
-                label = f"Analyzing part {i + 1} of {n_chunks}…" if n_chunks > 1 else "Analyzing with AI…"
-                chunk_total = chunk_line_counts[i]
-                chunk_current = 0
-                chunk_header = (
-                    f"[Part {i + 1} of {n_chunks} — extract all data found in this section]\n\n"
-                    if n_chunks > 1 else ""
-                )
-                full_text = ''
-                chars_since_update = 0
+    with get_db() as conn:
+        tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+    if not tank:
+        raise HTTPException(status_code=404, detail="Tank not found")
 
-                # Signal start of this chunk immediately, before waiting for Claude
-                yield evt({"phase": "analyzing", "label": label, "current": lines_done, "total": total_lines})
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
 
-                async with client.messages.stream(
-                    model="claude-sonnet-4-6",
-                    max_tokens=32000,
-                    messages=[{"role": "user", "content": IMPORT_PROMPT + chunk_header + chunk}],
-                ) as stream:
-                    async for text in stream.text_stream:
-                        full_text += text
-                        new_lines = text.count('\n')
-                        chars_since_update += len(text)
-                        if new_lines > 0:
-                            chunk_current += new_lines
-                            chars_since_update = 0
-                            bar_pos = min(chunk_current, chunk_total)
-                            if chunk_current > chunk_total:
-                                active_label = (
-                                    f"Receiving response, part {i + 1} of {n_chunks}… ({chunk_current} lines)"
-                                    if n_chunks > 1 else f"Receiving AI response… ({chunk_current} lines)"
-                                )
-                            else:
-                                active_label = label
-                            yield evt({"phase": "analyzing", "label": active_label,
-                                       "current": lines_done + bar_pos, "total": total_lines})
-                        elif chars_since_update >= 400:
-                            chars_since_update = 0
-                            bar_pos = min(chunk_current, chunk_total)
-                            char_label = (
-                                f"Analyzing part {i + 1} of {n_chunks}… ({len(full_text):,} chars)"
-                                if n_chunks > 1 else f"Analyzing with AI… ({len(full_text):,} chars)"
-                            )
-                            yield evt({"phase": "analyzing", "label": char_label,
-                                       "current": lines_done + bar_pos, "total": total_lines})
-                    finish_label = (f"Finishing part {i + 1} of {n_chunks} response…"
-                                    if n_chunks > 1 else "Finishing AI response…")
-                    yield evt({"phase": "analyzing", "label": finish_label,
-                               "current": lines_done + chunk_total, "total": total_lines})
-                    final_msg = await stream.get_final_message()
-
-                if final_msg.stop_reason == 'max_tokens':
-                    logger.warning("Import chunk %d/%d truncated at max_tokens for tank %s", i + 1, n_chunks, tank_id)
-                    suffix = f" (part {i + 1} of {n_chunks})" if n_chunks > 1 else ""
-                    yield evt({"phase": "error",
-                               "message": f"Claude's response was cut off{suffix} — this section may be unusually dense."})
-                    return
-
-                parse_label = (f"Processing part {i + 1} of {n_chunks} response…"
-                               if n_chunks > 1 else "Processing response…")
-                yield evt({"phase": "analyzing", "label": parse_label,
-                           "current": lines_done + chunk_total, "total": total_lines})
-
-                raw_json = full_text.strip()
-                logger.debug("Import chunk %d raw response (first 300): %s", i + 1, raw_json[:300])
-                raw_json = _re.sub(r"```json\s*", "", raw_json)
-                raw_json = _re.sub(r"```\s*", "", raw_json)
-                raw_json = raw_json.strip()
-                try:
-                    parsed_chunk = json.loads(raw_json)
-                except json.JSONDecodeError:
-                    match = _re.search(r'\{.*\}', raw_json, _re.DOTALL)
-                    if not match:
-                        logger.error("Import JSON parse error in chunk %d", i + 1)
-                        yield evt({"phase": "error",
-                                   "message": f"Claude returned invalid JSON for part {i + 1}."})
-                        return
-                    parsed_chunk = json.loads(match.group())
-
-                chunk_results.append(parsed_chunk)
-                lines_done += chunk_total
-                if i + 1 < n_chunks:
-                    next_label = f"Starting part {i + 2} of {n_chunks}…"
-                    yield evt({"phase": "analyzing", "label": next_label,
-                               "current": lines_done, "total": total_lines})
-
-        except Exception as e:
-            logger.error("Import stream error: %s", e)
-            yield evt({"phase": "error", "message": str(e)})
-            return
-
-        merge_label = "Merging results…" if n_chunks > 1 else "Processing results…"
-        yield evt({"phase": "processing", "label": merge_label, "current": total_lines, "total": total_lines})
-
-        parsed, flags = _merge_results(chunk_results)
-        logger.debug("Import merged %d chunks: %s", n_chunks, {k: len(v) for k, v in parsed.items() if isinstance(v, list)})
-
-        counts = {}
-        for k, v in parsed.items():
-            if isinstance(v, list) and v:
-                counts[k] = len(v)
-            elif k == "tank_specs" and isinstance(v, dict):
-                non_null = sum(1 for val in v.values() if val is not None)
-                if non_null:
-                    counts[k] = non_null
-
-        yield evt({"phase": "complete", "preview": parsed, "counts": counts, "flags": flags})
+    from datetime import date
+    today = date.today().isoformat()
+    content = (
+        f"[Today's date: {today}. Use this date for any entries that do not include an explicit date.]\n\n"
+        + text
+    )
 
     return StreamingResponse(
-        generate(),
+        _extraction_sse_stream(content, api_key),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

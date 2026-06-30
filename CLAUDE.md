@@ -146,26 +146,55 @@ Import prompt includes rule 10 for parsing `recurring_schedule` from narrative t
 
 Management page: `/tanks/{id}/schedule`
 
+## Quick Log (added 2026-06-30)
+
+Primary logging workflow — textarea instead of file upload:
+
+- **Dashboard button**: "⚡ Quick Log" (highlighted primary style) opens a modal with a large textarea
+- On submit: text is stored in `sessionStorage`, browser navigates to `/tanks/{id}/quick-log-page`
+- That page auto-reads the text and POSTs JSON `{"text": "..."}` to `POST /tanks/{id}/quick-log`
+- Today's date is prepended as `[Today's date: YYYY-MM-DD]` so undated entries default to today
+- Same SSE streaming response, same review UI (editable tables, flags, dup detection), same confirm flow as import
+- Confirm goes to the existing `/tanks/{id}/import/confirm` endpoint — no new insertion logic needed
+
+**Backend refactor**: The `generate()` closure inside `import_preview` was extracted into a module-level async generator `_extraction_sse_stream(content, api_key)`. Both `import_preview` and `quick_log` call it; zero logic duplication.
+
+New routes (in `import_data.py`):
+- `GET /tanks/{id}/quick-log-page` → renders `tanks/quick_log.html`
+- `POST /tanks/{id}/quick-log` → JSON body `{"text": "..."}` → SSE extraction stream
+
+Template: `fathom/templates/tanks/quick_log.html`
+
 ## Current state (as of 2026-06-30)
 
-- Recurring schedule feature added (see above); 171 tests passing
-- Full app built, all fixes applied, committed, and smoke-tested end-to-end
+- Quick Log feature added (see above); 177 tests passing
+- Recurring schedule feature added; full app built and committed
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
-- Import tested from scratch against a narrative journal: all 10 data types extracted correctly, tank specs auto-filled from Claude's product knowledge, "many" count, issue resolution patterns, flags — everything verified in DB
 - **Not yet deployed to Mac mini** — commits on local main, remote: `git@github.com:the-mace/aquarium-tracker.git`
 - Next step: push to remote and restart launchd service on Mac mini (192.168.50.205)
-- **Prompt caching**: not implemented — all three AI call sites (ai_analysis, chat, import) build fully dynamic prompts from live DB state; call volume too low for caching to pay off; revisit if multi-user
+- **Prompt caching**: not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user
 
 ## Testing
 
-171 pytest integration tests in `fathom/tests/`. Run with:
+177 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link.
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints.
+
+### Changes in 2026-06-30 session (second)
+- Quick Log: dashboard modal → sessionStorage handoff → `/tanks/{id}/quick-log-page` with auto-start parse
+- Refactor: `_extraction_sse_stream` extracted from `import_preview`; both import and quick-log reuse it
+- New routes: `GET/POST /tanks/{id}/quick-log`, `GET /tanks/{id}/quick-log-page`
+- New template: `tanks/quick_log.html`
+- CSS: `.action-btn-primary` for highlighted Quick Log button
+- Tests: 6 new quick-log endpoint tests
+
+### Changes in 2026-06-30 session (first)
+- Recurring schedule feature added (see above)
 
 ### Changes in 2026-06-29 session
 - Schema: `plants` and `hardscape` tables (both cascade-delete with tank)

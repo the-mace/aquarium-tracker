@@ -199,6 +199,9 @@
 
 <!-- Quick Actions -->
 <div class="quick-actions">
+  <button class="action-btn action-btn-primary" onclick="openModal('modal-quick-log')">
+    <span class="action-icon">⚡</span> Quick Log
+  </button>
   <button class="action-btn" onclick="openModal('modal-test')">
     <span class="action-icon">🧪</span> Log Test
   </button>
@@ -361,6 +364,20 @@
 </details>
 
 <!-- Modals -->
+<div id="modal-quick-log" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Quick Log</h3><button class="modal-close" onclick="closeModal('modal-quick-log')">×</button></div>
+    <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">Paste or type a freeform entry — test values, events, observations. Claude will parse it into structured records for review.</p>
+    <div class="form-group">
+      <textarea id="quick-log-text" rows="8" placeholder="e.g.&#10;pH 7.2, ammonia 0, nitrate 10&#10;20% water change&#10;Shrimp looking active"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" type="button" onclick="closeModal('modal-quick-log')">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="submitQuickLog()">Parse with AI →</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal-test" class="modal" style="display:none">
   <div class="modal-box">
     <div class="modal-header"><h3>Log Water Test</h3><button class="modal-close" onclick="closeModal('modal-test')">×</button></div>
@@ -488,5 +505,12 @@
 <script>
 const TANK_ID = {{ tank.id }};
 initDashboard(TANK_ID);
+
+function submitQuickLog() {
+  const text = document.getElementById('quick-log-text').value.trim();
+  if (!text) { alert('Please enter some text to log.'); return; }
+  sessionStorage.setItem('quickLogText', text);
+  window.location.href = `/tanks/${TANK_ID}/quick-log-page`;
+}
 </script>
 {% endblock %}

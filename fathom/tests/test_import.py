@@ -604,3 +604,39 @@ def test_split_chunks_no_content_lost():
     rejoined = "\n\n".join(chunks)
     for para in paras:
         assert para in rejoined
+
+
+# ── quick-log endpoint tests ──────────────────────────────────────────────────
+
+def test_quick_log_page_returns_200(client, tank_id):
+    r = client.get(f"/tanks/{tank_id}/quick-log-page")
+    assert r.status_code == 200
+    assert b"Quick Log" in r.content
+
+
+def test_quick_log_page_404_for_unknown_tank(client):
+    assert client.get("/tanks/9999/quick-log-page").status_code == 404
+
+
+def test_quick_log_empty_text_returns_400(client, tank_id, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    r = client.post(f"/tanks/{tank_id}/quick-log", json={"text": ""})
+    assert r.status_code == 400
+
+
+def test_quick_log_missing_text_field_returns_400(client, tank_id, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    r = client.post(f"/tanks/{tank_id}/quick-log", json={})
+    assert r.status_code == 400
+
+
+def test_quick_log_no_api_key_returns_503(client, tank_id, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    r = client.post(f"/tanks/{tank_id}/quick-log", json={"text": "pH 7.2"})
+    assert r.status_code == 503
+
+
+def test_quick_log_404_for_unknown_tank(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    r = client.post("/tanks/9999/quick-log", json={"text": "pH 7.2"})
+    assert r.status_code == 404
