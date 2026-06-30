@@ -141,6 +141,62 @@
 </div>
 {% endif %}
 
+<!-- Schedule Widgets -->
+{% if today_schedule or maintenance_items %}
+<div class="two-col-row">
+  {% if today_schedule %}
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Today's Schedule</h3>
+      <span class="muted" style="font-size:.75rem">{{ today_dow_label }}</span>
+    </div>
+    {% set ns = namespace(cur_cat='') %}
+    {% for s in today_schedule %}
+      {% if s.category != ns.cur_cat %}
+        {% if ns.cur_cat %}</div>{% endif %}
+        {% set ns.cur_cat = s.category %}
+        <div class="sched-group">
+        <div class="sched-group-label">{{ s.category }}</div>
+      {% endif %}
+      <div class="sched-today-item">{{ s.description }}</div>
+    {% endfor %}
+    {% if ns.cur_cat %}</div>{% endif %}
+    <div class="stat-card-footer"><a href="/tanks/{{ tank.id }}/schedule" class="link-sm">Manage →</a></div>
+  </div>
+  {% endif %}
+
+  {% if maintenance_items %}
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Maintenance</h3>
+      <a href="/tanks/{{ tank.id }}/schedule" class="link-sm">Manage →</a>
+    </div>
+    <div class="maint-list">
+      {% for m in maintenance_items %}
+      <div class="maint-row">
+        <div class="maint-row-info">
+          <span class="maint-desc">{{ m.description }}</span>
+          {% if m.next_due %}
+            <span class="maint-due {% if m.next_due < today_date %}maint-overdue{% elif m.next_due == today_date %}maint-due-today{% else %}maint-upcoming{% endif %}">
+              {% if m.next_due < today_date %}overdue {{ m.next_due }}{% elif m.next_due == today_date %}due today{% else %}due {{ m.next_due }}{% endif %}
+            </span>
+          {% elif not m.interval_days %}
+            <span class="maint-due muted">manual reminder</span>
+          {% else %}
+            <span class="maint-due muted">not yet done</span>
+          {% endif %}
+        </div>
+        <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" style="display:inline">
+          <button class="btn btn-xs btn-ghost" type="submit">✓ Done</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Quick Actions -->
 <div class="quick-actions">
   <button class="action-btn" onclick="openModal('modal-test')">
@@ -160,6 +216,9 @@
   </a>
   <a href="/tanks/{{ tank.id }}/import-page" class="action-btn">
     <span class="action-icon">📥</span> Import
+  </a>
+  <a href="/tanks/{{ tank.id }}/schedule" class="action-btn">
+    <span class="action-icon">📅</span> Schedule
   </a>
 </div>
 

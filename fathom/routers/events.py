@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -28,19 +29,34 @@ async def add_event(
     notes: Optional[str] = Form(None),
     amount: Optional[float] = Form(None),
     timestamp: Optional[str] = Form(None),
+    schedule_id: Optional[int] = Form(None),
 ):
     with get_db() as conn:
         if timestamp:
             cur = conn.execute(
-                "INSERT INTO events (tank_id, event_type, notes, amount, timestamp) VALUES (?,?,?,?,?)",
-                (tank_id, event_type, notes, amount, timestamp),
+                "INSERT INTO events (tank_id, event_type, notes, amount, timestamp, schedule_id) VALUES (?,?,?,?,?,?)",
+                (tank_id, event_type, notes, amount, timestamp, schedule_id),
             )
         else:
             cur = conn.execute(
-                "INSERT INTO events (tank_id, event_type, notes, amount) VALUES (?,?,?,?)",
-                (tank_id, event_type, notes, amount),
+                "INSERT INTO events (tank_id, event_type, notes, amount, schedule_id) VALUES (?,?,?,?,?)",
+                (tank_id, event_type, notes, amount, schedule_id),
             )
         event_id = cur.lastrowid
+
+        if event_type == "maintenance" and schedule_id:
+            sched = row_to_dict(conn.execute(
+                "SELECT * FROM recurring_schedule WHERE id=? AND tank_id=?", (schedule_id, tank_id)
+            ).fetchone())
+            if sched:
+                event_date = timestamp[:10] if timestamp else date.today().isoformat()
+                next_due = None
+                if sched.get("interval_days"):
+                    next_due = (date.fromisoformat(event_date) + timedelta(days=sched["interval_days"])).isoformat()
+                conn.execute(
+                    "UPDATE recurring_schedule SET last_done=?, next_due=?, updated_at=datetime('now') WHERE id=?",
+                    (event_date, next_due, schedule_id),
+                )
 
     from routers.ai_analysis import run_ai_analysis
     background_tasks.add_task(run_ai_analysis, tank_id, "event", event_id)

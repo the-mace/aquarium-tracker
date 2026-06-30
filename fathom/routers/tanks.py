@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -127,6 +128,29 @@ async def tank_detail(request: Request, tank_id: int):
             (tank_id,),
         ).fetchall())
 
+        today_dow = date.today().strftime('%a').lower()
+        today_date = date.today().isoformat()
+
+        today_schedule = rows_to_list(conn.execute(
+            """SELECT * FROM recurring_schedule
+               WHERE tank_id=? AND is_active=1 AND tracking_mode='reference_only'
+                 AND (day_of_week=? OR day_of_week IS NULL)
+               ORDER BY category,
+                 CASE day_of_week WHEN 'mon' THEN 0 WHEN 'tue' THEN 1 WHEN 'wed' THEN 2
+                   WHEN 'thu' THEN 3 WHEN 'fri' THEN 4 WHEN 'sat' THEN 5 WHEN 'sun' THEN 6
+                   ELSE 7 END""",
+            (tank_id, today_dow),
+        ).fetchall())
+
+        maintenance_items = rows_to_list(conn.execute(
+            """SELECT * FROM recurring_schedule
+               WHERE tank_id=? AND is_active=1 AND tracking_mode='logged'
+               ORDER BY CASE WHEN next_due IS NULL THEN 1 ELSE 0 END, next_due""",
+            (tank_id,),
+        ).fetchall())
+
+    today_dow_label = date.today().strftime('%A')
+
     return templates.TemplateResponse("tanks/detail.html", {
         "request": request,
         "tank": tank,
@@ -140,6 +164,10 @@ async def tank_detail(request: Request, tank_id: int):
         "recent_purchases": recent_purchases,
         "plants": plants,
         "hardscape": hardscape,
+        "today_schedule": today_schedule,
+        "maintenance_items": maintenance_items,
+        "today_dow_label": today_dow_label,
+        "today_date": today_date,
     })
 
 

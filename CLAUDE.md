@@ -43,10 +43,11 @@ aquarium-tracker/
 │   │   ├── observations.py  # Manual + AI observations
 │   │   ├── chat.py          # AI chat (in-memory session, 10-turn limit)
 │   │   ├── import_data.py   # File upload → Claude extraction → bulk insert
+│   │   ├── schedules.py     # Recurring schedule CRUD + mark-done
 │   │   └── ai_analysis.py   # BackgroundTask: auto-analysis on test/event save
 │   ├── templates/
 │   │   ├── base.html        # Sidebar nav, Chart.js CDN
-│   │   ├── tanks/           # list, detail, form, import
+│   │   ├── tanks/           # list, detail, form, import, schedule
 │   │   ├── inhabitants/     # list with inline edit modal
 │   │   ├── observations/    # list
 │   │   └── ...              # other section templates
@@ -79,6 +80,7 @@ All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
 | `issues` | Issue tracker (status: open/investigating/resolved, opened_at, resolved_at) |
 | `observations` | AI (source=auto) and manual (source=manual) notes |
 | `tank_state_summary` | Latest AI summary upserted per tank |
+| `recurring_schedule` | Feeding/dosing/maintenance plans; tracking_mode=reference_only (no log) or logged (due-date tracking) |
 
 ## AI features
 
@@ -130,8 +132,23 @@ Claude fills in known product specs (Fluval Spec V etc.) from training data. Iss
 
 The review screen shows editable tables per section with flagged rows highlighted. Users check/uncheck rows before confirming. Only selected rows are written.
 
-## Current state (as of 2026-06-29)
+## Recurring Schedule (added 2026-06-30)
 
+`recurring_schedule` table with two tracking modes:
+- **reference_only** (feeding, dosing): shown in "Today's Schedule" widget on dashboard, matching `day_of_week` to today. Multiple rows per day allowed. No logging required.
+- **logged** (maintenance): shown in "Maintenance Due" widget. Tracks `last_done` + `next_due` (= last_done + interval_days). Mark-done creates a linked `events` row and updates due date.
+
+`events.schedule_id` (nullable FK): links maintenance events to their schedule entry. Set automatically by mark-done; can also be set when logging events manually.
+
+Seed data seeded on startup for "Fish Tank 5G" (5G shrimp tank). The 40G tank seed runs automatically once a tank with volume 38-45g exists in the DB. The 40G seed includes Clean pre-filter (30d), Clean all stages (75d), and Squeeze sponge (manual reminder, no interval).
+
+Import prompt includes rule 10 for parsing `recurring_schedule` from narrative text.
+
+Management page: `/tanks/{id}/schedule`
+
+## Current state (as of 2026-06-30)
+
+- Recurring schedule feature added (see above); 171 tests passing
 - Full app built, all fixes applied, committed, and smoke-tested end-to-end
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
@@ -142,18 +159,18 @@ The review screen shows editable tables per section with flagged rows highlighte
 
 ## Testing
 
-118 pytest integration tests in `fathom/tests/`. Run with:
+171 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters.
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link.
 
 ### Changes in 2026-06-29 session
 - Schema: `plants` and `hardscape` tables (both cascade-delete with tank)
 - UI: events show date only (no time, no amount); tank specs panel on dashboard; plants/hardscape cards; modal close CSS fix (flex !important vs display: none); inhabitants "many" toggle (null count)
 - AI: chat context now injects all water params explicitly, plants, hardscape, open issues, 5 observations, tank hardware/substrate; debug log for context length; ai_analysis includes plants/hardscape in summary prompt
-- Import: rich extraction prompt covering issues/plants/hardscape/observations/tank_specs/narrative equipment; interactive flagged review UI with editable tables, per-row checkboxes, amber flag highlighting; sidebar nav link added
+- Import: rich extraction prompt covering issues, plants, hardscape, observations, tank_specs, narrative equipment; interactive flagged review UI with editable tables, per-row checkboxes, amber flag highlighting; sidebar nav link added
 - Tests: 118 pytest integration tests added (`fathom/tests/`); `pytest.ini` with `pythonpath = fathom`; AI and DB isolated per test via monkeypatch
 - Repo: MIT LICENSE added; `.gitignore` updated with pytest/coverage entries

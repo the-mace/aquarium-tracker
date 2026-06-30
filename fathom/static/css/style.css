@@ -755,6 +755,146 @@ p { margin-bottom: .5rem; }
 .plant-species { color: var(--muted); font-size: .8rem; font-style: italic; }
 .hs-qty { color: var(--primary); font-weight: 600; font-size: .85rem; min-width: 1.5rem; }
 
+/* ── Timeline ───────────────────────────────────────────────────────────── */
+.tl-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  font-size: .78rem;
+  color: var(--muted);
+}
+.tl-legend-item { display: flex; align-items: center; gap: .35rem; }
+
+.timeline {
+  position: relative;
+  padding-left: 1.75rem;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: .35rem;
+  top: .5rem;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+.tl-date-group { margin-bottom: 1.5rem; }
+.tl-date-header {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-left: -1.75rem;
+  padding: .1rem 0 .6rem 1.75rem;
+}
+
+.tl-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .3rem 0;
+  min-height: 1.8rem;
+}
+
+/* shared dot */
+.tl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: .35rem;
+  position: absolute;
+  left: -1.45rem;
+  background: var(--border);
+  border: 2px solid var(--bg);
+}
+/* legend dots (inline, not absolute) */
+.tl-legend-item .tl-dot { position: static; margin-top: 0; }
+
+.tl-dot-event         { background: var(--accent); }
+.tl-dot-issue_open    { background: #f87171; }
+.tl-dot-issue_resolve { background: var(--primary); }
+.tl-dot-equip_install { background: var(--primary); }
+.tl-dot-equip_remove  { background: var(--muted); }
+.tl-dot-population    { background: var(--accent); }
+.tl-dot-pop-in        { background: var(--primary); }
+.tl-dot-pop-out       { background: #f87171; }
+
+.tl-body { flex: 1; min-width: 0; }
+.tl-header { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; line-height: 1.4; }
+.tl-label { font-size: .88rem; color: var(--text); }
+.tl-amount { font-size: .85rem; color: var(--primary); font-weight: 600; }
+
+.tl-badge {
+  font-size: .65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: .1rem .45rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.tl-badge-event         { background: rgba(56,189,248,.12); color: var(--accent); }
+.tl-badge-issue-open    { background: rgba(239,68,68,.15); color: #f87171; }
+.tl-badge-issue-resolve { background: rgba(0,196,160,.15); color: var(--primary); }
+.tl-badge-equip         { background: rgba(0,196,160,.12); color: var(--primary); }
+.tl-badge-equip-remove  { background: rgba(148,163,184,.12); color: var(--muted); }
+.tl-badge-pop-added     { background: rgba(0,196,160,.12); color: var(--primary); }
+.tl-badge-pop-born      { background: rgba(56,189,248,.12); color: var(--accent); }
+.tl-badge-pop-died      { background: rgba(239,68,68,.15); color: #f87171; }
+.tl-badge-pop-removed   { background: rgba(148,163,184,.12); color: var(--muted); }
+
+.tl-detail {
+  font-size: .8rem;
+  color: var(--muted);
+  margin-top: .1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Schedule (dashboard widgets + management page) ────────────────────── */
+.sched-group { margin-bottom: .6rem; }
+.sched-group-label {
+  font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin-bottom: .25rem;
+}
+.sched-today-item {
+  font-size: .875rem; padding: .2rem 0; color: var(--text);
+  border-left: 2px solid var(--primary); padding-left: .5rem; margin-bottom: .2rem;
+}
+
+.maint-list { display: flex; flex-direction: column; gap: .5rem; }
+.maint-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.maint-row-info { display: flex; flex-direction: column; gap: .1rem; flex: 1; min-width: 0; }
+.maint-desc { font-size: .875rem; color: var(--text); }
+.maint-due { font-size: .72rem; }
+.maint-overdue { color: #f87171; font-weight: 600; }
+.maint-due-today { color: var(--warning); font-weight: 600; }
+.maint-upcoming { color: var(--muted); }
+
+.sched-list { display: flex; flex-direction: column; gap: .1rem; }
+.sched-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .75rem; padding: .45rem .25rem;
+  border-bottom: 1px solid var(--border);
+}
+.sched-row:last-child { border-bottom: 0; }
+.sched-row-inactive { opacity: .5; }
+.sched-row-left { display: flex; align-items: center; gap: .6rem; flex: 1; min-width: 0; }
+.sched-row-right { display: flex; align-items: center; gap: .6rem; flex-shrink: 0; }
+.sched-day { font-size: .72rem; font-weight: 600; color: var(--accent); min-width: 4.5rem; }
+.sched-day-float { color: var(--muted); }
+.sched-desc { font-size: .875rem; color: var(--text); }
+.sched-maint-meta { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.sched-actions { display: flex; gap: .3rem; }
+.sched-overdue { color: #f87171; font-weight: 600; }
+.sched-due-today { color: var(--warning); font-weight: 600; }
+
 /* ── Utility ────────────────────────────────────────────────────────────── */
 .muted { color: var(--muted); }
 .muted.panel-empty { padding: .5rem 0; }

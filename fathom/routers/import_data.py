@@ -64,7 +64,7 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
     {"species": null, "common_name": "", "added_date": null, "source": null, "notes": null, "status": "active"}
   ],
   "equipment": [
-    {"category": "filter", "brand": null, "model": null, "specs": {}, "installed_date": null, "notes": ""}
+    {"category": "filter", "brand": null, "model": null, "specs": {}, "installed_date": null, "removed_date": null, "notes": ""}
   ],
   "hardscape": [
     {"item": "", "quantity": 1, "source": null, "cost": null, "added_date": null, "notes": null}
@@ -75,6 +75,11 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
   "observations": [
     {"text": "", "created_at": "YYYY-MM-DD HH:MM:SS"}
   ],
+  "recurring_schedule": [
+    {"category": "feeding", "tracking_mode": "reference_only", "day_of_week": "mon",
+     "description": "Flakes 2x pinch", "interval_type": null, "interval_days": null,
+     "last_done": null, "next_due": null, "notes": null}
+  ],
   "flags": [
     {"section": "test_results", "index": 0, "field": "kh", "message": "KH of 22 is very high for freshwater (typical range: 3-12 dKH). Please verify."}
   ]
@@ -83,7 +88,7 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
 EXTRACTION RULES (follow carefully):
 1. PURCHASES: Capture ALL cost items — initial setup costs mentioned in intro paragraphs, individual item purchases, consumables. If a total cost is mentioned without itemization, create one purchase record for it.
 2. TANK SPECS: If you can identify the tank manufacturer/model (e.g. "Fluval Spec V", "Fluval Spec III", "ADA 60-P"), fill in standard dimensions and volume from your knowledge if not explicitly stated. Note inferred values in the notes field.
-3. EQUIPMENT: Be exhaustive — include filter media modifications (foam blocks, bio-media, ceramic rings), prefilter sponges, nozzle changes, floating plant corrals, UV sterilizers, CO2 systems, and any hardware mentioned narratively, not just in structured equipment lists.
+3. EQUIPMENT: Be exhaustive — include filter media modifications (foam blocks, bio-media, ceramic rings), prefilter sponges, nozzle changes, floating plant corrals, UV sterilizers, CO2 systems, and any hardware mentioned narratively, not just in structured equipment lists. If a piece of equipment was removed, replaced, or decommissioned, set removed_date to when it was removed — the timeline view uses this date.
 4. ISSUES: Look for problem/resolution patterns:
    - "had algae bloom for weeks until I added UV sterilizer which fixed it" → resolved issue, resolved_at = date UV was added
    - "struggling with high nitrates, not sure what to do" → open issue
@@ -98,6 +103,8 @@ EXTRACTION RULES (follow carefully):
    - Any value you're uncertain about
 8. SPLIT MULTI-TYPE ENTRIES: A single dated log block often records multiple things at once — a water test AND a water change AND dosing AND observations. Always produce separate records for each, all sharing the same date. Never collapse them into one row or omit the secondary items. Example: "2024-03-15: pH 7.2, kh 5 | 20% WC | dosed Flourish | shrimp active" → 1 test_result (ph=7.2, kh=5) + 1 water_change event (amount=20) + 1 maintenance event (notes="Flourish dose") + 1 observation (shrimp active), all dated 2024-03-15.
 9. TEST KIT METHODOLOGY: Phrases describing how a test was performed ("went blue to green", "9 drops to change color", "waited 5 min", "API kit") describe kit procedure, not numeric values. Store them in the test_result's notes field if informative, or discard them entirely. Never parse kit methodology text as a numeric water parameter.
+
+10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun, or null for floating/weekly tasks.
 
 Valid event_type values: water_change, feeding, purchase, observation, treatment, maintenance, other
 Valid equipment categories: filter, heater, light, uv, pump, co2, other
@@ -135,7 +142,7 @@ def _merge_results(results: list) -> tuple:
     merged = {}
     all_flags = []
     array_keys = ["test_results", "events", "purchases", "inhabitants", "plants",
-                  "equipment", "hardscape", "issues", "observations"]
+                  "equipment", "hardscape", "issues", "observations", "recurring_schedule"]
     for result in results:
         specs = result.get("tank_specs")
         if specs and isinstance(specs, dict):
@@ -573,10 +580,13 @@ async def import_confirm(tank_id: int, request: Request):
             specs_val = eq.get("specs")
             if isinstance(specs_val, dict):
                 specs_val = json.dumps(specs_val)
+            removed = eq.get("removed_date") or None
+            is_active = 0 if removed else 1
             conn.execute(
-                "INSERT INTO tank_equipment (tank_id, category, brand, model, specs, installed_date, notes) VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO tank_equipment (tank_id, category, brand, model, specs, installed_date, removed_date, is_active, notes)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
                 (tank_id, eq.get("category", "other"), eq.get("brand"),
-                 eq.get("model"), specs_val, eq.get("installed_date"), eq.get("notes")),
+                 eq.get("model"), specs_val, eq.get("installed_date"), removed, is_active, eq.get("notes")),
             )
         inserted["equipment"] = len(preview.get("equipment", []))
 
@@ -612,6 +622,24 @@ async def import_confirm(tank_id: int, request: Request):
                     (tank_id, "manual", obs.get("text", "")),
                 )
         inserted["observations"] = len(preview.get("observations", []))
+
+        # Recurring schedule
+        for rs in preview.get("recurring_schedule", []):
+            cat = rs.get("category", "feeding")
+            tracking_mode = "logged" if cat == "maintenance" else "reference_only"
+            dow = rs.get("day_of_week")
+            if dow and dow not in ("mon","tue","wed","thu","fri","sat","sun"):
+                dow = None
+            conn.execute(
+                """INSERT INTO recurring_schedule
+                   (tank_id, category, tracking_mode, day_of_week, description,
+                    interval_type, interval_days, last_done, next_due, is_active, notes)
+                   VALUES (?,?,?,?,?,?,?,?,?,1,?)""",
+                (tank_id, cat, tracking_mode, dow,
+                 rs.get("description", ""), rs.get("interval_type"), rs.get("interval_days"),
+                 rs.get("last_done"), rs.get("next_due"), rs.get("notes")),
+            )
+        inserted["recurring_schedule"] = len(preview.get("recurring_schedule", []))
 
     # Only report non-zero counts
     inserted = {k: v for k, v in inserted.items() if v}

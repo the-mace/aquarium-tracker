@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Schedule — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "schedule" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Schedule — {{ tank.name }}</h1>
+    <p class="muted" style="font-size:.85rem;margin-top:.25rem">Reference and maintenance tracking for recurring tasks.</p>
+  </div>
+  <button class="btn btn-primary" onclick="openModal('modal-add')">+ Add Entry</button>
+</div>
+
+{% for cat_key, cat_label in [('feeding','Feeding'), ('dosing','Dosing'), ('maintenance','Maintenance')] %}
+{% set entries = by_cat[cat_key] %}
+{% if entries %}
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel-header">
+    <h3>{{ cat_label }}</h3>
+    {% if cat_key == 'maintenance' %}<span class="muted" style="font-size:.75rem">due-date tracked</span>{% else %}<span class="muted" style="font-size:.75rem">reference only</span>{% endif %}
+  </div>
+  <div class="sched-list">
+    {% for s in entries %}
+    <div class="sched-row {% if not s.is_active %}sched-row-inactive{% endif %}">
+      <div class="sched-row-left">
+        {% if s.day_of_week %}
+        <span class="sched-day">{{ dow_labels[s.day_of_week] }}</span>
+        {% else %}
+        <span class="sched-day sched-day-float">—</span>
+        {% endif %}
+        <span class="sched-desc">{{ s.description }}</span>
+        {% if not s.is_active %}<span class="badge badge-inactive">inactive</span>{% endif %}
+      </div>
+      <div class="sched-row-right">
+        {% if cat_key == 'maintenance' %}
+          <div class="sched-maint-meta">
+            {% if s.interval_days %}
+              <span class="muted" style="font-size:.75rem">every {{ s.interval_days }}d</span>
+            {% endif %}
+            {% if s.last_done %}
+              <span class="muted" style="font-size:.75rem">done {{ s.last_done }}</span>
+            {% endif %}
+            {% if s.next_due %}
+              <span class="{% if s.next_due < today %}sched-overdue{% elif s.next_due == today %}sched-due-today{% else %}muted{% endif %}" style="font-size:.75rem">
+                due {{ s.next_due }}{% if s.next_due < today %} ⚠{% endif %}
+              </span>
+            {% elif not s.interval_days %}
+              <span class="muted" style="font-size:.75rem">manual reminder</span>
+            {% endif %}
+          </div>
+        {% endif %}
+        <div class="sched-actions">
+          {% if cat_key == 'maintenance' %}
+          <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ s.id }}/mark-done" style="display:inline">
+            <button class="btn btn-xs btn-ghost" type="submit">✓ Done</button>
+          </form>
+          {% endif %}
+          <button class="btn btn-xs btn-ghost" onclick="openEditSched({{ s|tojson }})">Edit</button>
+          <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ s.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete this schedule entry?')">
+            <button class="btn btn-xs btn-danger" type="submit">✕</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if not (by_cat.feeding or by_cat.dosing or by_cat.maintenance) %}
+<div class="empty-state">
+  <h2>No schedule entries</h2>
+  <p class="muted">Add feeding plans, dosing reminders, and maintenance tasks.</p>
+  <button class="btn btn-primary" onclick="openModal('modal-add')">Add Entry</button>
+</div>
+{% endif %}
+
+<!-- Add modal -->
+<div id="modal-add" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Add Schedule Entry</h3>
+      <button class="modal-close" onclick="closeModal('modal-add')">×</button>
+    </div>
+    <form method="post" action="/tanks/{{ tank.id }}/schedule">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Category</label>
+          <select name="category" id="add-category" onchange="syncSchedForm('add')">
+            <option value="feeding">Feeding</option>
+            <option value="dosing">Dosing</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+        <div class="form-group" id="add-dow-group">
+          <label>Day of week</label>
+          <select name="day_of_week">
+            <option value="">Floating / any day</option>
+            <option value="mon">Monday</option>
+            <option value="tue">Tuesday</option>
+            <option value="wed">Wednesday</option>
+            <option value="thu">Thursday</option>
+            <option value="fri">Friday</option>
+            <option value="sat">Saturday</option>
+            <option value="sun">Sunday</option>
+          </select>
+        </div>
+        <div class="form-group" id="add-interval-group" style="display:none">
+          <label>Interval (days)</label>
+          <input type="number" name="interval_days" min="1" placeholder="30 = monthly, 75 = every 2-3 mo">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:.75rem">
+        <label>Description *</label>
+        <input type="text" name="description" required placeholder="e.g. Shrimp Cuisine 1-2 pellets">
+      </div>
+      <div class="form-group" style="margin-top:.75rem">
+        <label>Notes</label>
+        <input type="text" name="notes" placeholder="Optional">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit modal -->
+<div id="modal-edit" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Edit Schedule Entry</h3>
+      <button class="modal-close" onclick="closeModal('modal-edit')">×</button>
+    </div>
+    <form id="edit-form" method="post">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Category</label>
+          <select name="category" id="edit-category" onchange="syncSchedForm('edit')">
+            <option value="feeding">Feeding</option>
+            <option value="dosing">Dosing</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+        <div class="form-group" id="edit-dow-group">
+          <label>Day of week</label>
+          <select name="day_of_week" id="edit-dow">
+            <option value="">Floating / any day</option>
+            <option value="mon">Monday</option>
+            <option value="tue">Tuesday</option>
+            <option value="wed">Wednesday</option>
+            <option value="thu">Thursday</option>
+            <option value="fri">Friday</option>
+            <option value="sat">Saturday</option>
+            <option value="sun">Sunday</option>
+          </select>
+        </div>
+        <div class="form-group" id="edit-interval-group" style="display:none">
+          <label>Interval (days)</label>
+          <input type="number" name="interval_days" id="edit-interval" min="1">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:.75rem">
+        <label>Description *</label>
+        <input type="text" name="description" id="edit-description" required>
+      </div>
+      <div class="form-group" style="margin-top:.75rem">
+        <label>Notes</label>
+        <input type="text" name="notes" id="edit-notes">
+      </div>
+      <div class="form-group" style="margin-top:.75rem">
+        <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+          <input type="checkbox" name="is_active" id="edit-active" value="1" style="width:auto">
+          Active
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncSchedForm(prefix) {
+  const cat = document.getElementById(prefix + '-category').value;
+  const isMaint = cat === 'maintenance';
+  const dowGroup = document.getElementById(prefix + '-dow-group');
+  const intGroup = document.getElementById(prefix + '-interval-group');
+  if (dowGroup) dowGroup.style.display = isMaint ? 'none' : '';
+  if (intGroup) intGroup.style.display = isMaint ? '' : 'none';
+}
+
+function openEditSched(s) {
+  const f = document.getElementById('edit-form');
+  f.action = '/tanks/{{ tank.id }}/schedule/' + s.id + '/update';
+  document.getElementById('edit-category').value = s.category || 'feeding';
+  document.getElementById('edit-dow').value = s.day_of_week || '';
+  document.getElementById('edit-description').value = s.description || '';
+  document.getElementById('edit-interval').value = s.interval_days || '';
+  document.getElementById('edit-notes').value = s.notes || '';
+  document.getElementById('edit-active').checked = !!s.is_active;
+  syncSchedForm('edit');
+  openModal('modal-edit');
+}
+</script>
+{% endblock %}
