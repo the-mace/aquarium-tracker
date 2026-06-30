@@ -913,6 +913,7 @@ p { margin-bottom: .5rem; }
 
 /* ── Reference Info (thumbnails + detail modal) ─────────────────────────── */
 .ref-thumb-col { width: 52px; padding: 0; }
+.ref-trigger { display: inline-flex; cursor: pointer; }
 .ref-thumb-cell { padding: .25rem .35rem; vertical-align: middle; }
 .ref-thumb {
   width: 46px; height: 46px; object-fit: cover; border-radius: 5px;

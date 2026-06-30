@@ -8,6 +8,7 @@ import routers.reference_info as _ref
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
     monkeypatch.setattr(_ai, "run_ai_analysis", lambda *a, **kw: None)
     monkeypatch.setattr(_ref, "fetch_reference_info_bg", lambda *a, **kw: None)
     from main import app

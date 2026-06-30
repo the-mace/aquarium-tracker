@@ -4,7 +4,7 @@ import re
 import logging
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
-from database import get_db, row_to_dict
+from database import get_ref_db, row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def maybe_fetch_reference_info(
     """Queue a reference info fetch if no entry exists yet OR if a placeholder exists but was never fetched."""
     if not entity_name:
         return
-    with get_db() as conn:
+    with get_ref_db() as conn:
         existing = row_to_dict(conn.execute(
             "SELECT id, fetched_at FROM reference_info WHERE entity_type=? AND entity_name=?",
             (entity_type, entity_name),
@@ -46,7 +46,7 @@ def fetch_reference_info_bg(entity_type: str, entity_name: str, display_name: st
     if not api_key:
         return
 
-    with get_db() as conn:
+    with get_ref_db() as conn:
         row = row_to_dict(conn.execute(
             "SELECT fetched_at FROM reference_info WHERE entity_type=? AND entity_name=?",
             (entity_type, entity_name),
@@ -118,7 +118,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
         ):
             image_url = None
 
-        with get_db() as conn:
+        with get_ref_db() as conn:
             conn.execute(
                 """INSERT INTO reference_info
                    (entity_type, entity_name, common_name, description, care_notes,
@@ -142,7 +142,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
     except Exception as e:
         logger.error("Reference info fetch failed for %s/%s: %s", entity_type, entity_name, e)
         try:
-            with get_db() as conn:
+            with get_ref_db() as conn:
                 conn.execute(
                     """INSERT INTO reference_info (entity_type, entity_name, common_name, fetched_at)
                        VALUES (?,?,?,datetime('now'))
@@ -156,7 +156,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
 
 @router.get("/reference-info")
 async def get_reference_info(entity_type: str, entity_name: str):
-    with get_db() as conn:
+    with get_ref_db() as conn:
         row = row_to_dict(conn.execute(
             "SELECT * FROM reference_info WHERE entity_type=? AND entity_name=?",
             (entity_type, entity_name),
@@ -176,7 +176,7 @@ async def refresh_reference_info(background_tasks: BackgroundTasks, request: Req
     if not entity_type or not entity_name:
         return JSONResponse({"error": "entity_type and entity_name required"}, status_code=400)
 
-    with get_db() as conn:
+    with get_ref_db() as conn:
         conn.execute(
             """INSERT INTO reference_info (entity_type, entity_name, common_name) VALUES (?,?,?)
                ON CONFLICT(entity_type, entity_name) DO UPDATE SET

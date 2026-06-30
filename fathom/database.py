@@ -7,6 +7,11 @@ DB_PATH = os.environ.get(
     os.path.join(os.path.dirname(__file__), "data", "fathom.db"),
 )
 
+REFERENCE_CACHE_DB_PATH = os.environ.get(
+    "REFERENCE_CACHE_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "data", "reference_cache.db"),
+)
+
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -20,6 +25,23 @@ def get_connection():
 @contextmanager
 def get_db():
     conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@contextmanager
+def get_ref_db():
+    """Context manager for the reference cache DB (separate from main DB so it survives resets)."""
+    os.makedirs(os.path.dirname(REFERENCE_CACHE_DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(REFERENCE_CACHE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
     try:
         yield conn
         conn.commit()
@@ -285,6 +307,47 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
             """)
 
+
+def init_ref_cache_db():
+    """Create (or migrate to) the persistent reference cache DB."""
+    with get_ref_db() as ref_conn:
+        ref_conn.executescript("""
+            CREATE TABLE IF NOT EXISTS reference_info (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL CHECK(entity_type IN ('species','plant','hardscape')),
+                entity_name TEXT NOT NULL,
+                common_name TEXT,
+                description TEXT,
+                care_notes TEXT,
+                image_url TEXT,
+                image_source TEXT,
+                image_attribution TEXT,
+                fetched_at TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(entity_type, entity_name)
+            );
+            CREATE INDEX IF NOT EXISTS idx_reference_info_lookup ON reference_info(entity_type, entity_name);
+        """)
+
+        # One-time migration: copy already-fetched rows from main DB into the cache
+        try:
+            with get_db() as main_conn:
+                existing = rows_to_list(main_conn.execute(
+                    "SELECT * FROM reference_info WHERE fetched_at IS NOT NULL"
+                ).fetchall())
+            for row in existing:
+                ref_conn.execute(
+                    """INSERT OR IGNORE INTO reference_info
+                       (entity_type, entity_name, common_name, description, care_notes,
+                        image_url, image_source, image_attribution, fetched_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (row["entity_type"], row["entity_name"], row.get("common_name"),
+                     row.get("description"), row.get("care_notes"), row.get("image_url"),
+                     row.get("image_source"), row.get("image_attribution"), row["fetched_at"]),
+                )
+        except Exception:
+            pass  # Main DB may not have reference_info yet; migration is best-effort
 
 
 def row_to_dict(row):

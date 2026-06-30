@@ -3,7 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
-from database import get_db, rows_to_list, row_to_dict
+from database import get_db, get_ref_db, rows_to_list, row_to_dict
 from routers.reference_info import maybe_fetch_reference_info, _canonical
 
 router = APIRouter(prefix="/tanks/{tank_id}", tags=["plants"])
@@ -17,23 +17,7 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
         plants = rows_to_list(conn.execute(
-            """SELECT p.*,
-                      ri.description    AS ref_description,
-                      ri.care_notes     AS ref_care_notes,
-                      ri.image_url      AS ref_image_url,
-                      ri.image_attribution AS ref_image_attribution,
-                      ri.fetched_at     AS ref_fetched_at,
-                      ri.entity_name    AS ref_entity_name
-               FROM plants p
-               LEFT JOIN reference_info ri
-                 ON ri.entity_type = 'plant'
-                AND ri.entity_name = CASE
-                      WHEN p.species IS NOT NULL AND trim(p.species) != ''
-                        THEN lower(trim(p.species))
-                      ELSE lower(trim(p.common_name))
-                    END
-               WHERE p.tank_id = ? AND p.status = 'active'
-               ORDER BY p.common_name, p.species""",
+            "SELECT * FROM plants WHERE tank_id = ? AND status = 'active' ORDER BY common_name, species",
             (tank_id,),
         ).fetchall())
         removed_plants = rows_to_list(conn.execute(
@@ -41,21 +25,64 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
             (tank_id,),
         ).fetchall())
         hardscape = rows_to_list(conn.execute(
-            """SELECT h.*,
-                      ri.description    AS ref_description,
-                      ri.care_notes     AS ref_care_notes,
-                      ri.image_url      AS ref_image_url,
-                      ri.image_attribution AS ref_image_attribution,
-                      ri.fetched_at     AS ref_fetched_at,
-                      ri.entity_name    AS ref_entity_name
-               FROM hardscape h
-               LEFT JOIN reference_info ri
-                 ON ri.entity_type = 'hardscape'
-                AND ri.entity_name = lower(trim(h.item))
-               WHERE h.tank_id = ?
-               ORDER BY h.item""",
+            "SELECT * FROM hardscape WHERE tank_id = ? ORDER BY item",
             (tank_id,),
         ).fetchall())
+
+    # Merge reference info from persistent cache DB for plants
+    if plants:
+        plant_names = list({
+            _canonical(p.get("species") or p.get("common_name") or "")
+            for p in plants
+            if _canonical(p.get("species") or p.get("common_name") or "")
+        })
+        if plant_names:
+            placeholders = ",".join("?" for _ in plant_names)
+            with get_ref_db() as rconn:
+                ref_rows = rows_to_list(rconn.execute(
+                    f"SELECT * FROM reference_info WHERE entity_type='plant' AND entity_name IN ({placeholders})",
+                    plant_names,
+                ).fetchall())
+            ref_map = {r["entity_name"]: r for r in ref_rows}
+        else:
+            ref_map = {}
+        for pl in plants:
+            entity_name = _canonical(pl.get("species") or pl.get("common_name") or "")
+            ref = ref_map.get(entity_name, {})
+            pl["ref_entity_name"] = ref.get("entity_name")
+            pl["ref_description"] = ref.get("description")
+            pl["ref_care_notes"] = ref.get("care_notes")
+            pl["ref_image_url"] = ref.get("image_url")
+            pl["ref_image_attribution"] = ref.get("image_attribution")
+            pl["ref_fetched_at"] = ref.get("fetched_at")
+
+    # Merge reference info for hardscape
+    if hardscape:
+        hs_names = list({
+            _canonical(h.get("item") or "")
+            for h in hardscape
+            if _canonical(h.get("item") or "")
+        })
+        if hs_names:
+            placeholders = ",".join("?" for _ in hs_names)
+            with get_ref_db() as rconn:
+                ref_rows = rows_to_list(rconn.execute(
+                    f"SELECT * FROM reference_info WHERE entity_type='hardscape' AND entity_name IN ({placeholders})",
+                    hs_names,
+                ).fetchall())
+            hs_ref_map = {r["entity_name"]: r for r in ref_rows}
+        else:
+            hs_ref_map = {}
+        for hs in hardscape:
+            entity_name = _canonical(hs.get("item") or "")
+            ref = hs_ref_map.get(entity_name, {})
+            hs["ref_entity_name"] = ref.get("entity_name")
+            hs["ref_description"] = ref.get("description")
+            hs["ref_care_notes"] = ref.get("care_notes")
+            hs["ref_image_url"] = ref.get("image_url")
+            hs["ref_image_attribution"] = ref.get("image_attribution")
+            hs["ref_fetched_at"] = ref.get("fetched_at")
+
     # Queue reference info fetch for any entity not yet fetched (no row, or stuck placeholder)
     for pl in plants:
         if pl.get("ref_fetched_at") is None:

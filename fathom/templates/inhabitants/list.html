@@ -29,13 +29,24 @@
         <td class="ref-thumb-cell">
           {% set ref_entity = inh.ref_entity_name or (inh.species|lower if inh.species else (inh.common_name|lower if inh.common_name else '')) %}
           {% set ref_display = inh.common_name or inh.species or '' %}
-          {% if inh.ref_image_url %}
-          <img src="{{ inh.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
-               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-               onclick="openRefInfo('species','{{ ref_entity|e }}','{{ ref_display|e }}',{{ inh.ref_description|tojson if inh.ref_description else 'null' }},{{ inh.ref_care_notes|tojson if inh.ref_care_notes else 'null' }},{{ inh.ref_image_url|tojson }},{{ inh.ref_image_attribution|tojson if inh.ref_image_attribution else 'null' }})">
-          <span class="ref-thumb-placeholder" style="display:none" onclick="openRefInfo('species','{{ ref_entity|e }}','{{ ref_display|e }}',{{ inh.ref_description|tojson if inh.ref_description else 'null' }},{{ inh.ref_care_notes|tojson if inh.ref_care_notes else 'null' }},null,null)">ℹ</span>
-          {% elif inh.ref_fetched_at %}
-          <span class="ref-thumb-placeholder" title="No image found" onclick="openRefInfo('species','{{ ref_entity|e }}','{{ ref_display|e }}',{{ inh.ref_description|tojson if inh.ref_description else 'null' }},{{ inh.ref_care_notes|tojson if inh.ref_care_notes else 'null' }},null,null)">ℹ</span>
+          {% if inh.ref_image_url or inh.ref_fetched_at %}
+          <span class="ref-trigger"
+                data-type="species"
+                data-name="{{ ref_entity|e }}"
+                data-display="{{ ref_display|e }}"
+                data-description="{{ inh.ref_description|e }}"
+                data-care="{{ inh.ref_care_notes|e }}"
+                data-image="{{ inh.ref_image_url|e }}"
+                data-attribution="{{ inh.ref_image_attribution|e }}"
+                onclick="openRefInfoFrom(this)">
+            {% if inh.ref_image_url %}
+            <img src="{{ inh.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
+                 onerror="this.style.display='none';this.parentElement.querySelector('.ref-thumb-placeholder').style.display='flex'">
+            <span class="ref-thumb-placeholder" style="display:none">ℹ</span>
+            {% else %}
+            <span class="ref-thumb-placeholder" title="No image found">ℹ</span>
+            {% endif %}
+          </span>
           {% elif ref_entity %}
           <span class="ref-thumb-pending" title="Info loading…">⏳</span>
           {% endif %}
@@ -191,6 +202,13 @@
 
 {% block scripts %}
 <script>
+function openRefInfoFrom(el) {
+  openRefInfo(
+    el.dataset.type, el.dataset.name, el.dataset.display,
+    el.dataset.description || null, el.dataset.care || null,
+    el.dataset.image || null, el.dataset.attribution || null
+  );
+}
 function openRefInfo(entityType, entityName, displayName, description, careNotes, imageUrl, attribution) {
   document.getElementById('ref-modal-title').textContent = displayName || entityName;
 

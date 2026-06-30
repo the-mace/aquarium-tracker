@@ -3,8 +3,8 @@ import database as _db
 import routers.reference_info as _ref
 
 
-def _seed_ref(db_path, entity_type, entity_name, **kwargs):
-    conn = sqlite3.connect(db_path)
+def _seed_ref(entity_type, entity_name, **kwargs):
+    conn = sqlite3.connect(_db.REFERENCE_CACHE_DB_PATH)
     conn.execute(
         """INSERT INTO reference_info (entity_type, entity_name, common_name, description, care_notes, image_url, fetched_at)
            VALUES (?,?,?,?,?,?,datetime('now'))
@@ -29,7 +29,7 @@ def test_get_reference_info_404_when_missing(client):
 
 
 def test_get_reference_info_returns_row(client, tank_id):
-    _seed_ref(_db.DB_PATH, "species", "betta splendens",
+    _seed_ref("species", "betta splendens",
               common_name="Betta", description="Small labyrinth fish")
     r = client.get("/reference-info?entity_type=species&entity_name=betta splendens")
     assert r.status_code == 200
@@ -50,12 +50,12 @@ def test_refresh_queues_task(client):
 
 
 def test_refresh_clears_fetched_at(client, tank_id):
-    _seed_ref(_db.DB_PATH, "plant", "java moss", description="Hardy moss")
+    _seed_ref("plant", "java moss", description="Hardy moss")
     client.post(
         "/reference-info/refresh",
         json={"entity_type": "plant", "entity_name": "java moss", "display_name": "Java Moss"},
     )
-    conn = sqlite3.connect(_db.DB_PATH)
+    conn = sqlite3.connect(_db.REFERENCE_CACHE_DB_PATH)
     row = conn.execute("SELECT fetched_at FROM reference_info WHERE entity_name='java moss'").fetchone()
     conn.close()
     assert row[0] is None
@@ -72,7 +72,7 @@ def test_maybe_fetch_inserts_placeholder(client, tank_id):
     from unittest.mock import MagicMock
     bt = MagicMock()
     _ref.maybe_fetch_reference_info(bt, "species", "corydoras paleatus", "Peppered Cory")
-    conn = sqlite3.connect(_db.DB_PATH)
+    conn = sqlite3.connect(_db.REFERENCE_CACHE_DB_PATH)
     row = conn.execute(
         "SELECT entity_type, entity_name, fetched_at FROM reference_info WHERE entity_name='corydoras paleatus'"
     ).fetchone()
@@ -85,7 +85,7 @@ def test_maybe_fetch_inserts_placeholder(client, tank_id):
 
 def test_maybe_fetch_skips_if_already_fetched(client, tank_id):
     from unittest.mock import MagicMock
-    _seed_ref(_db.DB_PATH, "species", "neon tetra")  # fetched_at set by _seed_ref
+    _seed_ref("species", "neon tetra")  # fetched_at set by _seed_ref
     bt = MagicMock()
     _ref.maybe_fetch_reference_info(bt, "species", "neon tetra", "Neon Tetra")
     bt.add_task.assert_not_called()
@@ -94,7 +94,7 @@ def test_maybe_fetch_skips_if_already_fetched(client, tank_id):
 def test_maybe_fetch_requeues_stuck_placeholder(client, tank_id):
     """A placeholder row with fetched_at=NULL (e.g. after server restart) must be re-queued."""
     from unittest.mock import MagicMock
-    conn = __import__("sqlite3").connect(_db.DB_PATH)
+    conn = __import__("sqlite3").connect(_db.REFERENCE_CACHE_DB_PATH)
     conn.execute(
         "INSERT INTO reference_info (entity_type, entity_name) VALUES ('species', 'cherry shrimp')"
     )
@@ -111,7 +111,7 @@ def test_inhabitants_list_shows_ref_data(client, tank_id):
         f"/tanks/{tank_id}/inhabitants",
         data={"common_name": "Betta", "species": "Betta splendens", "count": "1"},
     )
-    _seed_ref(_db.DB_PATH, "species", "betta splendens",
+    _seed_ref("species", "betta splendens",
               common_name="Betta", description="Labyrinth fish",
               image_url="https://upload.wikimedia.org/test.jpg")
     r = client.get(f"/tanks/{tank_id}/inhabitants", follow_redirects=True)
@@ -126,7 +126,7 @@ def test_plants_list_shows_ref_data(client, tank_id):
         f"/tanks/{tank_id}/plants",
         data={"common_name": "Java Moss", "species": "Taxiphyllum barbieri"},
     )
-    _seed_ref(_db.DB_PATH, "plant", "taxiphyllum barbieri",
+    _seed_ref("plant", "taxiphyllum barbieri",
               description="Hardy carpet moss",
               image_url="https://upload.wikimedia.org/moss.jpg")
     r = client.get(f"/tanks/{tank_id}/plants", follow_redirects=True)
