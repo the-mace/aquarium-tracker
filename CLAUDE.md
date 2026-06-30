@@ -132,14 +132,15 @@ The review screen shows editable tables per section with flagged rows highlighte
 
 ## Current state (as of 2026-06-29)
 
-- Full app built, all fixes applied and committed (4 commits on main)
+- Full app built, all fixes applied, committed, and smoke-tested end-to-end
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
-- **Not yet deployed to Mac mini** — commit history on local main, remote: `git@github.com:the-mace/aquarium-tracker.git`
-- Need to push to remote and restart launchd service on Mac mini (192.168.50.205) to deploy
+- Import tested from scratch against a narrative journal: all 10 data types extracted correctly, tank specs auto-filled from Claude's product knowledge, "many" count, issue resolution patterns, flags — everything verified in DB
+- **Not yet deployed to Mac mini** — 6 commits on local main, remote: `git@github.com:the-mace/aquarium-tracker.git`
+- Next step: push to remote and restart launchd service on Mac mini (192.168.50.205)
 
 ### Changes in 2026-06-29 session
-- Schema: `plants` and `hardscape` tables
-- UI: events show date only; tank specs panel on dashboard; plants/hardscape cards; modal close CSS fix; inhabitants "many" toggle
-- AI: chat context now includes all water params, plants, hardscape, open issues, 5 observations; ai_analysis includes plants/hardscape in summary
-- Import: rich extraction prompt (issues, plants, hardscape, observations, tank_specs); interactive flagged review UI
+- Schema: `plants` and `hardscape` tables (both cascade-delete with tank)
+- UI: events show date only (no time, no amount); tank specs panel on dashboard; plants/hardscape cards; modal close CSS fix (flex !important vs display: none); inhabitants "many" toggle (null count)
+- AI: chat context now injects all water params explicitly, plants, hardscape, open issues, 5 observations, tank hardware/substrate; debug log for context length; ai_analysis includes plants/hardscape in summary prompt
+- Import: rich extraction prompt covering issues/plants/hardscape/observations/tank_specs/narrative equipment; interactive flagged review UI with editable tables, per-row checkboxes, amber flag highlighting; sidebar nav link added
