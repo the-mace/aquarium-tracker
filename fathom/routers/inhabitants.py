@@ -37,21 +37,23 @@ async def add_inhabitant(
     tank_id: int,
     species: Optional[str] = Form(None),
     common_name: Optional[str] = Form(None),
-    count: int = Form(1),
+    count: Optional[int] = Form(None),
+    count_unknown: Optional[str] = Form(None),
     added_date: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
+    actual_count = None if count_unknown else (count if count is not None else 1)
     with get_db() as conn:
         cur = conn.execute(
             "INSERT INTO inhabitants (tank_id, species, common_name, count, added_date, source, notes)"
             " VALUES (?,?,?,?,?,?,?)",
-            (tank_id, species, common_name, count, added_date, source, notes),
+            (tank_id, species, common_name, actual_count, added_date, source, notes),
         )
         inh_id = cur.lastrowid
         conn.execute(
             "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
-            (tank_id, inh_id, "added", count),
+            (tank_id, inh_id, "added", actual_count or 0),
         )
 
     accept = request.headers.get("accept", "")
@@ -67,9 +69,11 @@ async def update_inhabitant(
     inh_id: int,
     species: Optional[str] = Form(None),
     common_name: Optional[str] = Form(None),
-    count: int = Form(0),
+    count: Optional[int] = Form(None),
+    count_unknown: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
+    actual_count = None if count_unknown else (count if count is not None else 0)
     with get_db() as conn:
         old = row_to_dict(conn.execute(
             "SELECT count FROM inhabitants WHERE id = ? AND tank_id = ?", (inh_id, tank_id),
@@ -79,15 +83,16 @@ async def update_inhabitant(
         conn.execute(
             "UPDATE inhabitants SET species=?, common_name=?, count=?, notes=?, updated_at=datetime('now')"
             " WHERE id=? AND tank_id=?",
-            (species, common_name, count, notes, inh_id, tank_id),
+            (species, common_name, actual_count, notes, inh_id, tank_id),
         )
-        diff = count - (old["count"] or 0)
-        if diff != 0:
-            etype = "added" if diff > 0 else "died"
-            conn.execute(
-                "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
-                (tank_id, inh_id, etype, abs(diff)),
-            )
+        if actual_count is not None and old["count"] is not None:
+            diff = actual_count - (old["count"] or 0)
+            if diff != 0:
+                etype = "added" if diff > 0 else "died"
+                conn.execute(
+                    "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
+                    (tank_id, inh_id, etype, abs(diff)),
+                )
     return RedirectResponse(url=f"/tanks/{tank_id}/inhabitants", status_code=303)
 
 

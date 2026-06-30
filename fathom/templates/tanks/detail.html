@@ -99,6 +99,48 @@
   </div>
 </div>
 
+<!-- Tank Specs -->
+{% if tank.dimensions_l or tank.manufacturer or tank.substrate_type or tank.notes %}
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-header">
+    <h3>Tank Specs</h3>
+    <a href="/tanks/{{ tank.id }}/edit" class="link-sm">Edit →</a>
+  </div>
+  <div class="specs-grid">
+    {% if tank.manufacturer or tank.model %}
+    <div class="spec-item">
+      <span class="spec-label">Hardware</span>
+      <span class="spec-value">{{ tank.manufacturer or '' }} {{ tank.model or '' }}</span>
+    </div>
+    {% endif %}
+    {% if tank.dimensions_l %}
+    <div class="spec-item">
+      <span class="spec-label">Dimensions</span>
+      <span class="spec-value">{{ tank.dimensions_l }}" × {{ tank.dimensions_w }}" × {{ tank.dimensions_h }}"</span>
+    </div>
+    {% endif %}
+    {% if tank.substrate_type %}
+    <div class="spec-item">
+      <span class="spec-label">Substrate</span>
+      <span class="spec-value">{{ tank.substrate_type }}{% if tank.substrate_brand %} ({{ tank.substrate_brand }}){% endif %}{% if tank.substrate_depth_inches %}, {{ tank.substrate_depth_inches }}"{% endif %}</span>
+    </div>
+    {% endif %}
+    {% if tank.shape %}
+    <div class="spec-item">
+      <span class="spec-label">Shape</span>
+      <span class="spec-value">{{ tank.shape }}</span>
+    </div>
+    {% endif %}
+    {% if tank.notes %}
+    <div class="spec-item spec-item-wide">
+      <span class="spec-label">Notes</span>
+      <span class="spec-value">{{ tank.notes }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Quick Actions -->
 <div class="quick-actions">
   <button class="action-btn" onclick="openModal('modal-test')">
@@ -177,8 +219,7 @@
       {% for ev in recent_events %}
       <div class="event-row">
         <span class="event-type">{{ ev.event_type.replace('_',' ') }}</span>
-        {% if ev.amount %}<span class="event-amount">{{ ev.amount }}</span>{% endif %}
-        <span class="event-time">{{ ev.timestamp }}</span>
+        <span class="event-time">{{ ev.timestamp[:10] }}</span>
         {% if ev.notes %}<span class="event-notes">{{ ev.notes[:60] }}</span>{% endif %}
       </div>
       {% endfor %}
@@ -204,6 +245,38 @@
     </div>
     {% endfor %}
   </div>
+</div>
+{% endif %}
+
+<!-- Plants & Hardscape -->
+{% if plants or hardscape %}
+<div class="two-col-row">
+  {% if plants %}
+  <div class="panel">
+    <div class="panel-header"><h3>Plants</h3></div>
+    <div class="plant-list">
+      {% for pl in plants %}
+      <div class="plant-row">
+        <span class="plant-name">{{ pl.common_name or pl.species or 'Unknown' }}</span>
+        {% if pl.species and pl.common_name %}<span class="plant-species">{{ pl.species }}</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% if hardscape %}
+  <div class="panel">
+    <div class="panel-header"><h3>Hardscape</h3></div>
+    <div class="hardscape-list">
+      {% for hs in hardscape %}
+      <div class="hardscape-row">
+        {% if hs.quantity and hs.quantity > 1 %}<span class="hs-qty">{{ hs.quantity }}×</span>{% endif %}
+        <span class="hs-name">{{ hs.item }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -275,7 +348,7 @@
 
 <div id="modal-observation" class="modal" style="display:none">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Observation</h3><button class="modal-close" onclick="closeModal('modal-observation')">×</button></div>
+    <div class="modal-header"><h3>Add Observation</h3><button type="button" class="modal-close" onclick="closeModal('modal-observation')">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/observations">
       <div class="form-group"><label>Observation</label><textarea name="text" rows="5" placeholder="What did you notice?"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-observation')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>

@@ -447,7 +447,8 @@ p { margin-bottom: .5rem; }
   justify-content: center;
   padding: 1rem;
 }
-.modal[style*="display:none"] { display: none !important; }
+.modal[style*="display:none"],
+.modal[style*="display: none"] { display: none !important; }
 .modal-box {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -687,6 +688,61 @@ p { margin-bottom: .5rem; }
 .preview-json { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem; font-size: .75rem; color: var(--muted); white-space: pre-wrap; overflow-x: auto; margin-bottom: .75rem; }
 .preview-data h4 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .4rem; }
 .success-banner { background: rgba(0,196,160,.1); border: 1px solid rgba(0,196,160,.25); border-radius: var(--radius); padding: 1rem; color: var(--text); }
+.preview-flags { background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.3); border-radius: var(--radius); padding: .6rem 1rem; margin-bottom: 1rem; color: var(--warning); font-size: .875rem; display: none; }
+.preview-section { margin-bottom: 1.5rem; }
+.preview-section-header { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; flex-wrap: wrap; }
+.preview-table { font-size: .78rem; }
+.preview-table input[type=text],
+.preview-table input[type=number] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: .2rem .35rem;
+  font-size: .78rem;
+  font-family: inherit;
+  min-width: 0;
+}
+.preview-table input:focus { outline: none; border-color: var(--primary); }
+.flagged-row { background: rgba(245,158,11,.06); }
+.flagged-field input { border-color: var(--warning) !important; background: rgba(245,158,11,.08) !important; }
+.flag-row td { background: rgba(245,158,11,.05) !important; }
+.flag-msg { color: var(--warning); font-size: .75rem; padding: .25rem .5rem .4rem !important; }
+.preview-data { overflow-y: auto; max-height: 70vh; margin-bottom: 1rem; }
+.specs-review-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .5rem; }
+.specs-review-table td { padding: .35rem .5rem; border-bottom: 1px solid var(--border); }
+.specs-review-table td:first-child { color: var(--muted); width: 45%; }
+.specs-review-table input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: .2rem .4rem; font-family: inherit; font-size: .85rem; }
+
+/* ── Tank Specs Panel ───────────────────────────────────────────────────── */
+.specs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: .5rem .75rem;
+}
+.spec-item { display: flex; flex-direction: column; gap: .1rem; }
+.spec-item-wide { grid-column: 1 / -1; }
+.spec-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.spec-value { font-size: .9rem; color: var(--text); }
+
+/* ── Many Badge (inhabitants) ───────────────────────────────────────────── */
+.many-badge {
+  display: inline-block;
+  background: rgba(56,189,248,.1);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: .1rem .5rem;
+  font-size: .8rem;
+  font-weight: 600;
+}
+.checkbox-label { display: inline-flex; align-items: center; gap: .35rem; font-size: .875rem; cursor: pointer; color: var(--muted); white-space: nowrap; }
+
+/* ── Plants / Hardscape Panels ──────────────────────────────────────────── */
+.plant-list, .hardscape-list { display: flex; flex-direction: column; gap: .3rem; }
+.plant-row, .hardscape-row { display: flex; align-items: baseline; gap: .5rem; font-size: .875rem; }
+.plant-name, .hs-name { color: var(--text); }
+.plant-species { color: var(--muted); font-size: .8rem; font-style: italic; }
+.hs-qty { color: var(--primary); font-weight: 600; font-size: .85rem; min-width: 1.5rem; }
 
 /* ── Utility ────────────────────────────────────────────────────────────── */
 .muted { color: var(--muted); }

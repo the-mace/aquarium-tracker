@@ -26,7 +26,11 @@
       {% for inh in inhabitants %}
       <tr id="inh-row-{{ inh.id }}">
         <td>
+          {% if inh.count is none %}
+          <span class="many-badge">many</span>
+          {% else %}
           <span class="count-badge">{{ inh.count }}</span>
+          {% endif %}
         </td>
         <td><strong>{{ inh.common_name or '—' }}</strong></td>
         <td class="muted italic">{{ inh.species or '—' }}</td>
@@ -35,7 +39,7 @@
         <td class="muted">{{ inh.notes or '' }}</td>
         <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openPopEvent({{ inh.id }}, '{{ inh.common_name or inh.species }}')">Log Event</button>
-          <button class="btn btn-xs btn-ghost" onclick="openEditInh({{ inh.id }}, {{ inh.count }}, '{{ inh.common_name or '' }}', '{{ inh.species or '' }}')">Edit</button>
+          <button class="btn btn-xs btn-ghost" onclick="openEditInh({{ inh.id }}, {{ inh.count if inh.count is not none else 'null' }}, {{ 'true' if inh.count is none else 'false' }}, '{{ inh.common_name or '' }}', '{{ inh.species or '' }}')">Edit</button>
           <form method="post" action="/tanks/{{ tank.id }}/inhabitants/{{ inh.id }}/delete" style="display:inline" onsubmit="return confirm('Remove {{ inh.common_name or inh.species }}?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>
           </form>
@@ -77,12 +81,18 @@
 <!-- Add Inhabitant Modal -->
 <div id="modal-add-inh" class="modal" style="display:none">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Inhabitant</h3><button class="modal-close" onclick="closeModal('modal-add-inh')">×</button></div>
+    <div class="modal-header"><h3>Add Inhabitant</h3><button type="button" class="modal-close" onclick="closeModal('modal-add-inh')">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/inhabitants">
       <div class="form-grid">
         <div class="form-group"><label>Common Name</label><input type="text" name="common_name"></div>
         <div class="form-group"><label>Species</label><input type="text" name="species" placeholder="Scientific name"></div>
-        <div class="form-group"><label>Count</label><input type="number" name="count" value="1" min="0"></div>
+        <div class="form-group">
+          <label>Count</label>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <input type="number" name="count" id="add-inh-count" value="1" min="0" style="width:80px">
+            <label class="checkbox-label"><input type="checkbox" name="count_unknown" id="add-inh-unknown" onchange="document.getElementById('add-inh-count').disabled=this.checked"> Many/Unknown</label>
+          </div>
+        </div>
         <div class="form-group"><label>Added Date</label><input type="date" name="added_date"></div>
         <div class="form-group"><label>Source</label><input type="text" name="source" placeholder="LFS, breeder, friend…"></div>
       </div>
@@ -95,12 +105,18 @@
 <!-- Edit Inhabitant Modal -->
 <div id="modal-edit-inh" class="modal" style="display:none">
   <div class="modal-box modal-box-sm">
-    <div class="modal-header"><h3>Edit Inhabitant</h3><button class="modal-close" onclick="closeModal('modal-edit-inh')">×</button></div>
+    <div class="modal-header"><h3>Edit Inhabitant</h3><button type="button" class="modal-close" onclick="closeModal('modal-edit-inh')">×</button></div>
     <form id="edit-inh-form" method="post" action="">
       <div class="form-grid">
         <div class="form-group"><label>Common Name</label><input type="text" name="common_name" id="edit-inh-common"></div>
         <div class="form-group"><label>Species</label><input type="text" name="species" id="edit-inh-species"></div>
-        <div class="form-group"><label>Count</label><input type="number" name="count" id="edit-inh-count" min="0"></div>
+        <div class="form-group">
+          <label>Count</label>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <input type="number" name="count" id="edit-inh-count" min="0" style="width:80px">
+            <label class="checkbox-label"><input type="checkbox" name="count_unknown" id="edit-inh-unknown" onchange="document.getElementById('edit-inh-count').disabled=this.checked"> Many/Unknown</label>
+          </div>
+        </div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-inh-notes"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-inh')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
@@ -139,11 +155,15 @@ function openPopEvent(inhId, name) {
   document.getElementById('pop-event-subject').textContent = name;
   openModal('modal-pop-event');
 }
-function openEditInh(inhId, count, commonName, species) {
+function openEditInh(inhId, count, countUnknown, commonName, species) {
   document.getElementById('edit-inh-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/update`;
   document.getElementById('edit-inh-common').value = commonName;
   document.getElementById('edit-inh-species').value = species;
-  document.getElementById('edit-inh-count').value = count;
+  const unknownCb = document.getElementById('edit-inh-unknown');
+  const countInput = document.getElementById('edit-inh-count');
+  unknownCb.checked = countUnknown;
+  countInput.disabled = countUnknown;
+  countInput.value = count !== null ? count : '';
   openModal('modal-edit-inh');
 }
 </script>
