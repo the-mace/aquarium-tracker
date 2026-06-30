@@ -17,6 +17,16 @@ def test_create_tank_redirects_to_detail(client):
     assert "/tanks/" in r.headers["location"]
 
 
+def test_create_tank_name_only(client):
+    # Empty string fields for optional floats must not produce a 422
+    r = client.post(
+        "/tanks",
+        data={"name": "Name Only Tank"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+
 def test_create_tank_appears_in_list(client, make_tank):
     make_tank(name="Reef Tank")
     assert b"Reef Tank" in client.get("/tanks").content
