@@ -38,9 +38,6 @@
             <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/remove" style="display:inline" onsubmit="return confirm('Mark as removed?')">
               <button class="btn btn-xs btn-ghost" type="submit">Remove</button>
             </form>
-            <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this plant?')">
-              <button class="btn btn-xs btn-danger" type="submit">✕</button>
-            </form>
           </td>
         </tr>
         {% endfor %}

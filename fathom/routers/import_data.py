@@ -97,12 +97,17 @@ EXTRACTION RULES (follow carefully):
    - "Plugged emergency inlet from tank side" → maintenance event
    Equipment records should be created for hardware that didn't previously exist in the log. Do not create a duplicate equipment record for hardware that is clearly already installed and being worked on.
 4. ISSUES: Look for problem/resolution patterns. If the same problem is mentioned as discovered on one date AND later fixed/resolved on a later date in the same log, produce ONE issue with status='resolved', opened_at=discovery date, resolved_at=fix date. Do NOT produce two separate issues for the same problem.
+   KEY PRINCIPLE: Starting a corrective intervention resolves an issue — you do NOT need an explicit "they recovered" statement. Cause-identified + intervention-begun = resolved. Resolution language includes: water clear/crystal, count stabilized, plug/part re-added, feeding started, treatment began.
    - "had algae bloom for weeks until I added UV sterilizer which fixed it" → resolved issue, resolved_at = date UV was added
+   - "algae bloom cleared / water crystal clear on [date]" → resolved issue, resolved_at = that date
    - "struggling with high nitrates, not sure what to do" → open issue
-   - "snails were dying, started feeding zucchini, they recovered" → resolved issue
+   - "snails were dying; determined it was lack of food; started zucchini feedings [date]" → resolved issue, resolved_at = date feeding started (cause identified + intervention begun = resolved)
    - "frogbit wilting, started Flourish dosing, it improved" → resolved issue
-   - "sponge plug found missing [date1] ... plugged it back in [date2]" → resolved issue, opened_at=date1, resolved_at=date2
-5. INHABITANTS: Always use the scientific species name when known (e.g. Neocaridina davidi for fire red/cherry/sakura shrimp; Physidae sp. for bladder snails; Planorbidae sp. for ramshorn snails; Melanoides tuberculata for MTS). If population is uncountable ("lots of MTS snails", "countless pest snails", "a colony of shrimp"), set count_unknown=true and count=null. When an inhabitant is mentioned incidentally in a dated log entry (e.g. "tank also has copepods and detritus worms"), use that log entry's date as the added_date — do not leave added_date null just because it is a passing mention rather than a formal addition record.
+   - "sponge plug found missing [date1] ... re-added on [date2]" → resolved issue, opened_at=date1, resolved_at=date2
+   - "lost several shrimp post-introduction, population stabilized at 10 by [date]" → resolved issue, opened_at=loss date, resolved_at=stabilization date
+5. INHABITANTS: Always use the scientific species name when known (e.g. Neocaridina davidi for fire red/cherry/sakura shrimp; Physidae sp. for bladder snails; Planorbidae sp. for ramshorn snails; Melanoides tuberculata for MTS; Oligochaeta spp. for detritus worms; Ostracoda spp. for ostracods/seed shrimp; Copepoda spp. for copepods). If population is uncountable ("lots of MTS snails", "countless pest snails", "a colony of shrimp"), set count_unknown=true and count=null. When an inhabitant is mentioned incidentally in a dated log entry (e.g. "tank also has copepods and detritus worms"), use that log entry's date as the added_date — do not leave added_date null just because it is a passing mention rather than a formal addition record.
+   - COUNT CHANGES: If a species' count changes over time (initial purchase, then deaths/losses, then stabilization), emit a SEPARATE inhabitants entry for EACH point in the journal where the count is explicitly stated or clearly inferable, using the date and count at that moment. Example: "received 20 fire red shrimp Jan 15 — lost several to shipping stress — stabilized at 10 by Jan 25" → two entries: {count:20, added_date:"2026-01-15"} and {count:10, added_date:"2026-01-25"}. The import system selects the most recent entry as the current count, so never collapse multiple count states into just the first mention.
+   - BREEDING COLONIES: For invertebrates (snails, copepods, ostracods, worms) that start with a countable number but are later described as breeding, multiplying, laying eggs, or growing in uncountable numbers — emit a final entry with count_unknown=true and the date of the breeding/colony language. Example: journal shows 24 snails in April, then describes egg clutches and "lots growing" in June → emit {count:24, added_date:"2026-04-26"} and {count_unknown:true, count:null, added_date:"2026-06-26"}. The colony entry wins as the current state.
 6. OBSERVATIONS: Capture journal entries, personal qualitative notes, and observations (e.g. "shrimp seem very active today", "noticed some plant melt on the anubias"). Do NOT duplicate structured measurement data as observations.
 7. FLAGS: Flag values that seem incorrect or unusual:
    - Water parameters out of normal range for the tank type (KH > 15 for freshwater, pH > 8.5 or < 5.5 for freshwater, ammonia > 4, nitrate > 160)
@@ -122,7 +127,7 @@ Valid purchase categories: equipment, livestock, plants, hardscape, consumables,
 Valid issue status: open, monitoring, resolved
 Valid plant status: active, removed
 
-12. PLANTS: Always fill in the scientific species name when known, in addition to the common name. Examples: Java moss → species="Taxiphyllum barbieri", common_name="Java Moss"; Anubias nana → species="Anubias barteri var. nana", common_name="Anubias Nana"; Java fern → species="Microsorum pteropus", common_name="Java Fern"; Hornwort → species="Ceratophyllum demersum", common_name="Hornwort"; Water sprite → species="Ceratopteris thalictroides", common_name="Water Sprite"; Christmas moss → species="Vesicularia montagnei", common_name="Christmas Moss". If you can identify the species with high confidence, fill in both fields. Never leave both null.
+12. PLANTS: Always fill in the scientific species name when known, in addition to the common name. Examples: Java moss → species="Taxiphyllum barbieri", common_name="Java Moss"; Anubias nana → species="Anubias barteri var. nana", common_name="Anubias Nana"; Java fern → species="Microsorum pteropus", common_name="Java Fern"; Hornwort → species="Ceratophyllum demersum", common_name="Hornwort"; Water sprite → species="Ceratopteris thalictroides", common_name="Water Sprite"; Christmas moss → species="Vesicularia montagnei", common_name="Christmas Moss"; Frogbit → species="Limnobium laevigatum", common_name="Frogbit"; Hygrophila → species="Hygrophila polysperma", common_name="Hygrophila"; Littorella → species="Littorella uniflora", common_name="Littorella"; Pellia → species="Pellia endiviifolia", common_name="Pellia". If you can identify the species with high confidence, fill in both fields. Never leave both null.
 
 Use "YYYY-MM-DD 00:00:00" for timestamps where time is unknown. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
@@ -199,7 +204,7 @@ async def _extraction_sse_stream(content: str, api_key: str):
     import anthropic
     import re as _re
 
-    chunks = _split_chunks(content, max_chars=8000)
+    chunks = _split_chunks(content, max_chars=60000)
     n_chunks = len(chunks)
     chunk_line_counts = [max(1, c.count('\n') + 1) for c in chunks]
     total_lines = sum(chunk_line_counts)
@@ -218,8 +223,22 @@ async def _extraction_sse_stream(content: str, api_key: str):
             label = f"Analyzing part {i + 1} of {n_chunks}…" if n_chunks > 1 else "Analyzing with AI…"
             chunk_total = chunk_line_counts[i]
             chunk_current = 0
+            prev_issues_ctx = ""
+            if i > 0 and chunk_results:
+                prev_issues = []
+                for pr in chunk_results:
+                    for iss in (pr.get("issues") or []):
+                        prev_issues.append(
+                            f'  - "{iss.get("title")}" (status={iss.get("status","open")}, opened={iss.get("opened_at","?")})'
+                        )
+                if prev_issues:
+                    prev_issues_ctx = (
+                        "\n\nISSUES ALREADY EXTRACTED FROM EARLIER SECTIONS:\n"
+                        + "\n".join(prev_issues)
+                        + "\nIf you see a resolution for any of these in the current section, output an issue with the EXACT SAME TITLE and status='resolved'. Do NOT invent a new title for the same problem.\n"
+                    )
             chunk_header = (
-                f"[Part {i + 1} of {n_chunks} — extract all data found in this section]\n\n"
+                f"[Part {i + 1} of {n_chunks} — extract all data found in this section]{prev_issues_ctx}\n\n"
                 if n_chunks > 1 else ""
             )
             full_text = ''
@@ -754,8 +773,11 @@ async def import_confirm(tank_id: int, request: Request):
             title = iss.get("title", "")
             status = iss.get("status", "open")
             existing_issue = conn.execute(
-                "SELECT id FROM issues WHERE tank_id=? AND lower(trim(title))=lower(trim(?)) AND status IN ('open','monitoring')",
-                (tank_id, title),
+                "SELECT id FROM issues WHERE tank_id=? AND status IN ('open','monitoring')"
+                " AND (lower(trim(title))=lower(trim(?))"
+                "      OR lower(trim(title)) LIKE '%'||lower(trim(?))||'%'"
+                "      OR lower(trim(?)) LIKE '%'||lower(trim(title))||'%')",
+                (tank_id, title, title, title),
             ).fetchone()
             if existing_issue and status == "resolved" and iss.get("resolved_at"):
                 conn.execute(
