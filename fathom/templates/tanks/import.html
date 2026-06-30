@@ -549,7 +549,7 @@ function resetImport() {
   fileInput.value = '';
   parseBtn.disabled = true;
   parseBtn.textContent = 'Parse with AI';
-  document.getElementById('drop-label').textContent = 'Drop a file here or browse';
+  document.getElementById('drop-label').innerHTML = 'Drop a file here or <button class="btn-link" type="button" onclick="document.getElementById(\'file-input\').click()">browse</button>';
   document.getElementById('upload-section').style.display = 'block';
   document.getElementById('progress-area').style.display = 'none';
   document.getElementById('preview-section').style.display = 'none';

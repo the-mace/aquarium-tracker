@@ -234,6 +234,7 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
                     if n_chunks > 1 else ""
                 )
                 full_text = ''
+                chars_since_update = 0
 
                 # Signal start of this chunk immediately, before waiting for Claude
                 yield evt({"phase": "analyzing", "label": label, "current": lines_done, "total": total_lines})
@@ -246,8 +247,10 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
                     async for text in stream.text_stream:
                         full_text += text
                         new_lines = text.count('\n')
+                        chars_since_update += len(text)
                         if new_lines > 0:
                             chunk_current += new_lines
+                            chars_since_update = 0
                             bar_pos = min(chunk_current, chunk_total)
                             if chunk_current > chunk_total:
                                 active_label = (
@@ -257,6 +260,15 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
                             else:
                                 active_label = label
                             yield evt({"phase": "analyzing", "label": active_label,
+                                       "current": lines_done + bar_pos, "total": total_lines})
+                        elif chars_since_update >= 400:
+                            chars_since_update = 0
+                            bar_pos = min(chunk_current, chunk_total)
+                            char_label = (
+                                f"Analyzing part {i + 1} of {n_chunks}… ({len(full_text):,} chars)"
+                                if n_chunks > 1 else f"Analyzing with AI… ({len(full_text):,} chars)"
+                            )
+                            yield evt({"phase": "analyzing", "label": char_label,
                                        "current": lines_done + bar_pos, "total": total_lines})
                     finish_label = (f"Finishing part {i + 1} of {n_chunks} response…"
                                     if n_chunks > 1 else "Finishing AI response…")

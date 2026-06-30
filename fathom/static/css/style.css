@@ -704,6 +704,7 @@ p { margin-bottom: .5rem; }
   min-width: 0;
 }
 .preview-table input:focus { outline: none; border-color: var(--primary); }
+.preview-table input[type=checkbox] { accent-color: var(--primary); }
 .flagged-row { background: rgba(245,158,11,.06); }
 .flagged-field input { border-color: var(--warning) !important; background: rgba(245,158,11,.08) !important; }
 .flag-row td { background: rgba(245,158,11,.05) !important; }

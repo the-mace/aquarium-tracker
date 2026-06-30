@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Timeline — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "timeline" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ tank.name }}</h1>
+    <div class="tank-meta-row">
+      <span class="meta-chip">Timeline</span>
+      {% if total %}<span class="meta-chip">{{ total }} entries</span>{% endif %}
+    </div>
+  </div>
+  <div class="header-actions">
+    <a href="/tanks/{{ tank.id }}" class="btn btn-ghost">Dashboard</a>
+  </div>
+</div>
+
+{% if not groups %}
+<div class="empty-state">
+  <div class="empty-icon">📋</div>
+  <h2>No history yet</h2>
+  <p>Events, issues, equipment changes, and population events will appear here as you log them.</p>
+</div>
+{% else %}
+<div class="tl-legend">
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-event"></span> Event</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-issue_open"></span> Issue opened</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-issue_resolve"></span> Issue resolved</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-equip_install"></span> Equipment installed</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-equip_remove"></span> Equipment removed</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-population"></span> Population</span>
+</div>
+
+<div class="timeline">
+  {% for group in groups %}
+  <div class="tl-date-group">
+    <div class="tl-date-header">{{ group.date }}</div>
+    {% for item in group.entries %}
+    <div class="tl-item tl-kind-{{ item.kind }}{% if item.kind == 'population' %}-{{ item.subtype }}{% endif %}">
+      <div class="tl-dot
+        {%- if item.kind == 'event' %} tl-dot-event
+        {%- elif item.kind == 'issue_open' %} tl-dot-issue_open
+        {%- elif item.kind == 'issue_resolve' %} tl-dot-issue_resolve
+        {%- elif item.kind == 'equip_install' %} tl-dot-equip_install
+        {%- elif item.kind == 'equip_remove' %} tl-dot-equip_remove
+        {%- elif item.kind == 'population' and item.subtype in ('added','born') %} tl-dot-pop-in
+        {%- else %} tl-dot-pop-out
+        {%- endif %}"></div>
+
+      <div class="tl-body">
+        <div class="tl-header">
+          {# ── Kind badge ── #}
+          {%- if item.kind == 'event' %}
+            <span class="tl-badge tl-badge-event">{{ item.subtype.replace('_',' ') }}</span>
+            {% if item.amount %}<span class="tl-amount">{{ item.amount }}%</span>{% endif %}
+          {%- elif item.kind == 'issue_open' %}
+            <span class="tl-badge tl-badge-issue-open">Issue opened</span>
+            <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'issue_resolve' %}
+            <span class="tl-badge tl-badge-issue-resolve">Issue resolved</span>
+            <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'equip_install' %}
+            <span class="tl-badge tl-badge-equip">{{ item.subtype }} installed</span>
+            <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'equip_remove' %}
+            <span class="tl-badge tl-badge-equip-remove">{{ item.subtype }} removed</span>
+            <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'population' %}
+            <span class="tl-badge tl-badge-pop-{{ item.subtype }}">{{ item.subtype }}</span>
+            {% if item.amount and item.amount > 0 %}<span class="tl-amount">×{{ item.amount | int }}</span>{% endif %}
+            <span class="tl-label">{{ item.label }}</span>
+          {%- endif %}
+        </div>
+        {%- if item.detail and item.detail.strip() %}
+        <div class="tl-detail">{{ item.detail }}</div>
+        {%- endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
