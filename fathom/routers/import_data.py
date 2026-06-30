@@ -2,10 +2,11 @@ import os
 import json
 import logging
 from pathlib import Path
-from fastapi import APIRouter, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Request, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from database import get_db, row_to_dict
+from routers.reference_info import maybe_fetch_reference_info, _canonical
 
 router = APIRouter(tags=["import"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -616,7 +617,7 @@ async def import_check_duplicates(tank_id: int, request: Request):
 
 
 @router.post("/tanks/{tank_id}/import/confirm")
-async def import_confirm(tank_id: int, request: Request):
+async def import_confirm(tank_id: int, request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
     preview = body.get("preview", {})
 
@@ -833,6 +834,24 @@ async def import_confirm(tank_id: int, request: Request):
                  rs.get("last_done"), rs.get("next_due"), rs.get("notes")),
             )
         inserted["recurring_schedule"] = len(preview.get("recurring_schedule", []))
+
+    # Queue reference_info fetches for newly imported entities
+    for inh in preview.get("inhabitants", []):
+        entity_name = _canonical(inh.get("species") or inh.get("common_name") or "")
+        if entity_name:
+            display = inh.get("common_name") or inh.get("species") or ""
+            maybe_fetch_reference_info(background_tasks, "species", entity_name, display)
+
+    for pl in preview.get("plants", []):
+        entity_name = _canonical(pl.get("species") or pl.get("common_name") or "")
+        if entity_name:
+            display = pl.get("common_name") or pl.get("species") or ""
+            maybe_fetch_reference_info(background_tasks, "plant", entity_name, display)
+
+    for hs in preview.get("hardscape", []):
+        entity_name = _canonical(hs.get("item") or "")
+        if entity_name:
+            maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, hs.get("item", ""))
 
     # Only report non-zero counts
     inserted = {k: v for k, v in inserted.items() if v}

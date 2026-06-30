@@ -234,6 +234,24 @@ def init_db():
             );
 
             CREATE INDEX IF NOT EXISTS idx_schedule_tank ON recurring_schedule(tank_id, is_active, tracking_mode);
+
+            CREATE TABLE IF NOT EXISTS reference_info (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL CHECK(entity_type IN ('species','plant','hardscape')),
+                entity_name TEXT NOT NULL,
+                common_name TEXT,
+                description TEXT,
+                care_notes TEXT,
+                image_url TEXT,
+                image_source TEXT,
+                image_attribution TEXT,
+                fetched_at TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(entity_type, entity_name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_reference_info_lookup ON reference_info(entity_type, entity_name);
         """)
 
         # Migration: add schedule_id to events if not present

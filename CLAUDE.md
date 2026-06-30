@@ -12,7 +12,7 @@ Fathom is a personal aquarium tracking web app with AI-powered analysis. Single 
 - **Database**: SQLite at `fathom/data/fathom.db` (gitignored)
 - **Templates**: Jinja2, plain HTML/CSS/JS
 - **Charts**: Chart.js 4.4.0 via CDN
-- **AI**: Anthropic Python SDK, model `claude-sonnet-4-6`
+- **AI**: Anthropic Python SDK `0.115.0`, model `claude-sonnet-4-6`
 - **Env**: python-dotenv, `.env` at repo root (gitignored)
 
 ## How to run
@@ -64,7 +64,7 @@ aquarium-tracker/
 └── CLAUDE.md                # This file
 ```
 
-## Database schema (12 tables)
+## Database schema (13 tables)
 
 All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
 
@@ -81,11 +81,27 @@ All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
 | `observations` | AI (source=auto) and manual (source=manual) notes |
 | `tank_state_summary` | Latest AI summary upserted per tank |
 | `recurring_schedule` | Feeding/dosing/maintenance plans; tracking_mode=reference_only (no log) or logged (due-date tracking) |
+| `plants` | Active plants per tank (species, common_name, added_date, source, notes, status active/removed) |
+| `hardscape` | Hardscape items (item, quantity, source, cost, added_date, notes) |
+| `reference_info` | Species/plant/hardscape descriptions + care notes + image URLs from Claude web search. UNIQUE(entity_type, entity_name). |
 
 ## AI features
 
 ### Background analysis (`ai_analysis.py`)
 Triggered as FastAPI `BackgroundTask` after every test_result or event save. Fetches last 10 tests, open issues, 30-day events, and inhabitants. Calls Claude, stores result as an `observations` row (source=auto) and upserts `tank_state_summary`.
+
+### Reference Info (`reference_info.py`)
+Background task triggered when inhabitants, plants, or hardscape items are added (or imported). Checks if a `reference_info` row already exists for that entity; if not, inserts a placeholder and queues `fetch_reference_info_bg`. That sync background task calls `claude-sonnet-4-6` with `web_search_20260209` (server-side tool — no client tool loop needed) to fetch: description, care notes, and a Wikimedia Commons image URL. Result stored with `ON CONFLICT … DO UPDATE`.
+
+List views (`/inhabitants`, `/plants`) also trigger auto-queue on first load for any entity not yet in `reference_info`. The list query does a LEFT JOIN on `reference_info` to pass data to templates.
+
+UI: small 46px thumbnail in table; click → modal with larger image, description, care notes, attribution, and "Refresh Info" button (POST `/reference-info/refresh`). Shows ⏳ while pending, ℹ when fetched but no image.
+
+Routes (prefix-free router): `GET /reference-info?entity_type=…&entity_name=…`, `POST /reference-info/refresh` (JSON body).
+
+`entity_name` is always `lower(trim(species or common_name))` for species/plants, `lower(trim(item))` for hardscape — this is the canonical UNIQUE key.
+
+Web search tool requires anthropic SDK ≥ 0.115.0.
 
 ### Chat (`chat.py`)
 `POST /tanks/{id}/chat` — in-memory `_conversations` dict keyed by tank_id, max 10 turns. System prompt injects tank summary + 3 recent observations. Returns 503 if no API key. `DELETE /tanks/{id}/chat` clears history.
@@ -175,7 +191,8 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-06-30)
 
-- Quick Log feature added (see above); 177 tests passing
+- Reference Info feature added (see above); 186 tests passing
+- Quick Log feature added
 - Recurring schedule feature added; full app built and committed
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
@@ -185,13 +202,21 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-177 pytest integration tests in `fathom/tests/`. Run with:
+186 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints.
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join.
+
+AI calls are mocked in all tests: `run_ai_analysis` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests.
+
+### Changes in 2026-06-30 session (fourth)
+- **Reference Info**: new `reference_info` table (UNIQUE entity_type+entity_name). Background task uses `claude-sonnet-4-6` + `web_search_20260209` to fetch description, care notes, Wikimedia Commons image URL. Auto-queued on add and on list-page load for items with no row yet.
+- **Inhabitants & Plants lists**: LEFT JOIN `reference_info`; 46px thumbnail column; click → ref-info modal with image + description + care notes + Refresh button.
+- **anthropic SDK**: upgraded 0.40.0 → 0.115.0 (required for web_search_20260209 response parsing).
+- **Tests**: 9 new reference_info tests; `fetch_reference_info_bg` mocked to no-op in conftest — no API credits consumed by test suite.
 
 ### Changes in 2026-06-30 session (third)
 - **Observations source**: DB migration adds `'import'` to CHECK constraint. Import confirm saves observations with `source='import'`; flag notes get `source='auto'`. Templates show "Import Note" badge (blue) vs "AI Analysis" (green) vs "Manual Note" (grey).

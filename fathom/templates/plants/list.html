@@ -18,6 +18,7 @@
     <table class="data-table">
       <thead>
         <tr>
+          <th class="ref-thumb-col"></th>
           <th>Common Name</th>
           <th>Species</th>
           <th>Added</th>
@@ -29,6 +30,20 @@
       <tbody>
         {% for pl in plants %}
         <tr>
+          <td class="ref-thumb-cell">
+            {% set ref_entity = pl.ref_entity_name or (pl.species|lower if pl.species else (pl.common_name|lower if pl.common_name else '')) %}
+            {% set ref_display = pl.common_name or pl.species or '' %}
+            {% if pl.ref_image_url %}
+            <img src="{{ pl.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+                 onclick="openRefInfo('plant','{{ ref_entity|e }}','{{ ref_display|e }}',{{ pl.ref_description|tojson if pl.ref_description else 'null' }},{{ pl.ref_care_notes|tojson if pl.ref_care_notes else 'null' }},{{ pl.ref_image_url|tojson }},{{ pl.ref_image_attribution|tojson if pl.ref_image_attribution else 'null' }})">
+            <span class="ref-thumb-placeholder" style="display:none" onclick="openRefInfo('plant','{{ ref_entity|e }}','{{ ref_display|e }}',{{ pl.ref_description|tojson if pl.ref_description else 'null' }},{{ pl.ref_care_notes|tojson if pl.ref_care_notes else 'null' }},null,null)">ℹ</span>
+            {% elif pl.ref_fetched_at %}
+            <span class="ref-thumb-placeholder" title="No image found" onclick="openRefInfo('plant','{{ ref_entity|e }}','{{ ref_display|e }}',{{ pl.ref_description|tojson if pl.ref_description else 'null' }},{{ pl.ref_care_notes|tojson if pl.ref_care_notes else 'null' }},null,null)">ℹ</span>
+            {% elif ref_entity %}
+            <span class="ref-thumb-pending" title="Info loading…">⏳</span>
+            {% endif %}
+          </td>
           <td>{{ pl.common_name or '—' }}</td>
           <td><em class="muted">{{ pl.species or '—' }}</em></td>
           <td>{{ pl.added_date or '—' }}</td>
@@ -85,6 +100,7 @@
     <table class="data-table">
       <thead>
         <tr>
+          <th class="ref-thumb-col"></th>
           <th>Item</th>
           <th>Qty</th>
           <th>Source</th>
@@ -97,6 +113,20 @@
       <tbody>
         {% for hs in hardscape %}
         <tr>
+          <td class="ref-thumb-cell">
+            {% set ref_entity = hs.ref_entity_name or (hs.item|lower if hs.item else '') %}
+            {% set ref_display = hs.item or '' %}
+            {% if hs.ref_image_url %}
+            <img src="{{ hs.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+                 onclick="openRefInfo('hardscape','{{ ref_entity|e }}','{{ ref_display|e }}',{{ hs.ref_description|tojson if hs.ref_description else 'null' }},{{ hs.ref_care_notes|tojson if hs.ref_care_notes else 'null' }},{{ hs.ref_image_url|tojson }},{{ hs.ref_image_attribution|tojson if hs.ref_image_attribution else 'null' }})">
+            <span class="ref-thumb-placeholder" style="display:none" onclick="openRefInfo('hardscape','{{ ref_entity|e }}','{{ ref_display|e }}',{{ hs.ref_description|tojson if hs.ref_description else 'null' }},{{ hs.ref_care_notes|tojson if hs.ref_care_notes else 'null' }},null,null)">ℹ</span>
+            {% elif hs.ref_fetched_at %}
+            <span class="ref-thumb-placeholder" title="No image found" onclick="openRefInfo('hardscape','{{ ref_entity|e }}','{{ ref_display|e }}',{{ hs.ref_description|tojson if hs.ref_description else 'null' }},{{ hs.ref_care_notes|tojson if hs.ref_care_notes else 'null' }},null,null)">ℹ</span>
+            {% elif ref_entity %}
+            <span class="ref-thumb-pending" title="Info loading…">⏳</span>
+            {% endif %}
+          </td>
           <td>{{ hs.item }}</td>
           <td>{{ hs.quantity or 1 }}</td>
           <td>{{ hs.source or '—' }}</td>
@@ -120,6 +150,32 @@
   <p class="muted panel-empty">No hardscape recorded.</p>
 </div>
 {% endif %}
+
+<!-- Reference Info Modal -->
+<div id="modal-ref-info" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="ref-modal-title"></h3>
+      <button class="modal-close" onclick="closeModal('modal-ref-info')">×</button>
+    </div>
+    <div class="ref-modal-body">
+      <div id="ref-modal-img-wrap"></div>
+      <div class="ref-modal-section">
+        <h4>About</h4>
+        <p id="ref-modal-description" class="ref-modal-text"></p>
+      </div>
+      <div class="ref-modal-section" id="ref-modal-care-wrap">
+        <h4>Care Notes</h4>
+        <p id="ref-modal-care" class="ref-modal-text"></p>
+      </div>
+      <p id="ref-modal-attribution" class="ref-attribution"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" type="button" onclick="closeModal('modal-ref-info')">Close</button>
+      <button class="btn btn-ghost" id="ref-modal-refresh" type="button">Refresh Info</button>
+    </div>
+  </div>
+</div>
 
 <!-- Add Plant Modal -->
 <div id="modal-add-plant" class="modal" style="display:none">
@@ -157,4 +213,44 @@
     </form>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openRefInfo(entityType, entityName, displayName, description, careNotes, imageUrl, attribution) {
+  document.getElementById('ref-modal-title').textContent = displayName || entityName;
+
+  const imgWrap = document.getElementById('ref-modal-img-wrap');
+  if (imageUrl) {
+    imgWrap.innerHTML = `<img src="${imageUrl}" class="ref-modal-img" alt="${displayName}" onerror="this.parentElement.innerHTML=''">`;
+  } else {
+    imgWrap.innerHTML = '';
+  }
+
+  document.getElementById('ref-modal-description').textContent = description || 'No description available.';
+
+  const careWrap = document.getElementById('ref-modal-care-wrap');
+  const careEl = document.getElementById('ref-modal-care');
+  if (careNotes) {
+    careEl.textContent = careNotes;
+    careWrap.style.display = '';
+  } else {
+    careWrap.style.display = 'none';
+  }
+
+  document.getElementById('ref-modal-attribution').textContent = attribution ? `Image: ${attribution}` : '';
+
+  document.getElementById('ref-modal-refresh').onclick = () => {
+    fetch('/reference-info/refresh', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity_type: entityType, entity_name: entityName, display_name: displayName}),
+    }).then(() => {
+      document.getElementById('ref-modal-refresh').textContent = 'Queued — reload in a moment';
+    });
+  };
+
+  openModal('modal-ref-info');
+}
+</script>
 {% endblock %}

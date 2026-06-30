@@ -911,6 +911,38 @@ p { margin-bottom: .5rem; }
 .sched-overdue { color: #f87171; font-weight: 600; }
 .sched-due-today { color: var(--warning); font-weight: 600; }
 
+/* ── Reference Info (thumbnails + detail modal) ─────────────────────────── */
+.ref-thumb-col { width: 52px; padding: 0; }
+.ref-thumb-cell { padding: .25rem .35rem; vertical-align: middle; }
+.ref-thumb {
+  width: 46px; height: 46px; object-fit: cover; border-radius: 5px;
+  border: 1px solid var(--border); cursor: pointer; display: block;
+  transition: border-color .15s;
+}
+.ref-thumb:hover { border-color: var(--primary); }
+.ref-thumb-placeholder {
+  width: 46px; height: 46px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 5px; cursor: pointer;
+  color: var(--accent); font-size: 1.1rem; background: var(--card);
+  transition: border-color .15s;
+}
+.ref-thumb-placeholder:hover { border-color: var(--primary); }
+.ref-thumb-pending {
+  display: inline-block; font-size: 1.3rem; opacity: .45; cursor: default;
+}
+.ref-modal-body { padding: 0 0 .5rem; }
+.ref-modal-img {
+  max-width: 100%; max-height: 280px; object-fit: contain;
+  border-radius: 6px; display: block; margin: 0 auto 1.1rem; border: 1px solid var(--border);
+}
+.ref-modal-section { margin-bottom: .85rem; }
+.ref-modal-section h4 {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); margin-bottom: .3rem;
+}
+.ref-modal-text { font-size: .9rem; line-height: 1.55; color: var(--text); margin: 0; }
+.ref-attribution { font-size: .7rem; color: var(--muted); margin: .5rem 0 0; }
+
 /* ── Utility ────────────────────────────────────────────────────────────── */
 .muted { color: var(--muted); }
 .muted.panel-empty { padding: .5rem 0; }

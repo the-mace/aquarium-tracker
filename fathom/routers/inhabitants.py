@@ -1,22 +1,40 @@
 from pathlib import Path
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from routers.reference_info import maybe_fetch_reference_info, _canonical
 
 router = APIRouter(prefix="/tanks/{tank_id}/inhabitants", tags=["inhabitants"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
 @router.get("", response_class=HTMLResponse)
-async def list_inhabitants(request: Request, tank_id: int):
+async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, tank_id: int):
     with get_db() as conn:
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
         inhabitants = rows_to_list(conn.execute(
-            "SELECT * FROM inhabitants WHERE tank_id = ? ORDER BY count DESC NULLS LAST, common_name, species",
+            """SELECT i.*,
+                      ri.description    AS ref_description,
+                      ri.care_notes     AS ref_care_notes,
+                      ri.image_url      AS ref_image_url,
+                      ri.image_source   AS ref_image_source,
+                      ri.image_attribution AS ref_image_attribution,
+                      ri.fetched_at     AS ref_fetched_at,
+                      ri.entity_name    AS ref_entity_name
+               FROM inhabitants i
+               LEFT JOIN reference_info ri
+                 ON ri.entity_type = 'species'
+                AND ri.entity_name = CASE
+                      WHEN i.species IS NOT NULL AND trim(i.species) != ''
+                        THEN lower(trim(i.species))
+                      ELSE lower(trim(i.common_name))
+                    END
+               WHERE i.tank_id = ?
+               ORDER BY i.count DESC NULLS LAST, i.common_name, i.species""",
             (tank_id,),
         ).fetchall())
         pop_events = rows_to_list(conn.execute(
@@ -25,6 +43,14 @@ async def list_inhabitants(request: Request, tank_id: int):
             " WHERE pe.tank_id = ? ORDER BY pe.timestamp DESC LIMIT 20",
             (tank_id,),
         ).fetchall())
+    # Queue reference info fetch for any inhabitant not yet in reference_info
+    for inh in inhabitants:
+        if inh.get("ref_entity_name") is None:
+            entity_name = _canonical(inh.get("species") or inh.get("common_name") or "")
+            if entity_name:
+                display = inh.get("common_name") or inh.get("species") or ""
+                maybe_fetch_reference_info(background_tasks, "species", entity_name, display)
+
     return templates.TemplateResponse("inhabitants/list.html", {
         "request": request, "tank": tank,
         "inhabitants": inhabitants, "pop_events": pop_events,
@@ -34,6 +60,7 @@ async def list_inhabitants(request: Request, tank_id: int):
 @router.post("")
 async def add_inhabitant(
     request: Request,
+    background_tasks: BackgroundTasks,
     tank_id: int,
     species: Optional[str] = Form(None),
     common_name: Optional[str] = Form(None),
@@ -55,6 +82,11 @@ async def add_inhabitant(
             "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
             (tank_id, inh_id, "added", actual_count or 0),
         )
+
+    entity_name = _canonical(species or common_name or "")
+    if entity_name:
+        display = common_name or species or ""
+        maybe_fetch_reference_info(background_tasks, "species", entity_name, display)
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:

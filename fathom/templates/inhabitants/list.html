@@ -13,6 +13,7 @@
   <table class="data-table">
     <thead>
       <tr>
+        <th class="ref-thumb-col"></th>
         <th>Count</th>
         <th>Common Name</th>
         <th>Species</th>
@@ -25,6 +26,20 @@
     <tbody>
       {% for inh in inhabitants %}
       <tr id="inh-row-{{ inh.id }}">
+        <td class="ref-thumb-cell">
+          {% set ref_entity = inh.ref_entity_name or (inh.species|lower if inh.species else (inh.common_name|lower if inh.common_name else '')) %}
+          {% set ref_display = inh.common_name or inh.species or '' %}
+          {% if inh.ref_image_url %}
+          <img src="{{ inh.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+               onclick="openRefInfo('species','{{ ref_entity|e }}','{{ ref_display|e }}',{{ inh.ref_description|tojson if inh.ref_description else 'null' }},{{ inh.ref_care_notes|tojson if inh.ref_care_notes else 'null' }},{{ inh.ref_image_url|tojson }},{{ inh.ref_image_attribution|tojson if inh.ref_image_attribution else 'null' }})">
+          <span class="ref-thumb-placeholder" style="display:none" onclick="openRefInfo('species','{{ ref_entity|e }}','{{ ref_display|e }}',{{ inh.ref_description|tojson if inh.ref_description else 'null' }},{{ inh.ref_care_notes|tojson if inh.ref_care_notes else 'null' }},null,null)">ℹ</span>
+          {% elif inh.ref_fetched_at %}
+          <span class="ref-thumb-placeholder" title="No image found" onclick="openRefInfo('species','{{ ref_entity|e }}','{{ ref_display|e }}',{{ inh.ref_description|tojson if inh.ref_description else 'null' }},{{ inh.ref_care_notes|tojson if inh.ref_care_notes else 'null' }},null,null)">ℹ</span>
+          {% elif ref_entity %}
+          <span class="ref-thumb-pending" title="Info loading…">⏳</span>
+          {% endif %}
+        </td>
         <td>
           {% if inh.count is none %}
           <span class="many-badge">many</span>
@@ -124,6 +139,32 @@
   </div>
 </div>
 
+<!-- Reference Info Modal -->
+<div id="modal-ref-info" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="ref-modal-title"></h3>
+      <button class="modal-close" onclick="closeModal('modal-ref-info')">×</button>
+    </div>
+    <div class="ref-modal-body">
+      <div id="ref-modal-img-wrap"></div>
+      <div class="ref-modal-section">
+        <h4>About</h4>
+        <p id="ref-modal-description" class="ref-modal-text"></p>
+      </div>
+      <div class="ref-modal-section" id="ref-modal-care-wrap">
+        <h4>Care Notes</h4>
+        <p id="ref-modal-care" class="ref-modal-text"></p>
+      </div>
+      <p id="ref-modal-attribution" class="ref-attribution"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" type="button" onclick="closeModal('modal-ref-info')">Close</button>
+      <button class="btn btn-ghost" id="ref-modal-refresh" type="button">Refresh Info</button>
+    </div>
+  </div>
+</div>
+
 <!-- Population Event Modal -->
 <div id="modal-pop-event" class="modal" style="display:none">
   <div class="modal-box modal-box-sm">
@@ -150,6 +191,43 @@
 
 {% block scripts %}
 <script>
+function openRefInfo(entityType, entityName, displayName, description, careNotes, imageUrl, attribution) {
+  document.getElementById('ref-modal-title').textContent = displayName || entityName;
+
+  const imgWrap = document.getElementById('ref-modal-img-wrap');
+  if (imageUrl) {
+    imgWrap.innerHTML = `<img src="${imageUrl}" class="ref-modal-img" alt="${displayName}" onerror="this.parentElement.innerHTML=''">`;
+  } else {
+    imgWrap.innerHTML = '';
+  }
+
+  document.getElementById('ref-modal-description').textContent = description || 'No description available.';
+
+  const careWrap = document.getElementById('ref-modal-care-wrap');
+  const careEl = document.getElementById('ref-modal-care');
+  if (careNotes) {
+    careEl.textContent = careNotes;
+    careWrap.style.display = '';
+  } else {
+    careWrap.style.display = 'none';
+  }
+
+  document.getElementById('ref-modal-attribution').textContent = attribution ? `Image: ${attribution}` : '';
+
+  document.getElementById('ref-modal-refresh').onclick = () => {
+    fetch('/reference-info/refresh', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity_type: entityType, entity_name: entityName, display_name: displayName}),
+    }).then(() => {
+      closeModal('modal-ref-info');
+      document.getElementById('ref-modal-refresh').textContent = 'Queued — reload in a moment';
+    });
+  };
+
+  openModal('modal-ref-info');
+}
+
 function openPopEvent(inhId, name) {
   document.getElementById('pop-event-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/event`;
   document.getElementById('pop-event-subject').textContent = name;
