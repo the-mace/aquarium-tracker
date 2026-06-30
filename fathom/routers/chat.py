@@ -9,13 +9,84 @@ from database import get_db, rows_to_list, row_to_dict
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
-# In-memory conversation store keyed by tank_id
 _conversations: dict[int, list[dict]] = {}
 MAX_TURNS = 10
 
 
 class ChatMessage(BaseModel):
     message: str
+
+
+def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs):
+    parts = [
+        "You are an expert aquarium keeper assistant with detailed knowledge of the following tank.",
+        f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)",
+    ]
+
+    if tank.get("manufacturer") or tank.get("model"):
+        parts.append(f"Hardware: {(tank.get('manufacturer') or '')} {(tank.get('model') or '')}".strip())
+
+    if tank.get("dimensions_l"):
+        parts.append(f"Dimensions: {tank['dimensions_l']}\" × {tank['dimensions_w']}\" × {tank['dimensions_h']}\"")
+
+    if tank.get("substrate_type"):
+        sub = tank["substrate_type"]
+        if tank.get("substrate_brand"):
+            sub += f" ({tank['substrate_brand']})"
+        if tank.get("substrate_depth_inches"):
+            sub += f", {tank['substrate_depth_inches']}\""
+        parts.append(f"Substrate: {sub}")
+
+    if latest_test:
+        params = []
+        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp"):
+            val = latest_test.get(field)
+            if val is not None:
+                params.append(f"{field.upper()}={val}")
+        if params:
+            ts = (latest_test.get("timestamp") or "")[:10]
+            parts.append(f"\nLatest Water Parameters ({ts}):\n  " + ", ".join(params))
+    else:
+        parts.append("\nLatest Water Parameters: none recorded")
+
+    if inhabitants:
+        lines = []
+        for i in inhabitants:
+            name = i.get("common_name") or i.get("species") or "Unknown"
+            count = i.get("count")
+            count_str = "many" if count is None else str(count)
+            lines.append(f"  {count_str}x {name}")
+        parts.append("\nInhabitants:\n" + "\n".join(lines))
+    else:
+        parts.append("\nInhabitants: none recorded")
+
+    if plants:
+        lines = ["  " + (p.get("common_name") or p.get("species") or "Unknown plant") for p in plants]
+        parts.append("\nPlants:\n" + "\n".join(lines))
+
+    if hardscape:
+        lines = []
+        for h in hardscape:
+            qty = h.get("quantity") or 1
+            prefix = f"{qty}× " if qty > 1 else ""
+            lines.append(f"  {prefix}{h['item']}")
+        parts.append("\nHardscape:\n" + "\n".join(lines))
+
+    if open_issues:
+        lines = [f"  [{i['status'].upper()}] {i['title']}: {i.get('description','')}" for i in open_issues]
+        parts.append("\nOpen Issues:\n" + "\n".join(lines))
+
+    if summary and summary.get("summary_text"):
+        parts.append(f"\nRecent AI Summary:\n{summary['summary_text']}")
+
+    if recent_obs:
+        parts.append("\nRecent Observations:")
+        for obs in recent_obs:
+            ts = (obs.get("created_at") or "")[:10]
+            parts.append(f"  [{obs['source']}] {ts}: {obs['text'][:200]}")
+
+    parts.append("\nAnswer questions helpfully and concisely. Reference specific data from above when relevant.")
+    return "\n".join(parts)
 
 
 @router.post("")
@@ -33,31 +104,44 @@ async def chat(tank_id: int, body: ChatMessage):
             "SELECT summary_text FROM tank_state_summary WHERE tank_id = ?", (tank_id,),
         ).fetchone())
 
-        recent_obs = rows_to_list(conn.execute(
-            "SELECT text, source, created_at FROM observations WHERE tank_id = ? ORDER BY created_at DESC LIMIT 3",
+        latest_test = row_to_dict(conn.execute(
+            "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (tank_id,),
+        ).fetchone())
+
+        inhabitants = rows_to_list(conn.execute(
+            "SELECT common_name, species, count FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
             (tank_id,),
         ).fetchall())
 
-    context_parts = [
-        f"You are an expert aquarium keeper assistant. You have detailed knowledge of the following tank.",
-        f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)",
-    ]
+        plants = rows_to_list(conn.execute(
+            "SELECT common_name, species FROM plants WHERE tank_id = ? AND status = 'active'",
+            (tank_id,),
+        ).fetchall())
 
-    if summary and summary.get("summary_text"):
-        context_parts.append(f"\nCurrent State Summary:\n{summary['summary_text']}")
+        hardscape = rows_to_list(conn.execute(
+            "SELECT item, quantity FROM hardscape WHERE tank_id = ?",
+            (tank_id,),
+        ).fetchall())
 
-    if recent_obs:
-        context_parts.append("\nRecent Observations:")
-        for obs in recent_obs:
-            context_parts.append(f"  [{obs['source']}] {obs['created_at']}: {obs['text'][:300]}")
+        open_issues = rows_to_list(conn.execute(
+            "SELECT title, description, status FROM issues WHERE tank_id = ? AND status != 'resolved'",
+            (tank_id,),
+        ).fetchall())
 
-    context_parts.append("\nAnswer questions helpfully and concisely. If you're uncertain, say so.")
-    system_prompt = "\n".join(context_parts)
+        recent_obs = rows_to_list(conn.execute(
+            "SELECT text, source, created_at FROM observations WHERE tank_id = ? ORDER BY created_at DESC LIMIT 5",
+            (tank_id,),
+        ).fetchall())
+
+    system_prompt = _build_system_prompt(
+        tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs
+    )
+    logger.info("Chat system prompt for tank %d: %d chars", tank_id, len(system_prompt))
 
     history = _conversations.get(tank_id, [])
     history.append({"role": "user", "content": body.message})
 
-    # Keep last MAX_TURNS pairs (user+assistant = 2 messages per turn)
     if len(history) > MAX_TURNS * 2:
         history = history[-(MAX_TURNS * 2):]
 

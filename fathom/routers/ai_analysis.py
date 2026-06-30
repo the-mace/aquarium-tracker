@@ -22,7 +22,30 @@ def _fmt_test_results(rows):
 def _fmt_inhabitants(rows):
     if not rows:
         return "  None"
-    return "\n".join(f"  {r['count']}x {r.get('common_name') or r.get('species','Unknown')}" for r in rows)
+    lines = []
+    for r in rows:
+        name = r.get("common_name") or r.get("species") or "Unknown"
+        count = r.get("count")
+        count_str = "many" if count is None else str(count)
+        lines.append(f"  {count_str}x {name}")
+    return "\n".join(lines)
+
+
+def _fmt_plants(rows):
+    if not rows:
+        return "  None"
+    return "\n".join(f"  {r.get('common_name') or r.get('species') or 'Unknown plant'}" for r in rows)
+
+
+def _fmt_hardscape(rows):
+    if not rows:
+        return "  None"
+    lines = []
+    for r in rows:
+        qty = r.get("quantity") or 1
+        prefix = f"{qty}x " if qty > 1 else ""
+        lines.append(f"  {prefix}{r['item']}")
+    return "\n".join(lines)
 
 
 def _fmt_issues(rows):
@@ -37,13 +60,19 @@ def _fmt_events(rows):
     return "\n".join(f"  {r['timestamp']} {r['event_type']}: {r.get('notes','')}" for r in rows)
 
 
-def build_analysis_prompt(tank, test_results, issues, events, inhabitants):
+def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape):
     return f"""You are an expert aquarium keeper analyzing water chemistry and tank health data.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
 
 Current Inhabitants:
 {_fmt_inhabitants(inhabitants)}
+
+Plants:
+{_fmt_plants(plants)}
+
+Hardscape:
+{_fmt_hardscape(hardscape)}
 
 Recent Test Results (newest first):
 {_fmt_test_results(test_results)}
@@ -63,7 +92,7 @@ Please provide:
 Keep your response concise and practical. Use plain text, no markdown formatting."""
 
 
-def build_summary_prompt(tank, test_results, issues, inhabitants, latest_analysis):
+def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis):
     return f"""You are an expert aquarium keeper. Write a concise 2-3 paragraph summary of this tank's current state for use as context in future questions.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
@@ -71,8 +100,14 @@ Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volum
 Inhabitants:
 {_fmt_inhabitants(inhabitants)}
 
+Plants:
+{_fmt_plants(plants)}
+
+Hardscape:
+{_fmt_hardscape(hardscape)}
+
 Latest Water Parameters:
-{_fmt_test_results(test_results[:3])}
+{_fmt_test_results(test_results[:1])}
 
 Open Issues:
 {_fmt_issues([i for i in issues if i.get('status') != 'resolved'])}
@@ -80,7 +115,7 @@ Open Issues:
 Latest Analysis:
 {latest_analysis}
 
-Write the summary as plain text, no markdown. Be specific about current parameter values and any active concerns."""
+Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, and any active concerns."""
 
 
 async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
@@ -113,13 +148,23 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             ).fetchall())
 
             inhabitants = rows_to_list(conn.execute(
-                "SELECT * FROM inhabitants WHERE tank_id = ? AND count > 0",
+                "SELECT * FROM inhabitants WHERE tank_id = ?",
+                (tank_id,),
+            ).fetchall())
+
+            plants = rows_to_list(conn.execute(
+                "SELECT * FROM plants WHERE tank_id = ? AND status = 'active'",
+                (tank_id,),
+            ).fetchall())
+
+            hardscape = rows_to_list(conn.execute(
+                "SELECT * FROM hardscape WHERE tank_id = ?",
                 (tank_id,),
             ).fetchall())
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        analysis_prompt = build_analysis_prompt(tank, test_results, issues, events, inhabitants)
+        analysis_prompt = build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape)
         msg = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
@@ -137,7 +182,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 (tank_id, related_event_id, related_test_id, analysis_text),
             )
 
-        summary_prompt = build_summary_prompt(tank, test_results, issues, inhabitants, analysis_text)
+        summary_prompt = build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, analysis_text)
         sum_msg = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=512,
