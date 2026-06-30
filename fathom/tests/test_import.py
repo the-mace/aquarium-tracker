@@ -330,15 +330,16 @@ def test_find_duplicates_inhabitant_match(client, tank_id):
     assert dups[0]["section"] == "inhabitants"
 
 
-def test_find_duplicates_inhabitant_no_date_not_flagged(client, tank_id):
+def test_find_duplicates_inhabitant_species_match_no_date(client, tank_id):
     client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": {
         "inhabitants": [{"species": "Caridina cantonensis", "count": 10}]
     }})
-    # No added_date on either side — should not flag
-    preview = {"inhabitants": [{"species": "Caridina cantonensis", "count": 10}]}
+    # Species already in DB — should flag regardless of date (count update, not dup insert)
+    preview = {"inhabitants": [{"species": "Caridina cantonensis", "count": 5}]}
     with _db.get_db() as conn:
         dups = _find_duplicates(tank_id, preview, conn)
-    assert dups == []
+    assert len(dups) == 1
+    assert dups[0]["section"] == "inhabitants"
 
 
 def test_find_duplicates_equipment_match(client, tank_id):

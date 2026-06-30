@@ -68,7 +68,7 @@
           <td class="nowrap">{{ ev.timestamp }}</td>
           <td>{{ ev.common_name or ev.species or '—' }}</td>
           <td><span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span></td>
-          <td>{{ ev.count }}</td>
+          <td>{% if ev.count %}{{ ev.count }}{% else %}—{% endif %}</td>
           <td class="muted">{{ ev.notes or '' }}</td>
         </tr>
         {% endfor %}

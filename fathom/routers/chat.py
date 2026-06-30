@@ -85,7 +85,7 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
             ts = (obs.get("created_at") or "")[:10]
             parts.append(f"  [{obs['source']}] {ts}: {obs['text'][:200]}")
 
-    parts.append("\nAnswer questions helpfully and concisely. Reference specific data from above when relevant.")
+    parts.append("\nAnswer questions helpfully and concisely. Reference specific data from above when relevant. Do not use markdown formatting (no **bold**, no *italic*, no headers, no bullet dashes) — plain text only.")
     return "\n".join(parts)
 
 
@@ -154,7 +154,11 @@ async def chat(tank_id: int, body: ChatMessage):
             system=system_prompt,
             messages=history,
         )
-        reply = response.content[0].text
+        import re
+        raw = response.content[0].text
+        # Strip markdown that the chat panel renders as literal characters
+        reply = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', raw)   # **bold**, *italic*, ***both***
+        reply = re.sub(r'^#{1,6}\s+', '', reply, flags=re.MULTILINE)  # headings
     except Exception as e:
         logger.error("Chat error for tank %d: %s", tank_id, e)
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")

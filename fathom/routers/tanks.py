@@ -84,7 +84,7 @@ async def tank_detail(request: Request, tank_id: int):
         ).fetchone())
 
         inhabitants = rows_to_list(conn.execute(
-            "SELECT * FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
+            "SELECT * FROM inhabitants WHERE tank_id = ? ORDER BY count DESC NULLS LAST, common_name, species",
             (tank_id,),
         ).fetchall())
 

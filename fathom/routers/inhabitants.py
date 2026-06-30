@@ -16,12 +16,12 @@ async def list_inhabitants(request: Request, tank_id: int):
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
         inhabitants = rows_to_list(conn.execute(
-            "SELECT * FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
+            "SELECT * FROM inhabitants WHERE tank_id = ? ORDER BY count DESC NULLS LAST, common_name, species",
             (tank_id,),
         ).fetchall())
         pop_events = rows_to_list(conn.execute(
             "SELECT pe.*, i.common_name, i.species FROM population_events pe"
-            " LEFT JOIN inhabitants i ON i.id = pe.inhabitant_id"
+            " INNER JOIN inhabitants i ON i.id = pe.inhabitant_id"
             " WHERE pe.tank_id = ? ORDER BY pe.timestamp DESC LIMIT 20",
             (tank_id,),
         ).fetchall())

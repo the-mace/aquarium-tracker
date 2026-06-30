@@ -62,7 +62,7 @@
     <div class="inhabitant-list">
       {% for inh in inhabitants %}
       <div class="inhabitant-row">
-        <span class="inh-count">{{ inh.count }}</span>
+        <span class="inh-count">{% if inh.count is none %}—{% else %}{{ inh.count }}{% endif %}</span>
         <span class="inh-name">{{ inh.common_name or inh.species or 'Unknown' }}</span>
         {% if inh.species and inh.common_name %}<span class="inh-species">{{ inh.species }}</span>{% endif %}
       </div>

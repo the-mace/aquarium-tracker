@@ -88,13 +88,21 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
 EXTRACTION RULES (follow carefully):
 1. PURCHASES: Capture ALL cost items — initial setup costs mentioned in intro paragraphs, individual item purchases, consumables. If a total cost is mentioned without itemization, create one purchase record for it.
 2. TANK SPECS: If you can identify the tank manufacturer/model (e.g. "Fluval Spec V", "Fluval Spec III", "ADA 60-P"), fill in standard dimensions and volume from your knowledge if not explicitly stated. Note inferred values in the notes field.
-3. EQUIPMENT: Be exhaustive — include filter media modifications (foam blocks, bio-media, ceramic rings), prefilter sponges, nozzle changes, floating plant corrals, UV sterilizers, CO2 systems, and any hardware mentioned narratively, not just in structured equipment lists. If a piece of equipment was removed, replaced, or decommissioned, set removed_date to when it was removed — the timeline view uses this date.
-4. ISSUES: Look for problem/resolution patterns:
+3. EQUIPMENT vs EVENTS: Equipment records describe what hardware exists in the tank (what you own/installed). Maintenance events describe actions performed on existing equipment. Use this rule: if the text is about acquiring, installing, or permanently modifying a piece of hardware → equipment record. If it is about adjusting, repositioning, cleaning, or doing something to already-installed hardware → maintenance event with notes describing the action.
+   - "Added UV sterilizer to tank" → equipment record (uv category)
+   - "Repositioned UV light to filter material side for better flow" → maintenance event (not equipment)
+   - "Replaced sponge in filter" → maintenance event
+   - "Installed new Fluval heater" → equipment record (heater category)
+   - "Added black vinyl to cover UV light" → maintenance event (modification to existing hardware)
+   - "Plugged emergency inlet from tank side" → maintenance event
+   Equipment records should be created for hardware that didn't previously exist in the log. Do not create a duplicate equipment record for hardware that is clearly already installed and being worked on.
+4. ISSUES: Look for problem/resolution patterns. If the same problem is mentioned as discovered on one date AND later fixed/resolved on a later date in the same log, produce ONE issue with status='resolved', opened_at=discovery date, resolved_at=fix date. Do NOT produce two separate issues for the same problem.
    - "had algae bloom for weeks until I added UV sterilizer which fixed it" → resolved issue, resolved_at = date UV was added
    - "struggling with high nitrates, not sure what to do" → open issue
    - "snails were dying, started feeding zucchini, they recovered" → resolved issue
    - "frogbit wilting, started Flourish dosing, it improved" → resolved issue
-5. INHABITANTS: If population is uncountable ("lots of MTS snails", "countless pest snails", "a colony of shrimp"), set count_unknown=true and count=null.
+   - "sponge plug found missing [date1] ... plugged it back in [date2]" → resolved issue, opened_at=date1, resolved_at=date2
+5. INHABITANTS: Always use the scientific species name when known (e.g. Neocaridina davidi for fire red/cherry/sakura shrimp; Physidae sp. for bladder snails; Planorbidae sp. for ramshorn snails; Melanoides tuberculata for MTS). If population is uncountable ("lots of MTS snails", "countless pest snails", "a colony of shrimp"), set count_unknown=true and count=null.
 6. OBSERVATIONS: Capture journal entries, personal qualitative notes, and observations (e.g. "shrimp seem very active today", "noticed some plant melt on the anubias"). Do NOT duplicate structured measurement data as observations.
 7. FLAGS: Flag values that seem incorrect or unusual:
    - Water parameters out of normal range for the tank type (KH > 15 for freshwater, pH > 8.5 or < 5.5 for freshwater, ammonia > 4, nitrate > 160)
@@ -440,58 +448,84 @@ def _find_duplicates(tank_id: int, preview: dict, conn) -> list:
             dups.append({"section": "purchases", "index": i,
                          "message": f"Purchase '{pur.get('item')}' on {d} already exists."})
 
-    # inhabitants: same species + added_date (only when both are non-null)
-    existing_set = set(
-        (r[0], r[1]) for r in conn.execute(
-            "SELECT lower(trim(species)), added_date FROM inhabitants WHERE tank_id=?", (tank_id,)
-        ).fetchall() if r[0] and r[1]
+    # inhabitants: same species already in DB (count will be updated, not duplicated)
+    existing_species = set(
+        r[0] for r in conn.execute(
+            "SELECT lower(trim(species)) FROM inhabitants WHERE tank_id=? AND species IS NOT NULL", (tank_id,)
+        ).fetchall()
     )
+    seen_inh: set = set()
     for i, inh in enumerate(preview.get("inhabitants", [])):
         sp = (inh.get("species") or "").lower().strip()
-        d = inh.get("added_date") or ""
-        if sp and d and (sp, d) in existing_set:
+        name = inh.get("common_name") or inh.get("species") or "inhabitant"
+        if sp and sp in existing_species:
             dups.append({"section": "inhabitants", "index": i,
-                         "message": f"Inhabitant '{inh.get('species')}' added {d} already exists."})
+                         "message": f"'{name}' already exists — confirming will update its count."})
+        elif sp and sp in seen_inh:
+            dups.append({"section": "inhabitants", "index": i,
+                         "message": f"'{name}' appears multiple times in this import."})
+        if sp:
+            seen_inh.add(sp)
 
-    # plants: same species + added_date (active plants)
+    # plants: same species + added_date (active plants); also within-preview by species
     existing_set = set(
         (r[0], r[1]) for r in conn.execute(
             "SELECT lower(trim(species)), added_date FROM plants WHERE tank_id=? AND status='active'", (tank_id,)
         ).fetchall() if r[0] and r[1]
     )
+    seen_plants: set = set()
     for i, pl in enumerate(preview.get("plants", [])):
         sp = (pl.get("species") or "").lower().strip()
         d = pl.get("added_date") or ""
+        name = pl.get("species") or pl.get("common_name") or "plant"
         if sp and d and (sp, d) in existing_set:
-            name = pl.get("species") or pl.get("common_name") or "plant"
             dups.append({"section": "plants", "index": i,
                          "message": f"Plant '{name}' added {d} already exists."})
+        elif sp and sp in seen_plants:
+            dups.append({"section": "plants", "index": i,
+                         "message": f"Plant '{name}' appears multiple times in this import."})
+        if sp:
+            seen_plants.add(sp)
 
-    # equipment: same brand + model (case-insensitive, active only)
+    # equipment: same brand + model (case-insensitive, active only); also within-preview
     existing_set = set(
         (r[0] or "", r[1] or "") for r in conn.execute(
             "SELECT lower(trim(brand)), lower(trim(model))"
             " FROM tank_equipment WHERE tank_id=? AND is_active=1", (tank_id,)
         ).fetchall()
     )
+    seen_equip: set = set()
     for i, eq in enumerate(preview.get("equipment", [])):
         brand = (eq.get("brand") or "").lower().strip()
         model = (eq.get("model") or "").lower().strip()
-        if brand and model and (brand, model) in existing_set:
+        key = (brand, model)
+        label = f"{eq.get('brand') or ''} {eq.get('model') or ''}".strip() or eq.get("category", "equipment")
+        if brand and model and key in existing_set:
             dups.append({"section": "equipment", "index": i,
-                         "message": f"Equipment '{eq.get('brand')} {eq.get('model')}' is already listed."})
+                         "message": f"Equipment '{label}' is already listed."})
+        elif key != ("", "") and key in seen_equip:
+            dups.append({"section": "equipment", "index": i,
+                         "message": f"Equipment '{label}' appears multiple times in this import."})
+        if key != ("", ""):
+            seen_equip.add(key)
 
-    # hardscape: same item name (case-insensitive)
+    # hardscape: same item name (case-insensitive); also within-preview
     existing_set = set(
         r[0] for r in conn.execute(
             "SELECT lower(trim(item)) FROM hardscape WHERE tank_id=?", (tank_id,)
         ).fetchall()
     )
+    seen_hs: set = set()
     for i, hs in enumerate(preview.get("hardscape", [])):
         item = (hs.get("item") or "").lower().strip()
         if item and item in existing_set:
             dups.append({"section": "hardscape", "index": i,
                          "message": f"Hardscape item '{hs.get('item')}' already exists."})
+        elif item and item in seen_hs:
+            dups.append({"section": "hardscape", "index": i,
+                         "message": f"Hardscape item '{hs.get('item')}' appears multiple times in this import."})
+        if item:
+            seen_hs.add(item)
 
     # issues: same title (case-insensitive)
     existing_set = set(
@@ -605,18 +639,33 @@ async def import_confirm(tank_id: int, request: Request):
             )
         inserted["purchases"] = len(preview.get("purchases", []))
 
-        # Inhabitants
+        # Inhabitants — UPDATE count if species already exists, otherwise INSERT
         for inh in preview.get("inhabitants", []):
             count_val = None if inh.get("count_unknown") else inh.get("count", 1)
-            cur = conn.execute(
-                "INSERT INTO inhabitants (tank_id, species, common_name, count, added_date, source, notes) VALUES (?,?,?,?,?,?,?)",
-                (tank_id, inh.get("species"), inh.get("common_name"), count_val,
-                 inh.get("added_date"), inh.get("source"), inh.get("notes")),
-            )
-            conn.execute(
-                "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
-                (tank_id, cur.lastrowid, "added", count_val or 0),
-            )
+            sp = (inh.get("species") or "").strip()
+            existing = conn.execute(
+                "SELECT id FROM inhabitants WHERE tank_id=? AND lower(trim(species))=lower(?)",
+                (tank_id, sp),
+            ).fetchone() if sp else None
+            if existing:
+                conn.execute(
+                    "UPDATE inhabitants SET count=?, updated_at=datetime('now') WHERE id=?",
+                    (count_val, existing[0]),
+                )
+                conn.execute(
+                    "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes) VALUES (?,?,?,?,?)",
+                    (tank_id, existing[0], "added", count_val, "count updated via import"),
+                )
+            else:
+                cur = conn.execute(
+                    "INSERT INTO inhabitants (tank_id, species, common_name, count, added_date, source, notes) VALUES (?,?,?,?,?,?,?)",
+                    (tank_id, inh.get("species"), inh.get("common_name"), count_val,
+                     inh.get("added_date"), inh.get("source"), inh.get("notes")),
+                )
+                conn.execute(
+                    "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
+                    (tank_id, cur.lastrowid, "added", count_val),
+                )
         inserted["inhabitants"] = len(preview.get("inhabitants", []))
 
         # Plants
@@ -652,13 +701,25 @@ async def import_confirm(tank_id: int, request: Request):
             )
         inserted["hardscape"] = len(preview.get("hardscape", []))
 
-        # Issues
+        # Issues — if title matches an existing open/monitoring issue and this one is resolved, UPDATE instead of INSERT
         for iss in preview.get("issues", []):
-            conn.execute(
-                "INSERT INTO issues (tank_id, title, description, status, opened_at, resolved_at, notes) VALUES (?,?,?,?,?,?,?)",
-                (tank_id, iss.get("title", ""), iss.get("description", ""),
-                 iss.get("status", "open"), iss.get("opened_at"), iss.get("resolved_at"), iss.get("notes")),
-            )
+            title = iss.get("title", "")
+            status = iss.get("status", "open")
+            existing_issue = conn.execute(
+                "SELECT id FROM issues WHERE tank_id=? AND lower(trim(title))=lower(trim(?)) AND status IN ('open','monitoring')",
+                (tank_id, title),
+            ).fetchone()
+            if existing_issue and status == "resolved" and iss.get("resolved_at"):
+                conn.execute(
+                    "UPDATE issues SET status='resolved', resolved_at=?, notes=COALESCE(NULLIF(?,''), notes) WHERE id=?",
+                    (iss.get("resolved_at"), iss.get("notes"), existing_issue[0]),
+                )
+            elif not existing_issue:
+                conn.execute(
+                    "INSERT INTO issues (tank_id, title, description, status, opened_at, resolved_at, notes) VALUES (?,?,?,?,?,?,?)",
+                    (tank_id, title, iss.get("description", ""),
+                     status, iss.get("opened_at"), iss.get("resolved_at"), iss.get("notes")),
+                )
         inserted["issues"] = len(preview.get("issues", []))
 
         # Observations
