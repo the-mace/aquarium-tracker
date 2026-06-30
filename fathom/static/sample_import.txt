@@ -1,0 +1,104 @@
+# Planted Community Tank — Aquarium Log
+
+## Tank Info
+20-gallon long, set up March 1, 2026. Dimensions 30" x 12" x 12".
+Substrate: ADA Amazonia aqua soil, about 2 inches deep.
+Manufacturer: Aqueon, Model: 20L.
+
+## Equipment
+- Fluval 207 canister filter (installed March 1, 2026) — runs carbon + bio media
+- Fluval E100 heater (100W), installed at setup
+- Finnex Planted+ 24/7 CRV light (24 inch), installed March 1, 2026
+
+## Hardscape
+- Malaysian driftwood, 2 pieces, bought from local fish store for $18 total, added March 1
+- Seiryu stone, 4 pieces, purchased at AquaticArts.com for $22, added March 1
+
+## Plants (added March 1, 2026)
+- Java fern (Microsorum pteropus) — bought from local fish store, tissue culture
+- Anubias nana petite (Anubias barteri var. nana 'Petite') — local fish store
+- Cryptocoryne wendtii brown (Cryptocoryne wendtii 'Brown') — local fish store
+- Dwarf sagittaria (Sagittaria subulata) — foreground carpet, local fish store
+
+## Fish & Inhabitants
+- 8 cardinal tetras (Paracheirodon axelrodi), added March 8, 2026, purchased from Aquatic Arts
+- 6 corydoras paleatus (Corydoras paleatus), added March 15, 2026, purchased from local fish store
+- 1 bristlenose pleco (Ancistrus sp.), added March 22, 2026, local fish store
+- 3 nerite snails (Neritina natalensis), added March 8, 2026, AquaticArts.com
+
+## Purchases
+- March 1: ADA Amazonia soil, substrate, local fish store, $45
+- March 1: Fluval 207 canister filter, filter, AquaticArts.com, $89
+- March 1: Fluval E100 heater, heater, AquaticArts.com, $38
+- March 1: Finnex Planted+ light, lighting, Amazon, $72
+- March 1: Seiryu stone, hardscape, AquaticArts.com, $22
+- March 1: Malaysian driftwood (2 pcs), hardscape, local fish store, $18
+- March 1: Java fern, plants, local fish store, $9
+- March 1: Anubias nana petite, plants, local fish store, $11
+- March 1: Cryptocoryne wendtii, plants, local fish store, $7
+- March 1: Dwarf sagittaria, plants, local fish store, $8
+- March 8: Cardinal tetras (8), fish, AquaticArts.com, $40
+- March 8: Nerite snails (3), invertebrates, AquaticArts.com, $12
+- March 15: Corydoras paleatus (6), fish, local fish store, $36
+- March 22: Bristlenose pleco, fish, local fish store, $15
+- April 5: API root tabs (10 pack), fertilizer, Amazon, $9
+
+## Water Tests
+
+March 5, 2026: pH 7.0, GH 6, KH 4, ammonia 0.5, nitrite 0.0, nitrate 5, temp 76
+March 10: pH 7.0, GH 6, KH 4, ammonia 0.25, nitrite 0.0, nitrate 8, temp 76. Ammonia dropping, cycle progressing.
+March 15: pH 7.1, GH 6, KH 4, ammonia 0.0, nitrite 0.25, nitrate 12, temp 77. Nitrite spike — cycle nearly done.
+March 22: pH 7.0, GH 6, KH 4, ammonia 0.0, nitrite 0.0, nitrate 15, temp 77. Cycled! Added cories today.
+April 1: pH 6.9, GH 6, KH 3, ammonia 0.0, nitrite 0.0, nitrate 20, TDS 140, temp 77
+April 10: pH 7.0, GH 6, KH 4, ammonia 0.0, nitrite 0.0, nitrate 10, TDS 138, temp 77. Post water change.
+April 20: pH 6.9, GH 5, KH 3, ammonia 0.0, nitrite 0.0, nitrate 14, TDS 142, temp 77
+May 1: pH 7.0, GH 6, KH 4, ammonia 0.0, nitrite 0.0, nitrate 18, TDS 145, temp 76
+May 12: pH 7.0, GH 6, KH 4, ammonia 0.0, nitrite 0.0, nitrate 8, TDS 140, temp 76. Post water change.
+
+## Events & Maintenance
+
+March 1, 2026: tank setup — filled and started filter, added dechlorinator
+March 5: added bottled beneficial bacteria to seed cycle
+March 10: 20% water change
+March 15: 30% water change
+March 22: 25% water change
+April 1: 30% water change, 6 gallons. Vacuumed substrate lightly.
+April 1: dosed Seachem Excel, 5ml
+April 5: planted root tabs under crypts and sagittaria
+April 10: 30% water change, 6 gallons. Trimmed dying java fern leaves.
+April 15: dosed Seachem Excel, 5ml
+April 20: 25% water change
+April 25: dosed Seachem Flourish, 2ml
+May 1: cleaned filter impeller — flow had dropped noticeably
+May 1: 30% water change, 6 gallons
+May 12: 30% water change, 6 gallons. Trimmed sagittaria runners.
+
+## Recurring Schedule
+
+Feeding schedule:
+- Monday: morning — Hikari Micro Pellets, evening — frozen bloodworms
+- Tuesday: morning — Hikari Micro Pellets
+- Wednesday: morning — Hikari Micro Pellets, evening — Repashy Soilent Green (for pleco)
+- Thursday: morning — Hikari Micro Pellets
+- Friday: morning — Hikari Micro Pellets, evening — frozen daphnia
+- Saturday: morning — Hikari Micro Pellets
+- Sunday: fast day — no feeding
+
+Maintenance schedule:
+- Water change 30%: every 7 days
+- Clean filter impeller: every 60 days
+- Trim plants / remove dead leaves: every 14 days
+
+## Issues / Problems
+
+Late March I noticed some green hair algae growing on the driftwood. Not severe but spreading slowly. I reduced the light period from 10 hours to 7 hours on April 2 and started dosing Excel. By April 20 the hair algae had mostly disappeared. Marking this resolved.
+
+## Observations / Journal
+
+March 22: Tank is officially cycled — zero ammonia and nitrite for 3 days straight. Very happy with how quickly it went (3 weeks). The driftwood has a nice bio-film the cories love picking at.
+
+April 1: Cardinal tetras are schooling beautifully now that they've settled in. The bristlenose is very active at night — leaves clean patches on the glass each morning. Anubias and java fern look healthy. Crypts melting a bit, which is expected after replanting.
+
+April 20: Crypts have fully recovered from melt and are pushing out new leaves. Sagittaria sending out runners. Light period reduction worked — hair algae is gone. Feeling good about this tank.
+
+May 12: Tank is looking its best yet. Dense sagittaria carpet forming in the front left. All fish are eating well and showing great color. Pleco has grown noticeably. Will add CO2 injection next month if the plants plateau.
