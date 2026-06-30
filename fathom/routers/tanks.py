@@ -6,6 +6,12 @@ from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 
 router = APIRouter(prefix="/tanks", tags=["tanks"])
+
+
+def _float(value: Optional[str]) -> Optional[float]:
+    if value is None or value.strip() == "":
+        return None
+    return float(value)
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 TANK_TABLES = [
@@ -36,16 +42,16 @@ async def create_tank(
     request: Request,
     name: str = Form(...),
     water_type: str = Form("fresh"),
-    volume_gallons: Optional[float] = Form(None),
-    dimensions_l: Optional[float] = Form(None),
-    dimensions_w: Optional[float] = Form(None),
-    dimensions_h: Optional[float] = Form(None),
+    volume_gallons: Optional[str] = Form(None),
+    dimensions_l: Optional[str] = Form(None),
+    dimensions_w: Optional[str] = Form(None),
+    dimensions_h: Optional[str] = Form(None),
     shape: Optional[str] = Form(None),
     manufacturer: Optional[str] = Form(None),
     model: Optional[str] = Form(None),
     substrate_type: Optional[str] = Form(None),
     substrate_brand: Optional[str] = Form(None),
-    substrate_depth_inches: Optional[float] = Form(None),
+    substrate_depth_inches: Optional[str] = Form(None),
     setup_date: Optional[str] = Form(None),
     status: str = Form("active"),
     notes: Optional[str] = Form(None),
@@ -56,8 +62,8 @@ async def create_tank(
                shape, manufacturer, model, substrate_type, substrate_brand, substrate_depth_inches,
                setup_date, status, notes)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (name, water_type, volume_gallons, dimensions_l, dimensions_w, dimensions_h,
-             shape, manufacturer, model, substrate_type, substrate_brand, substrate_depth_inches,
+            (name, water_type, _float(volume_gallons), _float(dimensions_l), _float(dimensions_w), _float(dimensions_h),
+             shape, manufacturer, model, substrate_type, substrate_brand, _float(substrate_depth_inches),
              setup_date, status, notes),
         )
         tank_id = cur.lastrowid
@@ -152,16 +158,16 @@ async def update_tank(
     tank_id: int,
     name: str = Form(...),
     water_type: str = Form("fresh"),
-    volume_gallons: Optional[float] = Form(None),
-    dimensions_l: Optional[float] = Form(None),
-    dimensions_w: Optional[float] = Form(None),
-    dimensions_h: Optional[float] = Form(None),
+    volume_gallons: Optional[str] = Form(None),
+    dimensions_l: Optional[str] = Form(None),
+    dimensions_w: Optional[str] = Form(None),
+    dimensions_h: Optional[str] = Form(None),
     shape: Optional[str] = Form(None),
     manufacturer: Optional[str] = Form(None),
     model: Optional[str] = Form(None),
     substrate_type: Optional[str] = Form(None),
     substrate_brand: Optional[str] = Form(None),
-    substrate_depth_inches: Optional[float] = Form(None),
+    substrate_depth_inches: Optional[str] = Form(None),
     setup_date: Optional[str] = Form(None),
     status: str = Form("active"),
     notes: Optional[str] = Form(None),
@@ -172,8 +178,8 @@ async def update_tank(
                dimensions_h=?, shape=?, manufacturer=?, model=?, substrate_type=?, substrate_brand=?,
                substrate_depth_inches=?, setup_date=?, status=?, notes=?, updated_at=datetime('now')
                WHERE id=?""",
-            (name, water_type, volume_gallons, dimensions_l, dimensions_w, dimensions_h,
-             shape, manufacturer, model, substrate_type, substrate_brand, substrate_depth_inches,
+            (name, water_type, _float(volume_gallons), _float(dimensions_l), _float(dimensions_w), _float(dimensions_h),
+             shape, manufacturer, model, substrate_type, substrate_brand, _float(substrate_depth_inches),
              setup_date, status, notes, tank_id),
         )
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)

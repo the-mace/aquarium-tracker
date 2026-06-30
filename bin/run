@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO_ROOT/fathom"
+source "$REPO_ROOT/.venv/bin/activate"
+exec uvicorn main:app --reload --host 0.0.0.0 --port 8000
