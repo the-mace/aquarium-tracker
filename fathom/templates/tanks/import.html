@@ -9,15 +9,15 @@
 </div>
 
 <div class="form-card">
-  <p>Upload an Apple Notes export (HTML or plain text) or any text file containing aquarium records. Claude will extract test results, events, purchases, inhabitants, and equipment into a preview for your review.</p>
+  <p>Upload an Apple Notes export (HTML or plain text) or any text file containing aquarium records. Claude will extract test results, events, purchases, inhabitants, plants, hardscape, equipment, issues, and observations into a structured preview for your review.</p>
 
   <div id="upload-section">
     <div class="drop-zone" id="drop-zone">
-      <input type="file" id="file-input" accept=".html,.htm,.txt" style="display:none">
+      <input type="file" id="file-input" accept=".html,.htm,.txt,.md" style="display:none">
       <div class="drop-zone-content">
         <div class="drop-icon">📄</div>
-        <p>Drop a file here or <button class="btn-link" onclick="document.getElementById('file-input').click()">browse</button></p>
-        <p class="muted">Accepts HTML or plain text files</p>
+        <p id="drop-label">Drop a file here or <button class="btn-link" type="button" onclick="document.getElementById('file-input').click()">browse</button></p>
+        <p class="muted">Accepts HTML, plain text, or markdown files</p>
       </div>
     </div>
     <button class="btn btn-primary" id="parse-btn" onclick="parseFile()" disabled>Parse with AI</button>
@@ -25,14 +25,16 @@
 
   <div id="preview-section" style="display:none">
     <div class="preview-header">
-      <h3>Preview</h3>
-      <button class="btn btn-ghost" onclick="resetImport()">← Start Over</button>
+      <h3>Review Extracted Data</h3>
+      <button class="btn btn-ghost" type="button" onclick="resetImport()">← Start Over</button>
     </div>
+    <div id="preview-flags" class="preview-flags"></div>
     <div id="preview-counts" class="preview-counts"></div>
+    <p class="muted" style="font-size:.8rem;margin-bottom:.75rem">Check or uncheck rows to include/exclude. Edit values inline before importing.</p>
     <div id="preview-data" class="preview-data"></div>
     <div class="form-actions">
-      <button class="btn btn-ghost" onclick="resetImport()">Cancel</button>
-      <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">Import All</button>
+      <button class="btn btn-ghost" type="button" onclick="resetImport()">Cancel</button>
+      <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">Import Selected</button>
     </div>
   </div>
 
@@ -44,6 +46,7 @@
 <script>
 const TANK_ID = {{ tank.id }};
 let previewData = null;
+let serverFlags = [];
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
@@ -55,21 +58,21 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-ove
 dropZone.addEventListener('drop', e => {
   e.preventDefault();
   dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) setFile(file);
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
 });
 fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
 
 function setFile(file) {
   selectedFile = file;
-  dropZone.querySelector('p').textContent = `Selected: ${file.name}`;
+  document.getElementById('drop-label').textContent = `Selected: ${file.name}`;
   parseBtn.disabled = false;
 }
 
 async function parseFile() {
   if (!selectedFile) return;
   parseBtn.disabled = true;
-  parseBtn.textContent = 'Parsing…';
+  parseBtn.textContent = 'Parsing with AI…';
   const fd = new FormData();
   fd.append('file', selectedFile);
   try {
@@ -77,7 +80,8 @@ async function parseFile() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Parse failed');
     previewData = data.preview;
-    showPreview(data.preview, data.counts);
+    serverFlags = data.flags || [];
+    showPreview(data.preview, data.counts, serverFlags);
   } catch (e) {
     alert('Error: ' + e.message);
     parseBtn.disabled = false;
@@ -85,55 +89,331 @@ async function parseFile() {
   }
 }
 
-function showPreview(preview, counts) {
+// ── Section config ──────────────────────────────────────────────────────────
+const SECTION_CONFIG = {
+  test_results: {
+    label: 'Test Results',
+    fields:  ['timestamp','ph','gh','kh','ammonia','nitrite','nitrate','tds','temp','notes'],
+    headers: ['Date/Time','pH','GH','KH','NH₃','NO₂','NO₃','TDS','Temp','Notes'],
+    types:   ['text','num','num','num','num','num','num','num','num','text'],
+    widths:  ['130px','55px','55px','55px','60px','60px','60px','60px','60px','120px'],
+  },
+  events: {
+    label: 'Events',
+    fields:  ['timestamp','event_type','amount','notes'],
+    headers: ['Date/Time','Type','Amount','Notes'],
+    types:   ['text','text','num','text'],
+    widths:  ['130px','110px','70px','180px'],
+  },
+  purchases: {
+    label: 'Purchases',
+    fields:  ['purchase_date','item','category','vendor','cost','notes'],
+    headers: ['Date','Item','Category','Vendor','Cost ($)','Notes'],
+    types:   ['text','text','text','text','num','text'],
+    widths:  ['95px','140px','100px','100px','70px','150px'],
+  },
+  inhabitants: {
+    label: 'Inhabitants',
+    fields:  ['common_name','species','count','added_date','source','notes'],
+    headers: ['Common Name','Species','Count','Date Added','Source','Notes'],
+    types:   ['text','text','num','text','text','text'],
+    widths:  ['120px','120px','65px','95px','90px','120px'],
+  },
+  plants: {
+    label: 'Plants',
+    fields:  ['common_name','species','added_date','source','status','notes'],
+    headers: ['Common Name','Species','Date Added','Source','Status','Notes'],
+    types:   ['text','text','text','text','text','text'],
+    widths:  ['120px','120px','95px','90px','80px','140px'],
+  },
+  equipment: {
+    label: 'Equipment',
+    fields:  ['category','brand','model','installed_date','notes'],
+    headers: ['Category','Brand','Model','Installed','Notes'],
+    types:   ['text','text','text','text','text'],
+    widths:  ['80px','90px','130px','95px','160px'],
+  },
+  hardscape: {
+    label: 'Hardscape',
+    fields:  ['item','quantity','source','cost','added_date','notes'],
+    headers: ['Item','Qty','Source','Cost ($)','Date','Notes'],
+    types:   ['text','num','text','num','text','text'],
+    widths:  ['140px','50px','90px','70px','95px','140px'],
+  },
+  issues: {
+    label: 'Issues',
+    fields:  ['title','description','status','opened_at','resolved_at','notes'],
+    headers: ['Title','Description','Status','Opened','Resolved','Notes'],
+    types:   ['text','text','text','text','text','text'],
+    widths:  ['120px','180px','80px','95px','95px','120px'],
+  },
+  observations: {
+    label: 'Observations / Journal',
+    fields:  ['created_at','text'],
+    headers: ['Date/Time','Text'],
+    types:   ['text','text'],
+    widths:  ['130px','300px'],
+  },
+};
+
+// ── Flag helpers ────────────────────────────────────────────────────────────
+function buildFlagMap(flags) {
+  const map = {};
+  for (const f of flags) {
+    const rowKey = `${f.section}:${f.index}`;
+    if (!map[rowKey]) map[rowKey] = [];
+    map[rowKey].push(f.message);
+  }
+  return map;
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function showPreview(preview, counts, flags) {
   document.getElementById('upload-section').style.display = 'none';
   document.getElementById('preview-section').style.display = 'block';
 
+  const flagMap = buildFlagMap(flags || []);
+
+  // Counts bar
   const countsEl = document.getElementById('preview-counts');
-  countsEl.innerHTML = Object.entries(counts).map(([k, v]) =>
-    `<span class="count-chip"><strong>${v}</strong> ${k.replace('_', ' ')}</span>`
-  ).join('');
+  countsEl.innerHTML = Object.entries(counts)
+    .map(([k, v]) => `<span class="count-chip"><strong>${v}</strong> ${k.replace(/_/g,' ')}</span>`)
+    .join('');
+
+  // Flags banner
+  const flagsEl = document.getElementById('preview-flags');
+  if (flags && flags.length > 0) {
+    flagsEl.style.display = 'block';
+    flagsEl.innerHTML = `<strong>⚠ ${flags.length} item${flags.length !== 1 ? 's' : ''} flagged for review</strong> — check highlighted rows below before importing.`;
+  }
 
   const dataEl = document.getElementById('preview-data');
   dataEl.innerHTML = '';
-  for (const [key, items] of Object.entries(preview)) {
+
+  // Tank specs (special)
+  if (preview.tank_specs) {
+    const specKeys = Object.keys(preview.tank_specs).filter(k => preview.tank_specs[k] !== null && preview.tank_specs[k] !== undefined);
+    if (specKeys.length) dataEl.appendChild(renderSpecsSection(preview.tank_specs, specKeys));
+  }
+
+  // Array sections
+  for (const [key, config] of Object.entries(SECTION_CONFIG)) {
+    const items = preview[key];
     if (!items || items.length === 0) continue;
-    dataEl.innerHTML += `<h4>${key.replace('_', ' ')}</h4><pre class="preview-json">${JSON.stringify(items, null, 2)}</pre>`;
+    dataEl.appendChild(renderSection(key, config, items, flagMap));
   }
 }
 
+function renderSpecsSection(specs, specKeys) {
+  const div = document.createElement('div');
+  div.className = 'preview-section';
+
+  const fieldLabels = {
+    volume_gallons: 'Volume (gallons)', dimensions_l: 'Length (in)', dimensions_w: 'Width (in)',
+    dimensions_h: 'Height (in)', manufacturer: 'Manufacturer', model: 'Model',
+    substrate_type: 'Substrate Type', substrate_brand: 'Substrate Brand',
+    substrate_depth_inches: 'Substrate Depth (in)', setup_date: 'Setup Date', notes: 'Notes',
+  };
+
+  div.innerHTML = `
+    <div class="preview-section-header">
+      <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+        <input type="checkbox" id="apply-specs" checked>
+        <strong>Tank Specifications</strong>
+      </label>
+      <span class="muted" style="font-size:.8rem">— apply proposed updates to this tank</span>
+    </div>`;
+
+  const table = document.createElement('table');
+  table.className = 'specs-review-table';
+  const tbody = document.createElement('tbody');
+
+  for (const field of specKeys) {
+    const val = specs[field];
+    if (val === null || val === undefined) continue;
+    const label = fieldLabels[field] || field;
+    const inputType = typeof val === 'number' ? 'number' : 'text';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${label}</td><td><input type="${inputType}" step="any" data-specs-field="${field}" value="${esc(String(val))}"></td>`;
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  div.appendChild(table);
+  return div;
+}
+
+function renderSection(key, config, items, flagMap) {
+  const div = document.createElement('div');
+  div.className = 'preview-section';
+
+  const header = document.createElement('div');
+  header.className = 'preview-section-header';
+  header.innerHTML = `
+    <strong>${config.label}</strong>
+    <span class="muted">(${items.length})</span>
+    <button class="btn btn-xs btn-ghost" type="button" onclick="toggleAll('${key}',true)">All</button>
+    <button class="btn btn-xs btn-ghost" type="button" onclick="toggleAll('${key}',false)">None</button>`;
+  div.appendChild(header);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'table-wrapper';
+
+  const table = document.createElement('table');
+  table.className = 'data-table preview-table';
+  table.id = `table-${key}`;
+
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr><th style="width:28px">✓</th>${config.headers.map((h, i) => `<th style="min-width:${config.widths[i]}">${h}</th>`).join('')}</tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  items.forEach((item, idx) => {
+    const rowKey = `${key}:${idx}`;
+    const rowFlags = flagMap[rowKey] || [];
+    const hasFlag = rowFlags.length > 0;
+
+    const tr = document.createElement('tr');
+    tr.dataset.idx = idx;
+    tr.dataset.section = key;
+    if (hasFlag) tr.className = 'flagged-row';
+
+    let cells = `<td><input type="checkbox" class="row-check" data-section="${key}" data-idx="${idx}" checked></td>`;
+
+    config.fields.forEach((field, fi) => {
+      const val = item[field];
+      const type = config.types[fi];
+      const inputType = type === 'num' ? 'number' : 'text';
+      const stepAttr = type === 'num' ? ' step="any"' : '';
+      const w = config.widths[fi];
+
+      // Special: inhabitants count_unknown
+      if (key === 'inhabitants' && field === 'count' && item.count_unknown) {
+        cells += `<td><span class="many-badge">many</span><input type="hidden" data-field="${field}" value=""></td>`;
+      } else if (field === 'text' || field === 'notes' || field === 'description') {
+        const displayVal = val !== null && val !== undefined ? esc(String(val)) : '';
+        cells += `<td><input type="text" data-field="${field}" value="${displayVal}" style="width:${w}"></td>`;
+      } else {
+        const displayVal = val !== null && val !== undefined ? esc(String(val)) : '';
+        cells += `<td><input type="${inputType}"${stepAttr} data-field="${field}" value="${displayVal}" style="width:${w}"></td>`;
+      }
+    });
+
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+
+    if (hasFlag) {
+      const flagTr = document.createElement('tr');
+      flagTr.className = 'flag-row';
+      flagTr.innerHTML = `<td></td><td colspan="${config.fields.length}" class="flag-msg">⚠ ${rowFlags.map(esc).join(' | ')}</td>`;
+      tbody.appendChild(flagTr);
+    }
+  });
+
+  table.appendChild(tbody);
+  wrapper.appendChild(table);
+  div.appendChild(wrapper);
+  return div;
+}
+
+function toggleAll(section, checked) {
+  document.querySelectorAll(`.row-check[data-section="${section}"]`).forEach(cb => cb.checked = checked);
+}
+
+// ── Collect edited data ─────────────────────────────────────────────────────
+function getEditedData() {
+  const result = {};
+
+  // Tank specs
+  const applySpecs = document.getElementById('apply-specs');
+  if (applySpecs && applySpecs.checked) {
+    const specs = {};
+    document.querySelectorAll('[data-specs-field]').forEach(input => {
+      const f = input.dataset.specsField;
+      const v = input.value.trim();
+      if (v !== '') specs[f] = input.type === 'number' && !isNaN(v) ? parseFloat(v) : v;
+    });
+    if (Object.keys(specs).length) result.tank_specs = specs;
+  }
+
+  // Array sections
+  for (const key of Object.keys(SECTION_CONFIG)) {
+    const table = document.getElementById(`table-${key}`);
+    if (!table) continue;
+
+    const rows = [];
+    table.querySelectorAll('tbody tr[data-idx]').forEach(tr => {
+      const cb = tr.querySelector('.row-check');
+      if (!cb || !cb.checked) return;
+
+      const idx = parseInt(tr.dataset.idx);
+      const original = JSON.parse(JSON.stringify(previewData[key][idx]));
+
+      tr.querySelectorAll('[data-field]').forEach(input => {
+        const f = input.dataset.field;
+        const v = input.value.trim();
+        original[f] = v === '' ? null : (input.type === 'number' && !isNaN(v) ? parseFloat(v) : v);
+      });
+
+      rows.push(original);
+    });
+
+    if (rows.length) result[key] = rows;
+  }
+
+  return result;
+}
+
+// ── Confirm import ──────────────────────────────────────────────────────────
 async function confirmImport() {
-  if (!previewData) return;
+  const editedData = getEditedData();
+  const totalRows = Object.values(editedData).reduce((s, v) => s + (Array.isArray(v) ? v.length : 0), 0);
+  if (totalRows === 0 && !editedData.tank_specs) {
+    alert('No rows selected to import.');
+    return;
+  }
   document.getElementById('confirm-btn').disabled = true;
   document.getElementById('confirm-btn').textContent = 'Importing…';
   try {
     const res = await fetch(`/tanks/${TANK_ID}/import/confirm`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ preview: previewData }),
+      body: JSON.stringify({ preview: editedData }),
     });
     const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Import failed');
     document.getElementById('preview-section').style.display = 'none';
     const result = document.getElementById('import-result');
     result.style.display = 'block';
-    result.innerHTML = `<strong>Import complete!</strong> ${Object.entries(data.inserted).map(([k,v]) => `${v} ${k}`).join(', ')} imported. <a href="/tanks/${TANK_ID}">Go to dashboard →</a>`;
+    const summary = Object.entries(data.inserted).map(([k, v]) => `${v} ${k.replace(/_/g,' ')}`).join(', ');
+    result.innerHTML = `<strong>Import complete!</strong> ${summary || 'No data imported'}. <a href="/tanks/${TANK_ID}">Go to dashboard →</a>`;
   } catch (e) {
     alert('Import failed: ' + e.message);
     document.getElementById('confirm-btn').disabled = false;
-    document.getElementById('confirm-btn').textContent = 'Import All';
+    document.getElementById('confirm-btn').textContent = 'Import Selected';
   }
 }
 
+// ── Reset ───────────────────────────────────────────────────────────────────
 function resetImport() {
   previewData = null;
+  serverFlags = [];
   selectedFile = null;
   fileInput.value = '';
   parseBtn.disabled = true;
   parseBtn.textContent = 'Parse with AI';
-  dropZone.querySelector('p').textContent = 'Drop a file here or browse';
+  document.getElementById('drop-label').textContent = 'Drop a file here or browse';
   document.getElementById('upload-section').style.display = 'block';
   document.getElementById('preview-section').style.display = 'none';
   document.getElementById('import-result').style.display = 'none';
+  document.getElementById('preview-flags').style.display = 'none';
+  document.getElementById('preview-data').innerHTML = '';
+  document.getElementById('preview-counts').innerHTML = '';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 {% endblock %}
