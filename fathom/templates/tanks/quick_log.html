@@ -515,13 +515,14 @@ function applyDuplicates(dups) {
     if (!tr) continue;
 
     const cb = tr.querySelector('.row-check');
-    if (cb) cb.checked = false;
+    if (cb && dup.auto_uncheck !== false) cb.checked = false;
     tr.classList.add('dup-row');
 
     const colCount = tr.querySelectorAll('td').length;
     const dupTr = document.createElement('tr');
     dupTr.className = 'dup-flag-row';
-    dupTr.innerHTML = `<td></td><td colspan="${colCount - 1}" class="dup-row-msg">↔ ${esc(dup.message)} — check to save anyway</td>`;
+    const suffix = dup.auto_uncheck === false ? '' : ' — check to save anyway';
+    dupTr.innerHTML = `<td></td><td colspan="${colCount - 1}" class="dup-row-msg">↔ ${esc(dup.message)}${suffix}</td>`;
     tr.insertAdjacentElement('afterend', dupTr);
   }
 }

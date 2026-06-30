@@ -320,6 +320,7 @@ p { margin-bottom: .5rem; }
 .obs-source { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .obs-source-badge { font-size: .7rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; background: var(--card-alt); color: var(--muted); }
 .obs-ai { background: rgba(0,196,160,.12); color: var(--primary); }
+.obs-import { background: rgba(56,189,248,.12); color: var(--accent); }
 .obs-time { font-size: .75rem; color: var(--muted); }
 .obs-link { font-size: .72rem; }
 .obs-text, .obs-body { font-size: .875rem; white-space: pre-wrap; color: var(--text); }
@@ -544,6 +545,13 @@ p { margin-bottom: .5rem; }
 .tank-card-notes { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
 
 /* ── Issue Cards ────────────────────────────────────────────────────────── */
+/* ── Filter bar ─────────────────────────────────────────────────────────── */
+.filter-bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.filter-pills { display: flex; gap: .35rem; }
+.pill { padding: .2rem .65rem; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .78rem; cursor: pointer; transition: background .15s, color .15s; }
+.pill:hover { background: var(--card-alt); color: var(--text); }
+.pill-active { background: var(--primary); border-color: var(--primary); color: #000; font-weight: 600; }
+
 .issue-cards { display: flex; flex-direction: column; gap: .75rem; }
 .issue-card {
   background: var(--card);
@@ -828,6 +836,8 @@ p { margin-bottom: .5rem; }
 .tl-dot-population    { background: var(--accent); }
 .tl-dot-pop-in        { background: var(--primary); }
 .tl-dot-pop-out       { background: #f87171; }
+.tl-dot-plant         { background: #86efac; }
+.tl-dot-hardscape     { background: #d4a27c; }
 
 .tl-body { flex: 1; min-width: 0; }
 .tl-header { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; line-height: 1.4; }
@@ -848,6 +858,8 @@ p { margin-bottom: .5rem; }
 .tl-badge-issue-resolve { background: rgba(0,196,160,.15); color: var(--primary); }
 .tl-badge-equip         { background: rgba(0,196,160,.12); color: var(--primary); }
 .tl-badge-equip-remove  { background: rgba(148,163,184,.12); color: var(--muted); }
+.tl-badge-plant         { background: rgba(134,239,172,.15); color: #86efac; }
+.tl-badge-hardscape     { background: rgba(212,162,124,.15); color: #d4a27c; }
 .tl-badge-pop-added     { background: rgba(0,196,160,.12); color: var(--primary); }
 .tl-badge-pop-born      { background: rgba(56,189,248,.12); color: var(--accent); }
 .tl-badge-pop-died      { background: rgba(239,68,68,.15); color: #f87171; }

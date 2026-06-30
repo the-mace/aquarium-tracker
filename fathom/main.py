@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from database import init_db
-from routers import tanks, test_results, events, inhabitants, equipment, purchases, issues, observations, chat, import_data, timeline, schedules
+from routers import tanks, test_results, events, inhabitants, equipment, purchases, issues, observations, chat, import_data, timeline, schedules, plants_hardscape
 
 app = FastAPI(title="Fathom", description="Smart aquarium tracking")
 
@@ -31,6 +31,7 @@ app.include_router(chat.router)
 app.include_router(import_data.router)
 app.include_router(timeline.router)
 app.include_router(schedules.router)
+app.include_router(plants_hardscape.router)
 
 
 @app.on_event("startup")

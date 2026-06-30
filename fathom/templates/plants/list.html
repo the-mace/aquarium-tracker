@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Plants & Hardscape — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "plants" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Plants & Hardscape — {{ tank.name }}</h1>
+  <div class="header-actions">
+    <button class="btn btn-ghost" onclick="openModal('modal-add-plant')">+ Plant</button>
+    <button class="btn btn-primary" onclick="openModal('modal-add-hardscape')">+ Hardscape</button>
+  </div>
+</div>
+
+{% if plants %}
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-header"><h3>Plants</h3><span class="muted">{{ plants|length }} active</span></div>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Common Name</th>
+          <th>Species</th>
+          <th>Added</th>
+          <th>Source</th>
+          <th>Notes</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pl in plants %}
+        <tr>
+          <td>{{ pl.common_name or '—' }}</td>
+          <td><em class="muted">{{ pl.species or '—' }}</em></td>
+          <td>{{ pl.added_date or '—' }}</td>
+          <td>{{ pl.source or '—' }}</td>
+          <td>{{ pl.notes or '' }}</td>
+          <td>
+            <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/remove" style="display:inline" onsubmit="return confirm('Mark as removed?')">
+              <button class="btn btn-xs btn-ghost" type="submit">Remove</button>
+            </form>
+            <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this plant?')">
+              <button class="btn btn-xs btn-danger" type="submit">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel" style="margin-bottom:1.25rem">
+  <div class="panel-header"><h3>Plants</h3></div>
+  <p class="muted panel-empty">No active plants recorded.</p>
+</div>
+{% endif %}
+
+{% if removed_plants %}
+<details style="margin-bottom:1.25rem">
+  <summary style="cursor:pointer;color:var(--muted);font-size:.85rem;padding:.35rem 0">Removed plants ({{ removed_plants|length }})</summary>
+  <div class="table-wrapper" style="margin-top:.5rem">
+    <table class="data-table">
+      <thead><tr><th>Common Name</th><th>Species</th><th>Added</th><th>Notes</th><th></th></tr></thead>
+      <tbody>
+        {% for pl in removed_plants %}
+        <tr style="opacity:.6">
+          <td>{{ pl.common_name or '—' }}</td>
+          <td><em class="muted">{{ pl.species or '—' }}</em></td>
+          <td>{{ pl.added_date or '—' }}</td>
+          <td>{{ pl.notes or '' }}</td>
+          <td>
+            <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/delete" style="display:inline" onsubmit="return confirm('Delete?')">
+              <button class="btn btn-xs btn-danger" type="submit">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+{% if hardscape %}
+<div class="panel">
+  <div class="panel-header"><h3>Hardscape</h3><span class="muted">{{ hardscape|length }} items</span></div>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Source</th>
+          <th>Cost</th>
+          <th>Added</th>
+          <th>Notes</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for hs in hardscape %}
+        <tr>
+          <td>{{ hs.item }}</td>
+          <td>{{ hs.quantity or 1 }}</td>
+          <td>{{ hs.source or '—' }}</td>
+          <td>{% if hs.cost %}${{ "%.2f"|format(hs.cost) }}{% else %}—{% endif %}</td>
+          <td>{{ hs.added_date or '—' }}</td>
+          <td>{{ hs.notes or '' }}</td>
+          <td>
+            <form method="post" action="/tanks/{{ tank.id }}/hardscape/{{ hs.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this hardscape item?')">
+              <button class="btn btn-xs btn-danger" type="submit">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <div class="panel-header"><h3>Hardscape</h3></div>
+  <p class="muted panel-empty">No hardscape recorded.</p>
+</div>
+{% endif %}
+
+<!-- Add Plant Modal -->
+<div id="modal-add-plant" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Plant</h3><button class="modal-close" onclick="closeModal('modal-add-plant')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/plants">
+      <div class="form-group"><label>Common Name</label><input type="text" name="common_name" placeholder="Java Moss"></div>
+      <div class="form-group"><label>Species</label><input type="text" name="species" placeholder="Taxiphyllum barbieri"></div>
+      <div class="form-group"><label>Date Added</label><input type="date" name="added_date"></div>
+      <div class="form-group"><label>Source</label><input type="text" name="source" placeholder="LFS, online…"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-plant')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Add Plant</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Hardscape Modal -->
+<div id="modal-add-hardscape" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Hardscape</h3><button class="modal-close" onclick="closeModal('modal-add-hardscape')">×</button></div>
+    <form method="post" action="/tanks/{{ tank.id }}/hardscape">
+      <div class="form-group"><label>Item *</label><input type="text" name="item" required placeholder="Driftwood, rock…"></div>
+      <div class="form-group"><label>Quantity</label><input type="number" name="quantity" value="1" min="1"></div>
+      <div class="form-group"><label>Source</label><input type="text" name="source"></div>
+      <div class="form-group"><label>Cost ($)</label><input type="number" step="0.01" name="cost"></div>
+      <div class="form-group"><label>Date Added</label><input type="date" name="added_date"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-hardscape')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Add Hardscape</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

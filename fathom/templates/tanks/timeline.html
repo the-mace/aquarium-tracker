@@ -16,11 +16,37 @@
   </div>
 </div>
 
+<!-- Filter bar -->
+<form method="get" action="/tanks/{{ tank.id }}/timeline" class="filter-bar" style="margin-bottom:1.25rem">
+  <input type="text" name="search" value="{{ filter_search }}" placeholder="Search…" style="width:180px;font-size:.85rem;padding:.35rem .6rem">
+  <select name="kind" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+    <option value="" {% if not filter_kind %}selected{% endif %}>All types</option>
+    <option value="event" {% if filter_kind=='event' %}selected{% endif %}>Events</option>
+    <option value="issue" {% if filter_kind=='issue' %}selected{% endif %}>Issues</option>
+    <option value="equipment" {% if filter_kind=='equipment' %}selected{% endif %}>Equipment</option>
+    <option value="population" {% if filter_kind=='population' %}selected{% endif %}>Population</option>
+    <option value="plants" {% if filter_kind=='plants' %}selected{% endif %}>Plants</option>
+    <option value="hardscape" {% if filter_kind=='hardscape' %}selected{% endif %}>Hardscape</option>
+  </select>
+  <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+  <span class="muted" style="font-size:.8rem">to</span>
+  <input type="date" name="date_to" value="{{ filter_date_to }}" title="To date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+  <button class="btn btn-sm btn-ghost" type="submit">Filter</button>
+  {% if filter_search or filter_kind or filter_date_from or filter_date_to %}
+  <a href="/tanks/{{ tank.id }}/timeline" class="btn btn-sm btn-ghost">Clear</a>
+  {% endif %}
+</form>
+
 {% if not groups %}
 <div class="empty-state">
   <div class="empty-icon">📋</div>
+  {% if filter_search or filter_kind or filter_date_from or filter_date_to %}
+  <h2>No results</h2>
+  <p>No timeline entries match the current filter.</p>
+  {% else %}
   <h2>No history yet</h2>
   <p>Events, issues, equipment changes, and population events will appear here as you log them.</p>
+  {% endif %}
 </div>
 {% else %}
 <div class="tl-legend">
@@ -30,6 +56,8 @@
   <span class="tl-legend-item"><span class="tl-dot tl-dot-equip_install"></span> Equipment installed</span>
   <span class="tl-legend-item"><span class="tl-dot tl-dot-equip_remove"></span> Equipment removed</span>
   <span class="tl-legend-item"><span class="tl-dot tl-dot-population"></span> Population</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-plant"></span> Plant</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-hardscape"></span> Hardscape</span>
 </div>
 
 <div class="timeline">
@@ -44,6 +72,8 @@
         {%- elif item.kind == 'issue_resolve' %} tl-dot-issue_resolve
         {%- elif item.kind == 'equip_install' %} tl-dot-equip_install
         {%- elif item.kind == 'equip_remove' %} tl-dot-equip_remove
+        {%- elif item.kind == 'plant_added' %} tl-dot-plant
+        {%- elif item.kind == 'hardscape_added' %} tl-dot-hardscape
         {%- elif item.kind == 'population' and item.subtype in ('added','born') %} tl-dot-pop-in
         {%- else %} tl-dot-pop-out
         {%- endif %}"></div>
@@ -65,6 +95,13 @@
             <span class="tl-label">{{ item.label }}</span>
           {%- elif item.kind == 'equip_remove' %}
             <span class="tl-badge tl-badge-equip-remove">{{ item.subtype }} removed</span>
+            <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'plant_added' %}
+            <span class="tl-badge tl-badge-plant">plant added</span>
+            <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'hardscape_added' %}
+            <span class="tl-badge tl-badge-hardscape">hardscape added</span>
+            {% if item.amount and item.amount > 1 %}<span class="tl-amount">×{{ item.amount | int }}</span>{% endif %}
             <span class="tl-label">{{ item.label }}</span>
           {%- elif item.kind == 'population' %}
             <span class="tl-badge tl-badge-pop-{{ item.subtype }}">{{ item.subtype }}</span>

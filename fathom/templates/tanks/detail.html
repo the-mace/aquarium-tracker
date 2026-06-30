@@ -261,7 +261,7 @@
     {% for obs in recent_observations %}
     <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
       <div class="obs-meta">
-        <span class="obs-source">{{ 'AI' if obs.source == 'auto' else 'Manual' }}</span>
+        <span class="obs-source">{% if obs.source == 'auto' %}AI{% elif obs.source == 'import' %}Import{% else %}Manual{% endif %}</span>
         <span class="obs-time">{{ obs.created_at }}</span>
       </div>
       <p class="obs-text">{{ obs.text }}</p>

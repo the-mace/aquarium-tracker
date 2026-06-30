@@ -243,6 +243,30 @@ def init_db():
                 "ALTER TABLE events ADD COLUMN schedule_id INTEGER REFERENCES recurring_schedule(id) ON DELETE SET NULL"
             )
 
+        # Migration: add 'import' to observations.source CHECK constraint
+        obs_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='observations'"
+        ).fetchone()
+        if obs_sql and "'import'" not in obs_sql[0]:
+            conn.executescript("""
+                DROP TABLE IF EXISTS observations_new;
+                CREATE TABLE observations_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tank_id INTEGER NOT NULL,
+                    related_event_id INTEGER,
+                    related_test_id INTEGER,
+                    source TEXT DEFAULT 'manual' CHECK(source IN ('auto','manual','import')),
+                    text TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+                );
+                INSERT INTO observations_new SELECT * FROM observations;
+                DROP TABLE observations;
+                ALTER TABLE observations_new RENAME TO observations;
+                CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
+            """)
+
         seed_schedule_data(conn)
 
 

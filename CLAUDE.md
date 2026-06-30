@@ -195,6 +195,15 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints.
 
+### Changes in 2026-06-30 session (third)
+- **Observations source**: DB migration adds `'import'` to CHECK constraint. Import confirm saves observations with `source='import'`; flag notes get `source='auto'`. Templates show "Import Note" badge (blue) vs "AI Analysis" (green) vs "Manual Note" (grey).
+- **Inhabitants import fix**: `_find_duplicates` now checks count diff — same count auto-unchecks ("no change needed"), different count stays checked ("will update from X to Y"). Within-preview: earlier entries for same species auto-unchecked; `import_confirm` sorts inhabitants by date so latest wins on UPSERT. After count updates, saves an "Import updated inhabitants" observation.
+- **Plants species in prompt**: Rule 12 added — always populate scientific species name for plants (Java moss → Taxiphyllum barbieri, etc.).
+- **Issues list**: Client-side filter bar — status pills (All/Open/Monitoring/Resolved), text search, oldest/newest sort toggle.
+- **Timeline**: Server-side filtering — date range, kind (events, issues, equipment, population, plants, hardscape), text search. Plants and hardscape added to timeline query with their own dot/badge colors.
+- **Plants & Hardscape page**: New `/tanks/{id}/plants` page with CRUD for both. Router: `plants_hardscape.py`. Template: `plants/list.html`. Sidebar link added to base.html between Inhabitants and Equipment.
+- **CSS**: `.filter-bar`, `.filter-pills`, `.pill`, `.pill-active` styles; `.obs-import` badge; `.tl-dot-plant`, `.tl-dot-hardscape`, `.tl-badge-plant`, `.tl-badge-hardscape` timeline styles.
+
 ### Changes in 2026-06-30 session (second)
 - Quick Log: dashboard modal → sessionStorage handoff → `/tanks/{id}/quick-log-page` with auto-start parse
 - Refactor: `_extraction_sse_stream` extracted from `import_preview`; both import and quick-log reuse it

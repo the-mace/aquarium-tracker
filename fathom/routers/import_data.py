@@ -122,6 +122,8 @@ Valid purchase categories: equipment, livestock, plants, hardscape, consumables,
 Valid issue status: open, monitoring, resolved
 Valid plant status: active, removed
 
+12. PLANTS: Always fill in the scientific species name when known, in addition to the common name. Examples: Java moss → species="Taxiphyllum barbieri", common_name="Java Moss"; Anubias nana → species="Anubias barteri var. nana", common_name="Anubias Nana"; Java fern → species="Microsorum pteropus", common_name="Java Fern"; Hornwort → species="Ceratophyllum demersum", common_name="Hornwort"; Water sprite → species="Ceratopteris thalictroides", common_name="Water Sprite"; Christmas moss → species="Vesicularia montagnei", common_name="Christmas Moss". If you can identify the species with high confidence, fill in both fields. Never leave both null.
+
 Use "YYYY-MM-DD 00:00:00" for timestamps where time is unknown. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
 TEXT TO PARSE:
@@ -450,24 +452,49 @@ def _find_duplicates(tank_id: int, preview: dict, conn) -> list:
             dups.append({"section": "purchases", "index": i,
                          "message": f"Purchase '{pur.get('item')}' on {d} already exists."})
 
-    # inhabitants: same species already in DB (count will be updated, not duplicated)
-    existing_species = set(
-        r[0] for r in conn.execute(
-            "SELECT lower(trim(species)) FROM inhabitants WHERE tank_id=? AND species IS NOT NULL", (tank_id,)
+    # inhabitants: smart dedup — track existing counts, keep latest within preview
+    existing_inh = {
+        r[0]: r[1] for r in conn.execute(
+            "SELECT lower(trim(species)), count FROM inhabitants WHERE tank_id=? AND species IS NOT NULL", (tank_id,)
         ).fetchall()
-    )
-    seen_inh: set = set()
-    for i, inh in enumerate(preview.get("inhabitants", [])):
+    }
+    inh_list = preview.get("inhabitants", [])
+    # Find the index of the latest (by added_date) entry per species within the preview
+    species_latest: dict = {}
+    for i, inh in enumerate(inh_list):
+        sp = (inh.get("species") or "").lower().strip()
+        if not sp:
+            continue
+        d = inh.get("added_date") or ""
+        prev = species_latest.get(sp)
+        if prev is None or d > prev[1]:
+            species_latest[sp] = (i, d)
+
+    for i, inh in enumerate(inh_list):
         sp = (inh.get("species") or "").lower().strip()
         name = inh.get("common_name") or inh.get("species") or "inhabitant"
-        if sp and sp in existing_species:
-            dups.append({"section": "inhabitants", "index": i,
-                         "message": f"'{name}' already exists — confirming will update its count."})
-        elif sp and sp in seen_inh:
-            dups.append({"section": "inhabitants", "index": i,
-                         "message": f"'{name}' appears multiple times in this import."})
-        if sp:
-            seen_inh.add(sp)
+        if not sp:
+            continue
+        new_count = None if inh.get("count_unknown") else inh.get("count")
+
+        # Within-preview: flag older entries for same species
+        latest_idx = species_latest.get(sp, (i, ""))[0]
+        if latest_idx != i:
+            dups.append({"section": "inhabitants", "index": i, "auto_uncheck": True,
+                         "message": f"Earlier entry for '{name}' — the most recent entry will be applied."})
+            continue
+
+        # Against DB: check if species exists and whether count differs
+        if sp in existing_inh:
+            existing_count = existing_inh[sp]
+            if existing_count == new_count or (existing_count is None and new_count is None):
+                dups.append({"section": "inhabitants", "index": i, "auto_uncheck": True,
+                             "message": f"'{name}' already exists with the same count — no change needed."})
+            else:
+                existing_str = "unknown" if existing_count is None else str(int(existing_count) if isinstance(existing_count, float) else existing_count)
+                new_str = "unknown" if new_count is None else str(int(new_count) if isinstance(new_count, float) else new_count)
+                dups.append({"section": "inhabitants", "index": i, "auto_uncheck": False,
+                             "message": f"'{name}' exists (count: {existing_str}) — confirming will update to {new_str}."})
 
     # plants: same species + added_date (active plants); also within-preview by species
     existing_set = set(
@@ -642,14 +669,21 @@ async def import_confirm(tank_id: int, request: Request):
         inserted["purchases"] = len(preview.get("purchases", []))
 
         # Inhabitants — UPDATE count if species already exists, otherwise INSERT
-        for inh in preview.get("inhabitants", []):
+        # Sort by added_date ascending so the most recent entry wins on UPSERT
+        inh_preview = sorted(
+            preview.get("inhabitants", []),
+            key=lambda x: x.get("added_date") or "",
+        )
+        inh_updates = []  # track (display_name, old_count, new_count) for summary
+        for inh in inh_preview:
             count_val = None if inh.get("count_unknown") else inh.get("count", 1)
             sp = (inh.get("species") or "").strip()
             existing = conn.execute(
-                "SELECT id FROM inhabitants WHERE tank_id=? AND lower(trim(species))=lower(?)",
+                "SELECT id, count FROM inhabitants WHERE tank_id=? AND lower(trim(species))=lower(?)",
                 (tank_id, sp),
             ).fetchone() if sp else None
             if existing:
+                old_count = existing[1]
                 conn.execute(
                     "UPDATE inhabitants SET count=?, updated_at=datetime('now') WHERE id=?",
                     (count_val, existing[0]),
@@ -658,6 +692,11 @@ async def import_confirm(tank_id: int, request: Request):
                     "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes) VALUES (?,?,?,?,?)",
                     (tank_id, existing[0], "added", count_val, "count updated via import"),
                 )
+                if old_count != count_val:
+                    display = inh.get("common_name") or inh.get("species") or sp
+                    old_s = "unknown" if old_count is None else str(old_count)
+                    new_s = "unknown" if count_val is None else str(count_val)
+                    inh_updates.append(f"{display}: {old_s}→{new_s}")
             else:
                 added_date = inh.get("added_date")
                 cur = conn.execute(
@@ -675,7 +714,7 @@ async def import_confirm(tank_id: int, request: Request):
                         "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
                         (tank_id, cur.lastrowid, "added", count_val),
                     )
-        inserted["inhabitants"] = len(preview.get("inhabitants", []))
+        inserted["inhabitants"] = len(inh_preview)
 
         # Plants
         for pl in preview.get("plants", []):
@@ -731,20 +770,29 @@ async def import_confirm(tank_id: int, request: Request):
                 )
         inserted["issues"] = len(preview.get("issues", []))
 
-        # Observations
+        # Observations — use source='import'; flag notes use source='auto' (AI-generated)
         for obs in preview.get("observations", []):
+            text = obs.get("text", "")
+            src = "auto" if text.startswith("Import note:") else "import"
             ts = obs.get("created_at")
             if ts:
                 conn.execute(
                     "INSERT INTO observations (tank_id, source, text, created_at) VALUES (?,?,?,?)",
-                    (tank_id, "manual", obs.get("text", ""), ts),
+                    (tank_id, src, text, ts),
                 )
             else:
                 conn.execute(
                     "INSERT INTO observations (tank_id, source, text) VALUES (?,?,?)",
-                    (tank_id, "manual", obs.get("text", "")),
+                    (tank_id, src, text),
                 )
         inserted["observations"] = len(preview.get("observations", []))
+
+        # If any inhabitant counts changed, add an import summary observation
+        if inh_updates:
+            conn.execute(
+                "INSERT INTO observations (tank_id, source, text) VALUES (?,?,?)",
+                (tank_id, "import", "Import updated inhabitants — " + ", ".join(inh_updates)),
+            )
 
         # Recurring schedule
         for rs in preview.get("recurring_schedule", []):

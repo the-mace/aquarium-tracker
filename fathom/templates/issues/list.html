@@ -9,9 +9,20 @@
 </div>
 
 {% if issues %}
-<div class="issue-cards">
+<div class="filter-bar" style="margin-bottom:1rem">
+  <input type="text" id="issue-search" placeholder="Search issues…" oninput="filterIssues()" style="width:220px;font-size:.85rem;padding:.35rem .6rem">
+  <div class="filter-pills" id="status-pills">
+    <button class="pill pill-active" data-status="all" onclick="setStatusFilter(this,'all')">All</button>
+    <button class="pill" data-status="open" onclick="setStatusFilter(this,'open')">Open</button>
+    <button class="pill" data-status="monitoring" onclick="setStatusFilter(this,'monitoring')">Monitoring</button>
+    <button class="pill" data-status="resolved" onclick="setStatusFilter(this,'resolved')">Resolved</button>
+  </div>
+  <button class="btn btn-xs btn-ghost" id="sort-btn" onclick="toggleSort()" title="Sort by date">Oldest first</button>
+</div>
+
+<div class="issue-cards" id="issue-list">
   {% for issue in issues %}
-  <div class="issue-card status-{{ issue.status }}">
+  <div class="issue-card status-{{ issue.status }}" data-status="{{ issue.status }}" data-opened="{{ issue.opened_at or '' }}" data-search="{{ (issue.title ~ ' ' ~ (issue.description or '') ~ ' ' ~ (issue.notes or '')) | lower }}">
     <div class="issue-card-header">
       <h3>{{ issue.title }}</h3>
       <span class="badge badge-issue-{{ issue.status }}">{{ issue.status }}</span>
@@ -36,6 +47,9 @@
     </div>
   </div>
   {% endfor %}
+</div>
+<div id="issue-empty" class="empty-state" style="display:none">
+  <p class="muted">No issues match the current filter.</p>
 </div>
 {% else %}
 <div class="empty-state">
@@ -62,4 +76,47 @@
     </form>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let activeStatus = 'all';
+let sortOldestFirst = false;
+
+function setStatusFilter(btn, status) {
+  activeStatus = status;
+  document.querySelectorAll('#status-pills .pill').forEach(p => p.classList.remove('pill-active'));
+  btn.classList.add('pill-active');
+  filterIssues();
+}
+
+function toggleSort() {
+  sortOldestFirst = !sortOldestFirst;
+  document.getElementById('sort-btn').textContent = sortOldestFirst ? 'Newest first' : 'Oldest first';
+  filterIssues();
+}
+
+function filterIssues() {
+  const q = (document.getElementById('issue-search')?.value || '').toLowerCase();
+  const cards = Array.from(document.querySelectorAll('#issue-list .issue-card'));
+
+  const visible = cards.filter(card => {
+    const statusMatch = activeStatus === 'all' || card.dataset.status === activeStatus;
+    const textMatch = !q || card.dataset.search.includes(q);
+    card.style.display = statusMatch && textMatch ? '' : 'none';
+    return statusMatch && textMatch;
+  });
+
+  // Sort visible cards
+  const list = document.getElementById('issue-list');
+  visible.sort((a, b) => {
+    const da = a.dataset.opened || '';
+    const db = b.dataset.opened || '';
+    return sortOldestFirst ? da.localeCompare(db) : db.localeCompare(da);
+  });
+  visible.forEach(card => list.appendChild(card));
+
+  document.getElementById('issue-empty').style.display = visible.length === 0 ? '' : 'none';
+}
+</script>
 {% endblock %}

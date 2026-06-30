@@ -173,7 +173,7 @@ def test_import_confirm_observations_with_timestamp(client, tank_id):
     ).fetchone()
     conn.close()
     assert row[0] == "Shrimp active"
-    assert row[1] == "manual"
+    assert row[1] == "import"
     assert row[2] == "2026-01-10 14:00:00"
 
 

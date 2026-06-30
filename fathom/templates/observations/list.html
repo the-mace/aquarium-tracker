@@ -13,8 +13,8 @@
   {% for obs in observations %}
   <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
     <div class="obs-meta">
-      <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% endif %}">
-        {{ 'AI Analysis' if obs.source == 'auto' else 'Manual Note' }}
+      <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% elif obs.source == 'import' %}obs-import{% endif %}">
+        {% if obs.source == 'auto' %}AI Analysis{% elif obs.source == 'import' %}Import Note{% else %}Manual Note{% endif %}
       </span>
       <span class="obs-time">{{ obs.created_at }}</span>
       {% if obs.related_test_id %}<span class="obs-link muted">linked to test #{{ obs.related_test_id }}</span>{% endif %}
