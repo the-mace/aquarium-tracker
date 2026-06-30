@@ -102,7 +102,7 @@ EXTRACTION RULES (follow carefully):
    - "snails were dying, started feeding zucchini, they recovered" → resolved issue
    - "frogbit wilting, started Flourish dosing, it improved" → resolved issue
    - "sponge plug found missing [date1] ... plugged it back in [date2]" → resolved issue, opened_at=date1, resolved_at=date2
-5. INHABITANTS: Always use the scientific species name when known (e.g. Neocaridina davidi for fire red/cherry/sakura shrimp; Physidae sp. for bladder snails; Planorbidae sp. for ramshorn snails; Melanoides tuberculata for MTS). If population is uncountable ("lots of MTS snails", "countless pest snails", "a colony of shrimp"), set count_unknown=true and count=null.
+5. INHABITANTS: Always use the scientific species name when known (e.g. Neocaridina davidi for fire red/cherry/sakura shrimp; Physidae sp. for bladder snails; Planorbidae sp. for ramshorn snails; Melanoides tuberculata for MTS). If population is uncountable ("lots of MTS snails", "countless pest snails", "a colony of shrimp"), set count_unknown=true and count=null. When an inhabitant is mentioned incidentally in a dated log entry (e.g. "tank also has copepods and detritus worms"), use that log entry's date as the added_date — do not leave added_date null just because it is a passing mention rather than a formal addition record.
 6. OBSERVATIONS: Capture journal entries, personal qualitative notes, and observations (e.g. "shrimp seem very active today", "noticed some plant melt on the anubias"). Do NOT duplicate structured measurement data as observations.
 7. FLAGS: Flag values that seem incorrect or unusual:
    - Water parameters out of normal range for the tank type (KH > 15 for freshwater, pH > 8.5 or < 5.5 for freshwater, ammonia > 4, nitrate > 160)
@@ -111,6 +111,8 @@ EXTRACTION RULES (follow carefully):
    - Any value you're uncertain about
 8. SPLIT MULTI-TYPE ENTRIES: A single dated log block often records multiple things at once — a water test AND a water change AND dosing AND observations. Always produce separate records for each, all sharing the same date. Never collapse them into one row or omit the secondary items. Example: "2024-03-15: pH 7.2, kh 5 | 20% WC | dosed Flourish | shrimp active" → 1 test_result (ph=7.2, kh=5) + 1 water_change event (amount=20) + 1 maintenance event (notes="Flourish dose") + 1 observation (shrimp active), all dated 2024-03-15.
 9. TEST KIT METHODOLOGY: Phrases describing how a test was performed ("went blue to green", "9 drops to change color", "waited 5 min", "API kit") describe kit procedure, not numeric values. Store them in the test_result's notes field if informative, or discard them entirely. Never parse kit methodology text as a numeric water parameter.
+
+11. DATE INFERENCE: When a record has no explicit date of its own but appears within a dated log entry (or is clearly associated with one), use that entry's date for the record's date field — purchase_date, installed_date, added_date, created_at, etc. Never leave a date null if the surrounding context makes it inferable.
 
 10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun, or null for floating/weekly tasks.
 
@@ -657,15 +659,22 @@ async def import_confirm(tank_id: int, request: Request):
                     (tank_id, existing[0], "added", count_val, "count updated via import"),
                 )
             else:
+                added_date = inh.get("added_date")
                 cur = conn.execute(
                     "INSERT INTO inhabitants (tank_id, species, common_name, count, added_date, source, notes) VALUES (?,?,?,?,?,?,?)",
                     (tank_id, inh.get("species"), inh.get("common_name"), count_val,
-                     inh.get("added_date"), inh.get("source"), inh.get("notes")),
+                     added_date, inh.get("source"), inh.get("notes")),
                 )
-                conn.execute(
-                    "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
-                    (tank_id, cur.lastrowid, "added", count_val),
-                )
+                if added_date:
+                    conn.execute(
+                        "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, timestamp) VALUES (?,?,?,?,?)",
+                        (tank_id, cur.lastrowid, "added", count_val, added_date + " 00:00:00"),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
+                        (tank_id, cur.lastrowid, "added", count_val),
+                    )
         inserted["inhabitants"] = len(preview.get("inhabitants", []))
 
         # Plants

@@ -55,7 +55,7 @@ UNION ALL
 SELECT 'population',
        pe.timestamp, pe.event_type,
        COALESCE(i.common_name, i.species, 'Unknown species'),
-       CAST(pe.count AS TEXT), CAST(pe.count AS REAL), pe.id
+       pe.notes, CAST(pe.count AS REAL), pe.id
 FROM population_events pe
 LEFT JOIN inhabitants i ON i.id = pe.inhabitant_id
 WHERE pe.tank_id = ?
