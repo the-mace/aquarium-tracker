@@ -150,8 +150,6 @@ The review screen shows editable tables per section with flagged rows highlighte
 
 `events.schedule_id` (nullable FK): links maintenance events to their schedule entry. Set automatically by mark-done; can also be set when logging events manually.
 
-Seed data seeded on startup for "Fish Tank 5G" (5G shrimp tank). The 40G tank seed runs automatically once a tank with volume 38-45g exists in the DB. The 40G seed includes Clean pre-filter (30d), Clean all stages (75d), and Squeeze sponge (manual reminder, no interval).
-
 Import prompt includes rule 10 for parsing `recurring_schedule` from narrative text.
 
 Management page: `/tanks/{id}/schedule`

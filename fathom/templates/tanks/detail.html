@@ -461,7 +461,7 @@
 <div id="modal-reset" class="modal" style="display:none">
   <div class="modal-box modal-box-sm">
     <div class="modal-header"><h3>Reset Tank Data</h3><button class="modal-close" onclick="closeModal('modal-reset')">×</button></div>
-    <p>This will permanently delete all test results, events, inhabitants, purchases, observations, and issues for <strong>{{ tank.name }}</strong>. The tank and equipment records will be kept.</p>
+    <p>This will permanently delete all data for <strong>{{ tank.name }}</strong> — test results, events, inhabitants, purchases, observations, issues, equipment, plants, hardscape, and schedule entries. Only the tank record itself is kept.</p>
     <form method="post" action="/tanks/{{ tank.id }}/reset" onsubmit="return checkConfirm(this,'{{ tank.name }}','reset-err')">
       <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" autocomplete="off"></div>
       <div id="reset-err" class="form-error" style="display:none">Name does not match — please try again.</div>

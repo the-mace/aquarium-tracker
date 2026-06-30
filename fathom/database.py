@@ -267,62 +267,6 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
             """)
 
-        seed_schedule_data(conn)
-
-
-def seed_schedule_data(conn):
-    """One-time seed of schedule entries for known production tanks."""
-    tank_5g = conn.execute("SELECT id FROM tanks WHERE name='Fish Tank 5G'").fetchone()
-    if tank_5g and conn.execute(
-        "SELECT COUNT(*) FROM recurring_schedule WHERE tank_id=?", (tank_5g[0],)
-    ).fetchone()[0] == 0:
-        tid = tank_5g[0]
-        conn.executemany(
-            """INSERT INTO recurring_schedule
-               (tank_id, category, tracking_mode, day_of_week, description,
-                interval_type, interval_days, last_done, next_due, is_active, notes)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            [
-                (tid, 'feeding', 'reference_only', 'mon', 'Snowflake — tiny fragment',           None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'tue', 'No feeding',                           None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'wed', 'Shrimp Cuisine 1-2 pellets',           None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'wed', 'Bacter AE 1/16 tsp',                  None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'wed', 'Zucchini',                             None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'thu', 'No feeding (test day)',                None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'fri', 'No feeding',                           None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'sat', 'Algae wafer 1/2 mini + Zucchini',     None, None, None, None, 1, None),
-                (tid, 'feeding', 'reference_only', 'sun', 'Bacter AE 1/16 tsp',                  None, None, None, None, 1, None),
-                (tid, 'dosing',  'reference_only', 'thu', '5ml Flourish weekly',                  None, None, None, None, 1, None),
-            ],
-        )
-
-    # 40G tank — seeded by volume; update name lookup once tank exists in dev DB
-    tank_40g = conn.execute(
-        "SELECT id FROM tanks WHERE CAST(volume_gallons AS INTEGER) BETWEEN 38 AND 45 LIMIT 1"
-    ).fetchone()
-    if tank_40g and conn.execute(
-        "SELECT COUNT(*) FROM recurring_schedule WHERE tank_id=?", (tank_40g[0],)
-    ).fetchone()[0] == 0:
-        tid = tank_40g[0]
-        conn.executemany(
-            """INSERT INTO recurring_schedule
-               (tank_id, category, tracking_mode, day_of_week, description,
-                interval_type, interval_days, last_done, next_due, is_active, notes)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            [
-                (tid, 'feeding',     'reference_only', 'mon', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
-                (tid, 'feeding',     'reference_only', 'tue', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
-                (tid, 'feeding',     'reference_only', 'wed', 'Vibra Bites + Zucchini',                         None,           None, None,         None,         1, None),
-                (tid, 'feeding',     'reference_only', 'thu', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
-                (tid, 'feeding',     'reference_only', 'fri', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
-                (tid, 'feeding',     'reference_only', 'sat', 'Vibra Bites + Zucchini',                         None,           None, None,         None,         1, None),
-                (tid, 'feeding',     'reference_only', 'sun', 'Vibra Bites',                                    None,           None, None,         None,         1, None),
-                (tid, 'dosing',      'reference_only', 'thu', '2/3 cap Flourish + 1/2 cap Potassium + 1/2 cap Iron, weekly', None, None, None,   None,         1, None),
-                (tid, 'maintenance', 'logged',         None,  'Clean pre-filter',                               'interval_days', 30, '2026-05-29', '2026-07-02', 1, None),
-                (tid, 'maintenance', 'logged',         None,  'Clean all stages',                               'interval_days', 75, '2026-05-29', '2026-08-13', 1, None),
-                (tid, 'maintenance', 'logged',         None,  'Squeeze out filter intake sponge',               None,           None, None,         None,         1, 'Frequency unclear — no auto-tracking, manual reminder only'),
-            ],
-        )
 
 
 def row_to_dict(row):
