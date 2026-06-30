@@ -136,11 +136,24 @@ The review screen shows editable tables per section with flagged rows highlighte
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
 - Import tested from scratch against a narrative journal: all 10 data types extracted correctly, tank specs auto-filled from Claude's product knowledge, "many" count, issue resolution patterns, flags — everything verified in DB
-- **Not yet deployed to Mac mini** — 6 commits on local main, remote: `git@github.com:the-mace/aquarium-tracker.git`
+- **Not yet deployed to Mac mini** — commits on local main, remote: `git@github.com:the-mace/aquarium-tracker.git`
 - Next step: push to remote and restart launchd service on Mac mini (192.168.50.205)
+- **Prompt caching**: not implemented — all three AI call sites (ai_analysis, chat, import) build fully dynamic prompts from live DB state; call volume too low for caching to pay off; revisit if multi-user
+
+## Testing
+
+118 pytest integration tests in `fathom/tests/`. Run with:
+
+```bash
+.venv/bin/python -m pytest fathom/tests/ -q
+```
+
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters.
 
 ### Changes in 2026-06-29 session
 - Schema: `plants` and `hardscape` tables (both cascade-delete with tank)
 - UI: events show date only (no time, no amount); tank specs panel on dashboard; plants/hardscape cards; modal close CSS fix (flex !important vs display: none); inhabitants "many" toggle (null count)
 - AI: chat context now injects all water params explicitly, plants, hardscape, open issues, 5 observations, tank hardware/substrate; debug log for context length; ai_analysis includes plants/hardscape in summary prompt
 - Import: rich extraction prompt covering issues/plants/hardscape/observations/tank_specs/narrative equipment; interactive flagged review UI with editable tables, per-row checkboxes, amber flag highlighting; sidebar nav link added
+- Tests: 118 pytest integration tests added (`fathom/tests/`); `pytest.ini` with `pythonpath = fathom`; AI and DB isolated per test via monkeypatch
+- Repo: MIT LICENSE added; `.gitignore` updated with pytest/coverage entries

@@ -1,0 +1,161 @@
+"""Unit tests for pure utility functions in database.py and ai_analysis.py."""
+import pytest
+import database as _db
+from database import row_to_dict, rows_to_list, init_db, get_db
+from routers.ai_analysis import (
+    _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
+    _fmt_issues, _fmt_events,
+)
+
+
+# ── database helpers ────────────────────────────────────────────────────────
+
+def test_row_to_dict_none():
+    assert row_to_dict(None) is None
+
+
+def test_row_to_dict_converts_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute("INSERT INTO tanks (name) VALUES (?)", ("Alpha",))
+        row = conn.execute("SELECT id, name FROM tanks WHERE name=?", ("Alpha",)).fetchone()
+    result = row_to_dict(row)
+    assert isinstance(result, dict)
+    assert result["name"] == "Alpha"
+    assert "id" in result
+
+
+def test_rows_to_list_empty():
+    assert rows_to_list([]) == []
+
+
+def test_rows_to_list(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute("INSERT INTO tanks (name) VALUES (?)", ("Beta",))
+        conn.execute("INSERT INTO tanks (name) VALUES (?)", ("Gamma",))
+        rows = conn.execute("SELECT id, name FROM tanks").fetchall()
+    result = rows_to_list(rows)
+    assert len(result) == 2
+    assert {r["name"] for r in result} == {"Beta", "Gamma"}
+
+
+def test_init_db_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    init_db()
+    init_db()  # second call must not raise
+    with get_db() as conn:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+    expected = {
+        "tanks", "test_results", "events", "inhabitants", "population_events",
+        "purchases", "tank_equipment", "issues", "observations",
+        "tank_state_summary", "plants", "hardscape",
+    }
+    assert expected.issubset(tables)
+
+
+def test_get_db_rolls_back_on_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    init_db()
+    try:
+        with get_db() as conn:
+            conn.execute("INSERT INTO tanks (name) VALUES (?)", ("RollbackMe",))
+            raise RuntimeError("forced error")
+    except RuntimeError:
+        pass
+    with get_db() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM tanks WHERE name=?", ("RollbackMe",)).fetchone()[0]
+    assert count == 0
+
+
+# ── ai_analysis formatter helpers ───────────────────────────────────────────
+
+def test_fmt_test_results_empty():
+    result = _fmt_test_results([])
+    assert "No test results" in result
+
+
+def test_fmt_test_results_formats_fields():
+    rows = [{"timestamp": "2026-01-01 12:00:00", "ph": 7.2, "temp": 76.0,
+             "gh": None, "kh": None, "ammonia": 0.0, "nitrite": 0.0,
+             "nitrate": 10.0, "tds": None, "notes": None}]
+    result = _fmt_test_results(rows)
+    assert "7.2" in result
+    assert "76.0" in result
+    assert "2026-01-01" in result
+
+
+def test_fmt_test_results_appends_notes():
+    rows = [{"timestamp": "2026-01-01 00:00:00", "ph": 7.0, "gh": None,
+             "kh": None, "ammonia": None, "nitrite": None, "nitrate": None,
+             "tds": None, "temp": None, "notes": "post water change"}]
+    assert "post water change" in _fmt_test_results(rows)
+
+
+def test_fmt_inhabitants_empty():
+    assert "None" in _fmt_inhabitants([])
+
+
+def test_fmt_inhabitants_null_count_displays_many():
+    rows = [{"common_name": "MTS Snail", "species": None, "count": None}]
+    assert "many" in _fmt_inhabitants(rows)
+
+
+def test_fmt_inhabitants_named():
+    rows = [{"common_name": "Neon Tetra", "species": None, "count": 6}]
+    result = _fmt_inhabitants(rows)
+    assert "6x" in result
+    assert "Neon Tetra" in result
+
+
+def test_fmt_plants_empty():
+    assert "None" in _fmt_plants([])
+
+
+def test_fmt_plants_named():
+    rows = [{"common_name": "Java Fern", "species": None}]
+    assert "Java Fern" in _fmt_plants(rows)
+
+
+def test_fmt_hardscape_empty():
+    assert "None" in _fmt_hardscape([])
+
+
+def test_fmt_hardscape_quantity_prefix():
+    rows = [{"item": "Driftwood", "quantity": 2}]
+    result = _fmt_hardscape(rows)
+    assert "2x" in result
+    assert "Driftwood" in result
+
+
+def test_fmt_hardscape_single_no_prefix():
+    rows = [{"item": "Rock", "quantity": 1}]
+    result = _fmt_hardscape(rows)
+    assert "1x" not in result
+    assert "Rock" in result
+
+
+def test_fmt_issues_empty():
+    assert "None" in _fmt_issues([])
+
+
+def test_fmt_issues_status_in_output():
+    rows = [{"status": "open", "title": "High nitrates", "description": "Over 40ppm"}]
+    result = _fmt_issues(rows)
+    assert "OPEN" in result
+    assert "High nitrates" in result
+
+
+def test_fmt_events_empty():
+    assert "None" in _fmt_events([])
+
+
+def test_fmt_events_formats_row():
+    rows = [{"timestamp": "2026-01-05 08:00:00", "event_type": "water_change", "notes": "30%"}]
+    result = _fmt_events(rows)
+    assert "water_change" in result
+    assert "30%" in result

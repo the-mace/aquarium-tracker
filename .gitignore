@@ -38,5 +38,10 @@ env/
 *.swp
 *.swo
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Logs
 *.log
