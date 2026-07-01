@@ -74,18 +74,18 @@ def fetch_reference_info_bg(entity_type: str, entity_name: str, display_name: st
 
         prompt = f"""Look up information about this {type_labels.get(entity_type, 'aquarium item')}: "{name_label}"
 
-Search the web for accurate information. Then provide:
+Search the web for accurate information and a good photo. Then provide:
 1. A concise 2-3 sentence description for an aquarium keeper
 2. Key care notes covering: {care_context.get(entity_type, 'general care requirements')}
-3. A direct image URL from Wikimedia Commons (must start with https://upload.wikimedia.org/wikipedia/commons/ and end in .jpg, .jpeg, .png, or .svg). Search for the species on Wikimedia Commons to find a real image.
+3. A direct image URL ending in .jpg, .jpeg, .png, .webp, or .svg — preferably from Wikimedia Commons (https://upload.wikimedia.org/...) but any reputable aquarium or natural history site is fine (fishbase.org, theaquariumguide.com, aquaticarts.com, etc.). The URL must point directly to the image file, not a web page. Set to null if you cannot find a suitable direct image URL.
 
 Respond ONLY with valid JSON, no explanation or markdown fences:
 {{
   "description": "...",
   "care_notes": "...",
-  "image_url": "https://upload.wikimedia.org/..." or null,
-  "image_source": "Wikimedia Commons" or null,
-  "image_attribution": "Photographer name, CC BY-SA X.X" or null
+  "image_url": "https://..." or null,
+  "image_source": "site name" or null,
+  "image_attribution": "attribution string" or null
 }}"""
 
         msg = client.messages.create(
@@ -110,11 +110,11 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
 
         data = json.loads(text)
 
-        # Validate image URL — must actually be an upload.wikimedia.org image
+        # Validate image URL — must be https and point to an image file
         image_url = data.get("image_url")
         if image_url and not (
-            image_url.startswith("https://upload.wikimedia.org/")
-            and re.search(r"\.(jpg|jpeg|png|svg)(\?|$)", image_url, re.IGNORECASE)
+            image_url.startswith("https://")
+            and re.search(r"\.(jpg|jpeg|png|webp|svg)(\?|$)", image_url, re.IGNORECASE)
         ):
             image_url = None
 
