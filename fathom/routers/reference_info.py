@@ -4,6 +4,7 @@ import re
 import time
 import logging
 import urllib.request
+import urllib.parse
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from database import get_ref_db, row_to_dict
@@ -11,6 +12,10 @@ from database import get_ref_db, row_to_dict
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reference_info"])
+
+# Intentionally False — Wikimedia Commons API + DDG fallback produces better results
+# than hand-curated URLs. Flip to True only to pin specific images during debugging.
+USE_KNOWN_IMAGES = False
 
 # Curated image URLs — checked before web search. Add entries here to pin an image
 # permanently or provide a fallback. Keys: (entity_type, canonical_entity_name).
@@ -139,37 +144,68 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
 
         # Call 2: image URL — check curated list first, then fall back to Claude.
         image_url = image_source = image_attribution = None
-        curated_url = KNOWN_IMAGES.get((entity_type, _canonical(entity_name)))
+        curated_url = KNOWN_IMAGES.get((entity_type, _canonical(entity_name))) if USE_KNOWN_IMAGES else None
         if curated_url:
             image_url = curated_url
             image_source = "curated"
             logger.info("Reference info: using curated image for %s/%s: %s", entity_type, entity_name, image_url)
         else:
             try:
-                from ddgs import DDGS
-                query = f"{name_label} aquarium"
-                logger.info("DDG image search | %s/%s | query: %r", entity_type, entity_name, query)
-                t1 = time.monotonic()
-                results = list(DDGS().images(query, max_results=10))
-                logger.info("DDG image search done | %s/%s | %d results | elapsed=%.1fs",
-                            entity_type, entity_name, len(results), time.monotonic() - t1)
+                sci_name = text_data.get("scientific_name") or ""
+                search_name = sci_name if sci_name else name_label.split("/")[0].strip()
 
-                # Build candidate list: valid-format https image URLs
+                # Phase 1: Wikimedia Commons API — curated, labeled images, high relevance
                 candidates = []
-                for r in results:
-                    url = r.get("image", "")
-                    if url and url.startswith("https://") and re.search(
-                        r"\.(jpg|jpeg|png|webp)(\?|$)", url, re.IGNORECASE
-                    ):
-                        # Normalise Wikimedia thumb URLs to direct file URLs
-                        wiki_thumb = re.match(
-                            r"(https://upload\.wikimedia\.org/wikipedia/commons)/thumb(/[^/]+/[^/]+/[^/]+)/\d+px-.+",
-                            url,
-                        )
-                        if wiki_thumb:
-                            url = wiki_thumb.group(1) + wiki_thumb.group(2)
-                        source = r.get("source") or (r.get("url", "").split("/")[2] if r.get("url") else None)
-                        candidates.append((url, source))
+                try:
+                    wiki_search = f"{search_name} aquarium" if entity_type == "hardscape" else search_name
+                    wiki_query = urllib.parse.quote(wiki_search)
+                    wiki_api = (
+                        f"https://commons.wikimedia.org/w/api.php?action=query"
+                        f"&generator=search&gsrsearch={wiki_query}&gsrnamespace=6&gsrlimit=8"
+                        f"&prop=imageinfo&iiprop=url&format=json"
+                    )
+                    wiki_req = urllib.request.Request(wiki_api, headers={"User-Agent": "Fathom/1.0"})
+                    t1 = time.monotonic()
+                    with urllib.request.urlopen(wiki_req, timeout=10) as wiki_resp:
+                        wiki_data = json.loads(wiki_resp.read())
+                    pages = wiki_data.get("query", {}).get("pages", {})
+                    for page in pages.values():
+                        for ii in page.get("imageinfo", []):
+                            url = ii.get("url", "")
+                            if url and url.startswith("https://") and re.search(
+                                r"\.(jpg|jpeg|png|webp)$", url, re.IGNORECASE
+                            ):
+                                candidates.append((url, "commons.wikimedia.org"))
+                    logger.info("Wikimedia Commons search | %s/%s | %d candidates | elapsed=%.1fs",
+                                entity_type, entity_name, len(candidates), time.monotonic() - t1)
+                except Exception as wiki_err:
+                    logger.debug("Wikimedia Commons search failed for %s/%s: %s", entity_type, entity_name, wiki_err)
+
+                # Phase 2: DDG fallback if Commons returned nothing
+                if not candidates:
+                    from ddgs import DDGS
+                    if entity_type == "hardscape":
+                        query = f"{search_name} aquarium"
+                    else:
+                        query = f"{search_name} {wt_label} aquarium"
+                    logger.info("DDG image search | %s/%s | query: %r", entity_type, entity_name, query)
+                    t1 = time.monotonic()
+                    results = list(DDGS().images(query, max_results=15))
+                    logger.info("DDG image search done | %s/%s | %d results | elapsed=%.1fs",
+                                entity_type, entity_name, len(results), time.monotonic() - t1)
+                    for r in results:
+                        url = r.get("image", "")
+                        if url and url.startswith("https://") and re.search(
+                            r"\.(jpg|jpeg|png|webp)(\?|$)", url, re.IGNORECASE
+                        ):
+                            wiki_thumb = re.match(
+                                r"(https://upload\.wikimedia\.org/wikipedia/commons)/thumb(/[^/]+/[^/]+/[^/]+)/\d+px-.+",
+                                url,
+                            )
+                            if wiki_thumb:
+                                url = wiki_thumb.group(1) + wiki_thumb.group(2)
+                            source = r.get("source") or (r.get("url", "").split("/")[2] if r.get("url") else None)
+                            candidates.append((url, source))
 
                 # Try each candidate until one passes a HEAD check
                 for candidate_url, candidate_source in candidates:
