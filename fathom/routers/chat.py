@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from pathlib import Path
 from fastapi import APIRouter, Request, HTTPException
@@ -148,12 +149,16 @@ async def chat(tank_id: int, body: ChatMessage):
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
+        logger.info("Claude call: chat | tank=%d turn=%d", tank_id, len(history) // 2 + 1)
+        t0 = time.monotonic()
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
             system=system_prompt,
             messages=history,
         )
+        logger.info("Claude done: chat | tank=%d | in=%d out=%d elapsed=%.1fs",
+                    tank_id, response.usage.input_tokens, response.usage.output_tokens, time.monotonic() - t0)
         import re
         raw = response.content[0].text
         # Strip markdown that the chat panel renders as literal characters

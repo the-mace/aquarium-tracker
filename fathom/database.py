@@ -317,6 +317,7 @@ def init_ref_cache_db():
                 entity_type TEXT NOT NULL CHECK(entity_type IN ('species','plant','hardscape')),
                 entity_name TEXT NOT NULL,
                 common_name TEXT,
+                scientific_name TEXT,
                 description TEXT,
                 care_notes TEXT,
                 image_url TEXT,
@@ -329,6 +330,11 @@ def init_ref_cache_db():
             );
             CREATE INDEX IF NOT EXISTS idx_reference_info_lookup ON reference_info(entity_type, entity_name);
         """)
+
+        # Migration: add scientific_name column if not present
+        ref_cols = {row[1] for row in ref_conn.execute("PRAGMA table_info(reference_info)").fetchall()}
+        if "scientific_name" not in ref_cols:
+            ref_conn.execute("ALTER TABLE reference_info ADD COLUMN scientific_name TEXT")
 
         # One-time migration: copy already-fetched rows from main DB into the cache
         try:

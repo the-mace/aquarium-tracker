@@ -49,6 +49,7 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
             entity_name = _canonical(inh.get("species") or inh.get("common_name") or "")
             ref = ref_map.get(entity_name, {})
             inh["ref_entity_name"] = ref.get("entity_name")
+            inh["ref_scientific_name"] = ref.get("scientific_name")
             inh["ref_description"] = ref.get("description")
             inh["ref_care_notes"] = ref.get("care_notes")
             inh["ref_image_url"] = ref.get("image_url")
@@ -57,12 +58,13 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
             inh["ref_fetched_at"] = ref.get("fetched_at")
 
     # Queue reference info fetch for any inhabitant not yet fetched (no row, or stuck placeholder)
+    wt = tank.get("water_type", "freshwater") or "freshwater"
     for inh in inhabitants:
         if inh.get("ref_fetched_at") is None:
             entity_name = _canonical(inh.get("species") or inh.get("common_name") or "")
             if entity_name:
                 display = inh.get("common_name") or inh.get("species") or ""
-                maybe_fetch_reference_info(background_tasks, "species", entity_name, display)
+                maybe_fetch_reference_info(background_tasks, "species", entity_name, display, wt)
 
     return templates.TemplateResponse("inhabitants/list.html", {
         "request": request, "tank": tank,
@@ -99,7 +101,10 @@ async def add_inhabitant(
     entity_name = _canonical(species or common_name or "")
     if entity_name:
         display = common_name or species or ""
-        maybe_fetch_reference_info(background_tasks, "species", entity_name, display)
+        with get_db() as conn:
+            t = row_to_dict(conn.execute("SELECT water_type FROM tanks WHERE id=?", (tank_id,)).fetchone())
+        wt = (t or {}).get("water_type", "freshwater") or "freshwater"
+        maybe_fetch_reference_info(background_tasks, "species", entity_name, display, wt)
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:

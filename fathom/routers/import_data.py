@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import logging
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Request, UploadFile, File, HTTPException
@@ -247,6 +248,8 @@ async def _extraction_sse_stream(content: str, api_key: str):
 
             yield evt({"phase": "analyzing", "label": label, "current": lines_done, "total": total_lines})
 
+            logger.info("Claude call: import | chunk=%d/%d chars=%d", i + 1, n_chunks, len(chunk))
+            t_chunk = time.monotonic()
             async with client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=32000,
@@ -283,6 +286,10 @@ async def _extraction_sse_stream(content: str, api_key: str):
                 yield evt({"phase": "analyzing", "label": finish_label,
                            "current": lines_done + chunk_total, "total": total_lines})
                 final_msg = await stream.get_final_message()
+            logger.info("Claude done: import | chunk=%d/%d | in=%d out=%d elapsed=%.1fs stop=%s",
+                        i + 1, n_chunks,
+                        final_msg.usage.input_tokens, final_msg.usage.output_tokens,
+                        time.monotonic() - t_chunk, final_msg.stop_reason)
 
             if final_msg.stop_reason == 'max_tokens':
                 logger.warning("Extraction chunk %d/%d truncated at max_tokens", i + 1, n_chunks)

@@ -1,8 +1,38 @@
 import os
+import logging
+import logging.config
+import logging.handlers
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "default"},
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "/tmp/fathom.log",
+            "maxBytes": 5_000_000,
+            "backupCount": 2,
+            "formatter": "default",
+        },
+    },
+    "root": {"handlers": ["console", "file"], "level": "INFO"},
+    "loggers": {
+        "uvicorn": {"handlers": ["console", "file"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"handlers": ["console", "file"], "level": "INFO", "propagate": False},
+        "uvicorn.access": {"handlers": ["console", "file"], "level": "INFO", "propagate": False},
+    },
+})
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles

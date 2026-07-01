@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 from database import get_db, rows_to_list, row_to_dict
 
@@ -165,11 +166,16 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         client = anthropic.Anthropic(api_key=api_key)
 
         analysis_prompt = build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape)
+        logger.info("Claude call: analysis | tank=%d", tank_id)
+        t0 = time.monotonic()
         msg = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": analysis_prompt}],
+            timeout=60.0,
         )
+        logger.info("Claude done: analysis | tank=%d | in=%d out=%d elapsed=%.1fs",
+                    tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
         analysis_text = msg.content[0].text
 
         related_test_id = trigger_id if trigger_type == "test" else None
@@ -183,11 +189,16 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             )
 
         summary_prompt = build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, analysis_text)
+        logger.info("Claude call: summary | tank=%d", tank_id)
+        t1 = time.monotonic()
         sum_msg = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=512,
             messages=[{"role": "user", "content": summary_prompt}],
+            timeout=60.0,
         )
+        logger.info("Claude done: summary | tank=%d | in=%d out=%d elapsed=%.1fs",
+                    tank_id, sum_msg.usage.input_tokens, sum_msg.usage.output_tokens, time.monotonic() - t1)
         summary_text = sum_msg.content[0].text
 
         with get_db() as conn:

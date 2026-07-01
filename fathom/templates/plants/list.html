@@ -38,10 +38,12 @@
                   data-type="plant"
                   data-name="{{ ref_entity|e }}"
                   data-display="{{ ref_display|e }}"
+                  data-scientific="{{ pl.ref_scientific_name or '' }}"
                   data-description="{{ pl.ref_description|e }}"
                   data-care="{{ pl.ref_care_notes|e }}"
-                  data-image="{{ pl.ref_image_url|e }}"
-                  data-attribution="{{ pl.ref_image_attribution|e }}"
+                  data-image="{{ pl.ref_image_url or '' }}"
+                  data-attribution="{{ pl.ref_image_attribution or '' }}"
+                  data-water-type="{{ tank.water_type or 'freshwater' }}"
                   onclick="openRefInfoFrom(this)">
               {% if pl.ref_image_url %}
               <img src="{{ pl.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
@@ -56,7 +58,7 @@
             {% endif %}
           </td>
           <td>{{ pl.common_name or '—' }}</td>
-          <td><em class="muted">{{ pl.species or '—' }}</em></td>
+          <td><em class="muted">{{ pl.species or pl.ref_scientific_name or '—' }}</em></td>
           <td>{{ pl.added_date or '—' }}</td>
           <td>{{ pl.source or '—' }}</td>
           <td>{{ pl.notes or '' }}</td>
@@ -134,8 +136,9 @@
                   data-display="{{ ref_display|e }}"
                   data-description="{{ hs.ref_description|e }}"
                   data-care="{{ hs.ref_care_notes|e }}"
-                  data-image="{{ hs.ref_image_url|e }}"
-                  data-attribution="{{ hs.ref_image_attribution|e }}"
+                  data-image="{{ hs.ref_image_url or '' }}"
+                  data-attribution="{{ hs.ref_image_attribution or '' }}"
+                  data-water-type="{{ tank.water_type or 'freshwater' }}"
                   onclick="openRefInfoFrom(this)">
               {% if hs.ref_image_url %}
               <img src="{{ hs.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
@@ -177,7 +180,10 @@
 <div id="modal-ref-info" class="modal" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
-      <h3 id="ref-modal-title"></h3>
+      <div>
+        <h3 id="ref-modal-title"></h3>
+        <em id="ref-modal-scientific" class="muted" style="font-size:.85rem;display:none"></em>
+      </div>
       <button class="modal-close" onclick="closeModal('modal-ref-info')">×</button>
     </div>
     <div class="ref-modal-body">
@@ -191,6 +197,11 @@
         <p id="ref-modal-care" class="ref-modal-text"></p>
       </div>
       <p id="ref-modal-attribution" class="ref-attribution"></p>
+    </div>
+    <div style="padding:.75rem 1.25rem 0;display:flex;gap:.5rem;align-items:center">
+      <input type="url" id="ref-modal-image-input" placeholder="Paste image URL to set manually"
+             style="flex:1;font-size:.8rem;padding:.35rem .5rem;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text)">
+      <button class="btn btn-ghost" id="ref-modal-set-image" type="button" style="white-space:nowrap">Set Image</button>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" type="button" onclick="closeModal('modal-ref-info')">Close</button>
@@ -243,11 +254,17 @@ function openRefInfoFrom(el) {
   openRefInfo(
     el.dataset.type, el.dataset.name, el.dataset.display,
     el.dataset.description || null, el.dataset.care || null,
-    el.dataset.image || null, el.dataset.attribution || null
+    el.dataset.image || null, el.dataset.attribution || null,
+    el.dataset.waterType || 'freshwater', el.dataset.scientific || null
   );
 }
-function openRefInfo(entityType, entityName, displayName, description, careNotes, imageUrl, attribution) {
+function openRefInfo(entityType, entityName, displayName, description, careNotes, imageUrl, attribution, waterType, scientificName) {
   document.getElementById('ref-modal-title').textContent = displayName || entityName;
+  const sciEl = document.getElementById('ref-modal-scientific');
+  if (sciEl) {
+    sciEl.textContent = scientificName || '';
+    sciEl.style.display = scientificName ? '' : 'none';
+  }
 
   const imgWrap = document.getElementById('ref-modal-img-wrap');
   if (imageUrl) {
@@ -273,10 +290,33 @@ function openRefInfo(entityType, entityName, displayName, description, careNotes
     fetch('/reference-info/refresh', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({entity_type: entityType, entity_name: entityName, display_name: displayName}),
+      body: JSON.stringify({entity_type: entityType, entity_name: entityName, display_name: displayName, water_type: waterType || 'freshwater'}),
     }).then(() => {
       document.getElementById('ref-modal-refresh').textContent = 'Queued — reload in a moment';
     });
+  };
+
+  document.getElementById('ref-modal-refresh').textContent = 'Refresh Info';
+  document.getElementById('ref-modal-image-input').value = '';
+  document.getElementById('ref-modal-set-image').textContent = 'Set Image';
+  document.getElementById('ref-modal-set-image').onclick = () => {
+    const url = document.getElementById('ref-modal-image-input').value.trim();
+    if (!url) return;
+    const btn = document.getElementById('ref-modal-set-image');
+    btn.textContent = 'Checking…';
+    btn.disabled = true;
+    fetch('/reference-info/set-image', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({entity_type: entityType, entity_name: entityName, image_url: url}),
+    }).then(r => r.json()).then(data => {
+      if (data.error) {
+        btn.textContent = data.error;
+        btn.disabled = false;
+      } else {
+        btn.textContent = 'Saved — reload to see';
+      }
+    }).catch(() => { btn.textContent = 'Error'; btn.disabled = false; });
   };
 
   openModal('modal-ref-info');

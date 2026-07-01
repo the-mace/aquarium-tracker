@@ -50,6 +50,7 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
             entity_name = _canonical(pl.get("species") or pl.get("common_name") or "")
             ref = ref_map.get(entity_name, {})
             pl["ref_entity_name"] = ref.get("entity_name")
+            pl["ref_scientific_name"] = ref.get("scientific_name")
             pl["ref_description"] = ref.get("description")
             pl["ref_care_notes"] = ref.get("care_notes")
             pl["ref_image_url"] = ref.get("image_url")
@@ -84,18 +85,19 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
             hs["ref_fetched_at"] = ref.get("fetched_at")
 
     # Queue reference info fetch for any entity not yet fetched (no row, or stuck placeholder)
+    wt = tank.get("water_type", "freshwater") or "freshwater"
     for pl in plants:
         if pl.get("ref_fetched_at") is None:
             entity_name = _canonical(pl.get("species") or pl.get("common_name") or "")
             if entity_name:
                 display = pl.get("common_name") or pl.get("species") or ""
-                maybe_fetch_reference_info(background_tasks, "plant", entity_name, display)
+                maybe_fetch_reference_info(background_tasks, "plant", entity_name, display, wt)
 
     for hs in hardscape:
         if hs.get("ref_fetched_at") is None:
             entity_name = _canonical(hs.get("item") or "")
             if entity_name:
-                maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, hs.get("item", ""))
+                maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, hs.get("item", ""), wt)
 
     return templates.TemplateResponse("plants/list.html", {
         "request": request, "tank": tank,
@@ -122,7 +124,10 @@ async def add_plant(
     entity_name = _canonical(species or common_name or "")
     if entity_name:
         display = common_name or species or ""
-        maybe_fetch_reference_info(background_tasks, "plant", entity_name, display)
+        with get_db() as conn:
+            t = row_to_dict(conn.execute("SELECT water_type FROM tanks WHERE id=?", (tank_id,)).fetchone())
+        wt = (t or {}).get("water_type", "freshwater") or "freshwater"
+        maybe_fetch_reference_info(background_tasks, "plant", entity_name, display, wt)
 
     return RedirectResponse(url=f"/tanks/{tank_id}/plants", status_code=303)
 
@@ -163,7 +168,10 @@ async def add_hardscape(
 
     entity_name = _canonical(item)
     if entity_name:
-        maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, item)
+        with get_db() as conn:
+            t = row_to_dict(conn.execute("SELECT water_type FROM tanks WHERE id=?", (tank_id,)).fetchone())
+        wt = (t or {}).get("water_type", "freshwater") or "freshwater"
+        maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, item, wt)
 
     return RedirectResponse(url=f"/tanks/{tank_id}/plants", status_code=303)
 

@@ -120,8 +120,7 @@ async def mark_done(tank_id: int, sch_id: int):
         today = date.today().isoformat()
         next_due = None
         if sched.get("interval_days"):
-            raw = date.today() + timedelta(days=sched["interval_days"])
-            next_due = _next_weekday(raw, 3).isoformat()  # snap to Thursday (water change day)
+            next_due = (date.today() + timedelta(days=sched["interval_days"])).isoformat()
 
         conn.execute(
             "INSERT INTO events (tank_id, event_type, notes, schedule_id, timestamp) VALUES (?,?,?,?,?)",

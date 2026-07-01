@@ -25,6 +25,22 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 The `.venv` is at `aquarium-tracker/.venv` (one level above `fathom/`).
 
+## Checking current issues / live logs
+
+All logs (uvicorn + app) are teed to `/tmp/fathom.log` (RotatingFileHandler, 5 MB, 2 backups) in addition to stdout. To watch live:
+
+```bash
+tail -f /tmp/fathom.log
+```
+
+To check recent background task activity (reference info fetches, AI analysis errors):
+
+```bash
+grep -E "reference_info|ai_analysis|ERROR|WARNING" /tmp/fathom.log | tail -50
+```
+
+On the production Mac mini the launchd stderr goes to `/tmp/fathom.err`; app logs go to `/tmp/fathom.log` there too.
+
 ## Project structure
 
 ```
