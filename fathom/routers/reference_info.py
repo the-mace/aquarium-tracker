@@ -2,6 +2,7 @@ import os
 import json
 import re
 import logging
+import urllib.request
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from database import get_ref_db, row_to_dict
@@ -110,13 +111,23 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
 
         data = json.loads(text)
 
-        # Validate image URL — must be https and point to an image file
+        # Validate image URL: must be https, image extension, and actually return 200
         image_url = data.get("image_url")
-        if image_url and not (
-            image_url.startswith("https://")
-            and re.search(r"\.(jpg|jpeg|png|webp|svg)(\?|$)", image_url, re.IGNORECASE)
-        ):
-            image_url = None
+        if image_url:
+            if not (
+                image_url.startswith("https://")
+                and re.search(r"\.(jpg|jpeg|png|webp|svg)(\?|$)", image_url, re.IGNORECASE)
+            ):
+                image_url = None
+            else:
+                try:
+                    req = urllib.request.Request(image_url, method="HEAD",
+                                                 headers={"User-Agent": "Fathom/1.0"})
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        if resp.status != 200:
+                            image_url = None
+                except Exception:
+                    image_url = None
 
         with get_ref_db() as conn:
             conn.execute(
