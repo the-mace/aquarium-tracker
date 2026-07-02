@@ -156,26 +156,59 @@ async function loadPopChart(tankId) {
   if (!canvas) return;
   try {
     const res = await fetch(`/tanks/${tankId}/charts/population`);
-    const { current } = await res.json();
-    if (!current.length) return;
+    const { events } = await res.json();
+    if (!events.length) return;
 
-    const labels = current.map(r => r.common_name || r.species || 'Unknown');
-    const values = current.map(r => r.count);
+    // Sum each event's +/- delta into per-species, per-day buckets, then
+    // walk the shared date axis accumulating a running total per species.
+    // Species whose count is always null ("many"/unquantified, e.g. hitchhiker
+    // pests) are skipped — a flat line at 0 would misrepresent "unknown" as "none".
+    const deltaByDate = {};
+    const speciesLabels = [];
+    events.forEach(e => {
+      if (e.count === null || e.count === undefined) return;
+      const date = e.timestamp.slice(0, 10);
+      const label = e.common_name || e.species || 'Unknown';
+      const delta = (e.event_type === 'added' || e.event_type === 'born') ? e.count : -e.count;
+      if (!deltaByDate[date]) deltaByDate[date] = {};
+      deltaByDate[date][label] = (deltaByDate[date][label] || 0) + delta;
+      if (!speciesLabels.includes(label)) speciesLabels.push(label);
+    });
+    if (!speciesLabels.length) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dates = Object.keys(deltaByDate).sort();
+    if (dates[dates.length - 1] !== today) dates.push(today);
+
     const colors = ['#00c4a0','#38bdf8','#a78bfa','#fb923c','#facc15','#34d399','#f87171'];
+    const datasets = speciesLabels.map((label, i) => {
+      let running = 0;
+      const data = dates.map(date => {
+        running += (deltaByDate[date] && deltaByDate[date][label]) || 0;
+        return running;
+      });
+      return {
+        label,
+        data,
+        borderColor: colors[i % colors.length],
+        backgroundColor: colors[i % colors.length] + '22',
+        stepped: true,
+        pointRadius: 3,
+      };
+    });
 
     new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{ data: values, backgroundColor: colors.slice(0, values.length), borderRadius: 4 }],
-      },
+      type: 'line',
+      data: { labels: dates, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: true,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: datasets.length > 1, labels: { color: '#94a3b8', font: { size: 11 } } },
+        },
         scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
-          y: { ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: '#2d3f5533' } },
+          x: { ticks: { color: '#94a3b8', maxTicksLimit: 6 }, grid: { color: '#2d3f5533' } },
+          y: { ticks: { color: '#94a3b8', stepSize: 1, precision: 0 }, grid: { color: '#2d3f5533' } },
         },
       },
     });
