@@ -4,8 +4,8 @@ import database as _db
 from database import row_to_dict, rows_to_list, init_db, get_db
 from routers.ai_analysis import (
     _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
-    _fmt_issues, _fmt_events, _fmt_schedule, _fmt_timeline_rows,
-    build_recommendation_prompt,
+    _fmt_issues, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
+    build_recommendation_prompt, build_analysis_prompt, build_summary_prompt,
 )
 
 
@@ -160,6 +160,42 @@ def test_fmt_events_formats_row():
     result = _fmt_events(rows)
     assert "water_change" in result
     assert "30%" in result
+
+
+def test_fmt_tank_notes_empty():
+    assert _fmt_tank_notes({}) == ""
+    assert _fmt_tank_notes({"notes": None}) == ""
+    assert _fmt_tank_notes({"notes": "   "}) == ""
+
+
+def test_fmt_tank_notes_present():
+    result = _fmt_tank_notes({"notes": "Targets: GH 7-8, KH 2-10, pH 7.0-7.5."})
+    assert "Targets: GH 7-8, KH 2-10" in result
+    assert "accepted parameter targets" in result
+
+
+def test_build_recommendation_prompt_includes_tank_notes():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5,
+            "notes": "Targets: GH 7-8, KH 2-10 (home water can't go lower without RO)."}
+    test_result = {"id": 1, "timestamp": "2026-07-02 08:00:00", "ph": 7.0, "gh": None, "kh": 10.0,
+                    "ammonia": 0.0, "nitrite": 0.0, "nitrate": 5.0, "tds": None, "temp": 76.0, "notes": None}
+    prompt = build_recommendation_prompt(tank, test_result, [test_result], [], [], [], [])
+    assert "KH 2-10" in prompt
+    assert "can't go lower without RO" in prompt
+
+
+def test_build_analysis_prompt_includes_tank_notes():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5,
+            "notes": "Targets: GH 7-8, KH 2-10."}
+    prompt = build_analysis_prompt(tank, [], [], [], [], [], [])
+    assert "KH 2-10" in prompt
+
+
+def test_build_summary_prompt_includes_tank_notes():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5,
+            "notes": "Targets: GH 7-8, KH 2-10."}
+    prompt = build_summary_prompt(tank, [], [], [], [], [], "latest analysis text")
+    assert "KH 2-10" in prompt
 
 
 def test_fmt_schedule_empty():

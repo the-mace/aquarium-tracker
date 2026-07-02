@@ -7,6 +7,13 @@ from database import get_db, rows_to_list, row_to_dict
 logger = logging.getLogger(__name__)
 
 
+def _fmt_tank_notes(tank):
+    notes = (tank.get("notes") or "").strip()
+    if not notes:
+        return ""
+    return f"\nTank notes (may include this tank's own accepted parameter targets/baselines — defer to these over generic species norms): {notes}"
+
+
 def _fmt_test_results(rows):
     if not rows:
         return "  No test results recorded."
@@ -98,7 +105,7 @@ def build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabit
 
 Background context (use this ONLY to judge whether something needs attention — e.g. species-appropriate parameter ranges for the inhabitants below, or whether a scheduled task is overdue. Do NOT summarize or restate this background in your answer; the keeper already knows their own tank contents):
 
-Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
 Inhabitants: {_fmt_inhabitants(inhabitants)}
 Open issues: {_fmt_issues(issues)}
 Recurring feeding/dosing/maintenance schedule:
@@ -120,7 +127,7 @@ Now write the actual response. Cover only what's relevant, briefly:
 def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape):
     return f"""You are an expert aquarium keeper analyzing water chemistry and tank health data.
 
-Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
 
 Current Inhabitants:
 {_fmt_inhabitants(inhabitants)}
@@ -152,7 +159,7 @@ Keep your response concise and practical. Use plain text, no markdown formatting
 def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis):
     return f"""You are an expert aquarium keeper. Write a concise 2-3 paragraph summary of this tank's current state for use as context in future questions.
 
-Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
 
 Inhabitants:
 {_fmt_inhabitants(inhabitants)}

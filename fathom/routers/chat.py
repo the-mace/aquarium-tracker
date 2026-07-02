@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from database import get_db, rows_to_list, row_to_dict
+from routers.ai_analysis import _fmt_tank_notes
 
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class ChatMessage(BaseModel):
 def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs):
     parts = [
         "You are an expert aquarium keeper assistant with detailed knowledge of the following tank.",
-        f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)",
+        f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}",
     ]
 
     if tank.get("manufacturer") or tank.get("model"):
