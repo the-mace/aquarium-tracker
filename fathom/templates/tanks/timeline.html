@@ -136,10 +136,35 @@
         <div class="tl-detail">{{ item.detail }}</div>
         {%- endif %}
       </div>
+      <button type="button" class="btn btn-xs btn-ghost tl-delete" title="Delete" onclick="deleteTimelineItem('{{ item.kind }}', {{ item.item_id }})">✕</button>
     </div>
     {% endfor %}
   </div>
   {% endfor %}
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TL_ENDPOINTS = {
+  event:          {url: id => `/tanks/{{ tank.id }}/events/${id}`, method: 'DELETE', label: 'this event'},
+  issue_open:      {url: id => `/tanks/{{ tank.id }}/issues/${id}/delete`, method: 'POST', label: 'this issue (removes both its opened and resolved timeline entries)'},
+  issue_resolve:   {url: id => `/tanks/{{ tank.id }}/issues/${id}/delete`, method: 'POST', label: 'this issue (removes both its opened and resolved timeline entries)'},
+  equip_install:   {url: id => `/tanks/{{ tank.id }}/equipment/${id}/delete`, method: 'POST', label: 'this equipment (removes both its installed and removed timeline entries)'},
+  equip_remove:    {url: id => `/tanks/{{ tank.id }}/equipment/${id}/delete`, method: 'POST', label: 'this equipment (removes both its installed and removed timeline entries)'},
+  population:      {url: id => `/tanks/{{ tank.id }}/inhabitants/population-events/${id}/delete`, method: 'POST', label: 'this population event'},
+  plant_added:     {url: id => `/tanks/{{ tank.id }}/plants/${id}/delete`, method: 'POST', label: 'this plant'},
+  hardscape_added: {url: id => `/tanks/{{ tank.id }}/hardscape/${id}/delete`, method: 'POST', label: 'this hardscape item'},
+  test:            {url: id => `/tanks/{{ tank.id }}/tests/${id}`, method: 'DELETE', label: 'this water test result'},
+  observation:     {url: id => `/tanks/{{ tank.id }}/observations/${id}/delete`, method: 'POST', label: 'this observation'},
+};
+
+function deleteTimelineItem(kind, id) {
+  const cfg = TL_ENDPOINTS[kind];
+  if (!cfg) return;
+  if (!confirm(`Delete ${cfg.label}? This cannot be undone.`)) return;
+  fetch(cfg.url(id), {method: cfg.method}).then(() => location.reload());
+}
+</script>
 {% endblock %}

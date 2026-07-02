@@ -191,3 +191,10 @@ async def delete_inhabitant(tank_id: int, inh_id: int):
     with get_db() as conn:
         conn.execute("DELETE FROM inhabitants WHERE id = ? AND tank_id = ?", (inh_id, tank_id))
     return RedirectResponse(url=f"/tanks/{tank_id}/inhabitants", status_code=303)
+
+
+@router.post("/population-events/{pe_id}/delete")
+async def delete_population_event(tank_id: int, pe_id: int):
+    with get_db() as conn:
+        conn.execute("DELETE FROM population_events WHERE id = ? AND tank_id = ?", (pe_id, tank_id))
+    return JSONResponse({"status": "deleted"})

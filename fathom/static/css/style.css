@@ -849,6 +849,8 @@ p { margin-bottom: .5rem; }
 .tl-dot-obs-import    { background: var(--accent); }
 
 .tl-body { flex: 1; min-width: 0; }
+.tl-delete { margin-left: auto; flex-shrink: 0; opacity: 0; transition: opacity .15s; }
+.tl-item:hover .tl-delete { opacity: 1; }
 .tl-header { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; line-height: 1.4; }
 .tl-label { font-size: .88rem; color: var(--text); }
 .tl-amount { font-size: .85rem; color: var(--primary); font-weight: 600; }

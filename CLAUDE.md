@@ -207,8 +207,8 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-07-02)
 
-- Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes
-- Timeline now includes water tests and observations, with out-of-range test params colored (see below); 218 tests passing
+- Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes — prompt tuned to be terse and skip restating tank inventory (see below)
+- Timeline entries are now individually deletable, routed by kind to the existing per-entity delete endpoint (see below); 221 tests passing
 - Observation ↔ entity linkage now supports multiple entities per note via an `observation_links` junction table (see below), incl. on-page "linked to" filter + editable links
 - Reference Info feature added (see above)
 - Quick Log feature added
@@ -221,15 +221,21 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-218 pytest integration tests in `fathom/tests/`. Run with:
+221 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring), test-form prefill, post-submit AI recommendation.
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation.
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-02 session (fifth)
+
+- **AI test recommendation prompt tuned down**: `build_recommendation_prompt` in `ai_analysis.py` was too close to the pre-existing `run_ai_analysis` "AI Analysis" observation — verbose, and read like a tank summary (inhabitant counts etc.) which Rob doesn't want repeated back to him mid-maintenance. Reworked to: feed inhabitants/issues/recent test history (last 6 `test_results`, for real trend comparison — previously the prompt had *no* prior test data at all, so "stable trend" claims were unsupported) in as **reasoning-only context**, with an explicit instruction not to restate it; response now covers only (1) open-issues status, (2) notable parameter values/trends vs. recent tests, (3) the action to take — target 2-4 sentences, e.g. "No open issues. Nitrate dropped from 10 to 5 ppm... Proceed with the standard water change." Verified live against tank 5.
+- **Timeline delete**: every `.tl-item` now has a hover-revealed ✕ button (`.tl-delete` CSS, opacity 0→1 on `.tl-item:hover`). `deleteTimelineItem(kind, id)` in `timeline.html`'s `{% block scripts %}` maps each of the 9 timeline `kind`s to its *existing* per-entity delete endpoint (event→DELETE `/tanks/{id}/events/{id}`, test→DELETE `/tanks/{id}/tests/{id}`, observation / issue / equipment / plant / hardscape → their `POST .../delete` routes) — no new unified delete endpoint, just routing. `issue_open`/`issue_resolve` both delete the underlying issue (same for `equip_install`/`equip_remove`); confirm dialog says so. Added the one missing delete route, `POST /tanks/{id}/inhabitants/population-events/{pe_id}/delete` (population events previously had no delete endpoint anywhere in the app).
+- Prompted by Rob noticing my own live-testing (multiple manual `curl` test-result submits while verifying the two features above) had left orphaned "AI Analysis" observations and a stray test row in his real tank-5 data — cleaned up via the same endpoints now exposed in the UI. Lesson: prefer creating verification data in a scratch tank, or cleaning up via API immediately after, when live-testing against the user's real DB — background AI tasks (`run_ai_analysis`) fire on *every* test/event save regardless of who's testing, and deleting the triggering row does not cascade-delete the resulting observation.
 
 ### Changes in 2026-07-02 session (fourth)
 

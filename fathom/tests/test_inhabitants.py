@@ -160,6 +160,23 @@ def test_delete_inhabitant(client, tank_id):
     assert count == 0
 
 
+def test_delete_population_event(client, tank_id):
+    inh_id = _add(client, tank_id, name="Guppy", count=3)
+    conn = sqlite3.connect(_db.DB_PATH)
+    pe_id = conn.execute(
+        "SELECT id FROM population_events WHERE inhabitant_id=? ORDER BY id DESC LIMIT 1", (inh_id,)
+    ).fetchone()[0]
+    conn.close()
+
+    r = client.post(f"/tanks/{tank_id}/inhabitants/population-events/{pe_id}/delete")
+    assert r.json()["status"] == "deleted"
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    count = conn.execute("SELECT COUNT(*) FROM population_events WHERE id=?", (pe_id,)).fetchone()[0]
+    conn.close()
+    assert count == 0
+
+
 def test_population_event_nonexistent_inhabitant_404(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/inhabitants/9999/event",

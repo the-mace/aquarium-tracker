@@ -198,16 +198,23 @@ def test_fmt_timeline_rows_formats_entry():
 
 def test_build_recommendation_prompt_includes_key_sections():
     tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5}
-    test_result = {"timestamp": "2026-07-02 08:00:00", "ph": 7.0, "gh": None, "kh": None,
-                    "ammonia": 0.0, "nitrite": 0.0, "nitrate": 10.0, "tds": None, "temp": 76.0,
+    test_result = {"id": 2, "timestamp": "2026-07-02 08:00:00", "ph": 7.0, "gh": None, "kh": None,
+                    "ammonia": 0.0, "nitrite": 0.0, "nitrate": 5.0, "tds": None, "temp": 76.0,
                     "notes": "did a partial water change"}
+    recent_tests = [test_result, {"id": 1, "timestamp": "2026-06-25 08:00:00", "ph": 7.0, "gh": None,
+                                   "kh": None, "ammonia": 0.0, "nitrite": 0.0, "nitrate": 10.0,
+                                   "tds": None, "temp": 76.0, "notes": None}]
+    issues = []
+    inhabitants = [{"common_name": "Neocaridina Shrimp", "species": None, "count": 15}]
     schedule_rows = [{"category": "maintenance", "description": "Weekly water change",
                        "tracking_mode": "logged", "interval_days": 7,
                        "last_done": "2026-06-20", "next_due": "2026-06-27"}]
     timeline_rows = [{"kind": "event", "subtype": "water_change", "ts": "2026-06-25 08:00:00",
                        "label": "water_change", "detail": "25%"}]
-    prompt = build_recommendation_prompt(tank, test_result, schedule_rows, timeline_rows)
+    prompt = build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows)
     assert "5G Tank" in prompt
     assert "did a partial water change" in prompt
     assert "Weekly water change" in prompt
     assert "25%" in prompt
+    assert "Neocaridina Shrimp" in prompt
+    assert "10.0" in prompt  # prior test's nitrate value present for trend comparison

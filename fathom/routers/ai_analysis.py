@@ -93,23 +93,28 @@ def _fmt_timeline_rows(rows):
     return "\n".join(lines)
 
 
-def build_recommendation_prompt(tank, test_result, schedule_rows, timeline_rows):
-    return f"""You are an expert aquarium keeper. A new water test was just logged for this tank. Recommend what action(s), if any, should be taken next.
+def build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows):
+    return f"""You are helping during routine aquarium maintenance, right after a water test was just logged. Write a short status update the keeper will read immediately, mid-maintenance.
+
+Background context (use this ONLY to judge whether something needs attention — e.g. species-appropriate parameter ranges for the inhabitants below, or whether a scheduled task is overdue. Do NOT summarize or restate this background in your answer; the keeper already knows their own tank contents):
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
-
-Water test just recorded:
-{_fmt_test_results([test_result])}
-
+Inhabitants: {_fmt_inhabitants(inhabitants)}
+Open issues: {_fmt_issues(issues)}
 Recurring feeding/dosing/maintenance schedule:
 {_fmt_schedule(schedule_rows)}
-
 Tank activity over the last 4 weeks (newest first):
 {_fmt_timeline_rows(timeline_rows)}
 
-Usually the right recommendation is simply to follow the normal water change process from the maintenance schedule above. But look at recent history first — e.g. if a water change was already done very recently, or a test parameter suggests a different response is needed, recommend that instead.
+Water test just recorded (newest) plus recent tests for trend comparison:
+{_fmt_test_results([test_result] + [t for t in recent_tests if t.get('id') != test_result.get('id')])}
 
-Respond with ONLY the recommendation itself: one short, specific, actionable paragraph, plain text, no markdown, no preamble or label (it will be appended directly to the test result's notes)."""
+Now write the actual response. Cover only what's relevant, briefly:
+1. Open issues — one short line (e.g. "No open issues at this time."). Skip if genuinely nothing to say.
+2. Any water parameter values or trends worth flagging vs. the recent tests above (e.g. a drop/rise since the last test, or a value outside the safe/preferred range for the inhabitants) — only mention parameters that are actually notable, skip the rest.
+3. The action to take now. Usually this is simply "Proceed with the standard water change" per the schedule above — do not restate the schedule's gallons/dose/interval details, the keeper already has those. Only describe something different if this test's results or recent history genuinely call for a different action.
+
+2-4 sentences total, plain text, no markdown, no headers, no preamble like "Recommendation:" or "Analysis:" — this text is appended directly to the test result's own notes field."""
 
 
 def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape):
@@ -290,6 +295,19 @@ async def run_test_recommendation(tank_id: int, result_id: int):
             if not tank or not test_result:
                 return
 
+            recent_tests = rows_to_list(conn.execute(
+                "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 6", (tank_id,)
+            ).fetchall())
+
+            issues = rows_to_list(conn.execute(
+                "SELECT * FROM issues WHERE tank_id = ? AND status != 'resolved' ORDER BY opened_at DESC",
+                (tank_id,),
+            ).fetchall())
+
+            inhabitants = rows_to_list(conn.execute(
+                "SELECT * FROM inhabitants WHERE tank_id = ?", (tank_id,)
+            ).fetchall())
+
             schedule_rows = rows_to_list(conn.execute(
                 "SELECT * FROM recurring_schedule WHERE tank_id = ? AND is_active = 1", (tank_id,)
             ).fetchall())
@@ -301,7 +319,7 @@ async def run_test_recommendation(tank_id: int, result_id: int):
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        prompt = build_recommendation_prompt(tank, test_result, schedule_rows, timeline_rows)
+        prompt = build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows)
         logger.info("Claude call: test_recommendation | tank=%d test=%d", tank_id, result_id)
         t0 = time.monotonic()
         msg = client.messages.create(

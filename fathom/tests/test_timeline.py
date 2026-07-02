@@ -4,6 +4,20 @@ def test_timeline_empty(client, tank_id):
     assert "No history yet" in r.text
 
 
+def test_timeline_shows_delete_buttons_and_endpoint_map(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/events",
+        data={"event_type": "water_change", "amount": "2.5", "timestamp": "2026-01-15 10:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    r = client.get(f"/tanks/{tank_id}/timeline")
+    assert r.status_code == 200
+    assert "deleteTimelineItem('event'" in r.text
+    assert "TL_ENDPOINTS" in r.text
+    assert f"/tanks/{tank_id}/events/" in r.text  # event delete endpoint referenced in JS map
+    assert f"/tanks/{tank_id}/inhabitants/population-events/" in r.text  # population delete endpoint referenced
+
+
 def test_timeline_shows_event(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/events",
