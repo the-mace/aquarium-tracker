@@ -207,7 +207,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-07-02)
 
-- Observation ↔ entity linkage added (see below); 193 tests passing
+- Observation ↔ entity linkage added, incl. on-page "linked to" filter + editable links (see below); 199 tests passing
 - Reference Info feature added (see above)
 - Quick Log feature added
 - Recurring schedule feature added; full app built and committed
@@ -219,7 +219,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-193 pytest integration tests in `fathom/tests/`. Run with:
+199 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
@@ -236,6 +236,7 @@ AI calls are mocked in all tests: `run_ai_analysis` → no-op; `fetch_reference_
 - **"💬 Observations" links** (renamed from "Notes" — collided with the entity's own free-text notes field): added to the Actions cell on `inhabitants/list.html`, `plants/list.html` (both the plants and hardscape tables), and `equipment/list.html` — each links to the Observations page pre-filtered to that row. Styled `.btn-accent` (filled blue pill, new CSS class) rather than a ghost/underlined link.
 - **Import/Quick Log auto-linking**: `IMPORT_PROMPT` observations now carry optional `subject_type`/`subject_name`; rule 6 tells Claude to tag the subject when an observation is clearly about one specific inhabitant/plant/hardscape item/equipment piece. `import_confirm` builds canonical-name → id lookup maps (reusing `_canonical()` from `reference_info.py`), preloaded from the tank's existing entities and kept current as each section's insert/update loop runs, so a subject can resolve to either a pre-existing item or one created earlier in the same import. Unmatched/null subjects leave all four link columns null — no error.
 - **Observations manual filter bar**: mirrors the Timeline page's filter UX — `search` (text, LIKE on `o.text`), `source` (manual/auto/import), `date_from`/`date_to`. Combines with the entity-link filter: `clear_link_url` drops just the entity link and keeps search/source/date; `clear_search_url` does the reverse. Both computed server-side in `list_observations` via `urlencode`.
+- **"Linked to" filter + editable links (follow-up)**: the filter bar also has a "Linked to" `<select>` driven by a single `link_ref=type:id` query param (`_parse_link_ref()` helper), with special values `any` (linked to something) and `none` (unlinked) in addition to specific entities; legacy `link_type`/`link_id` params from the entity-page buttons still work as a fallback. Every observation card now has a "🔗 Add/Change link" button → small modal → `POST /tanks/{id}/observations/{obs_id}/link` (JSON fetch, `link_ref` empty string clears the link) — previously the link could only be set at creation time. The `<optgroup>` markup for entity pickers was pulled into a shared Jinja macro (`entity_optgroups`) in `observations/list.html`, used by the add-note form, the filter select, and the edit-link modal.
 - **Also bundled** (prior uncommitted work): `plants_hardscape.py` gained `POST /plants/{id}/update` and `POST /hardscape/{id}/update` (the edit modals in `plants/list.html` already called these); `count`/`cost` form fields changed from `int`/`float` to `str` + manual parsing so empty-string submissions from the edit modals don't 422; `.form-group input[type="checkbox"]` CSS fix so checkboxes don't stretch to full field width.
 
 ### Changes in 2026-06-30 session (fourth)
