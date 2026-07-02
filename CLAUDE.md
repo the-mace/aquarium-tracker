@@ -205,9 +205,10 @@ New routes (in `import_data.py`):
 
 Template: `fathom/templates/tanks/quick_log.html`
 
-## Current state (as of 2026-06-30)
+## Current state (as of 2026-07-02)
 
-- Reference Info feature added (see above); 186 tests passing
+- Observation ↔ entity linkage added (see below); 193 tests passing
+- Reference Info feature added (see above)
 - Quick Log feature added
 - Recurring schedule feature added; full app built and committed
 - AI features active (ANTHROPIC_API_KEY configured in .env)
@@ -218,7 +219,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-186 pytest integration tests in `fathom/tests/`. Run with:
+193 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
@@ -227,6 +228,14 @@ Template: `fathom/templates/tanks/quick_log.html`
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join.
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests.
+
+### Changes in 2026-07-02 session
+
+- **Observation ↔ entity linkage**: `observations` gets four new nullable columns — `related_inhabitant_id`, `related_plant_id`, `related_hardscape_id`, `related_equipment_id` (no declared FK, same style as the existing `related_event_id`/`related_test_id`). Migration in `database.py` (`PRAGMA table_info` check + `ALTER TABLE ADD COLUMN`); the legacy "add 'import' to source CHECK" rebuild migration now uses an explicit column list on its `INSERT INTO observations_new` so it doesn't choke on the wider live schema.
+- **Observations page** (`routers/observations.py`, `templates/observations/list.html`): `GET /tanks/{id}/observations` accepts `?link_type=inhabitant|plant|hardscape|equipment&link_id=N` — LEFT JOINs all four related tables so every row can show a "linked to X: Y" badge even when unfiltered; shows a "Showing notes for… · Clear filter" banner when filtered. `POST .../observations` accepts `link_ref` (form field, format `"type:id"`, e.g. `"inhabitant:5"`) from a new "Relates to" `<select>` in the Add Note modal — pre-selected server-side when the page was reached via an active filter.
+- **"📝 Notes" links**: added to the Actions cell on `inhabitants/list.html`, `plants/list.html` (both the plants and hardscape tables), and `equipment/list.html` — each links to the Observations page pre-filtered to that row.
+- **Import/Quick Log auto-linking**: `IMPORT_PROMPT` observations now carry optional `subject_type`/`subject_name`; rule 6 tells Claude to tag the subject when an observation is clearly about one specific inhabitant/plant/hardscape item/equipment piece. `import_confirm` builds canonical-name → id lookup maps (reusing `_canonical()` from `reference_info.py`), preloaded from the tank's existing entities and kept current as each section's insert/update loop runs, so a subject can resolve to either a pre-existing item or one created earlier in the same import. Unmatched/null subjects leave all four link columns null — no error.
+- **Also bundled** (prior uncommitted work): `plants_hardscape.py` gained `POST /plants/{id}/update` and `POST /hardscape/{id}/update` (the edit modals in `plants/list.html` already called these); `count`/`cost` form fields changed from `int`/`float` to `str` + manual parsing so empty-string submissions from the edit modals don't 422; `.form-group input[type="checkbox"]` CSS fix so checkboxes don't stretch to full field width.
 
 ### Changes in 2026-06-30 session (fourth)
 - **Reference Info**: new `reference_info` table (UNIQUE entity_type+entity_name). Background task uses `claude-sonnet-4-6` + `web_search_20260209` to fetch description, care notes, Wikimedia Commons image URL. Auto-queued on add and on list-page load for items with no row yet.
