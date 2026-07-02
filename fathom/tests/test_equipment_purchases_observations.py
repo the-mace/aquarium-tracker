@@ -115,6 +115,54 @@ def test_list_observations_json_limit(client, tank_id):
     assert len(body["observations"]) == 3
 
 
+def test_add_observation_with_link_ref_sets_related_id(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "species": "Caridina multidentata", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    r = client.post(
+        f"/tanks/{tank_id}/observations",
+        data={"text": "Very active today", "link_ref": f"inhabitant:{inh['id']}"},
+        headers={"Accept": "application/json"},
+    )
+    obs_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute(
+        "SELECT related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id"
+        " FROM observations WHERE id=?", (obs_id,),
+    ).fetchone()
+    conn.close()
+    assert row == (inh["id"], None, None, None)
+
+
+def test_observations_filtered_by_link_type_and_id(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    client.post(
+        f"/tanks/{tank_id}/observations",
+        data={"text": "Linked note", "link_ref": f"inhabitant:{inh['id']}"},
+    )
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "Unrelated note"})
+
+    r = client.get(f"/tanks/{tank_id}/observations?link_type=inhabitant&link_id={inh['id']}")
+    assert r.status_code == 200
+    assert "Linked note" in r.text
+    assert "Unrelated note" not in r.text
+    assert "Showing notes for" in r.text
+
+
+def test_observations_invalid_link_id_falls_back_to_unfiltered(client, tank_id):
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "General note"})
+    r = client.get(f"/tanks/{tank_id}/observations?link_type=inhabitant&link_id=999999")
+    assert r.status_code == 200
+    assert "General note" in r.text
+    assert "Showing notes for" not in r.text
+
+
 def test_delete_observation(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/observations",

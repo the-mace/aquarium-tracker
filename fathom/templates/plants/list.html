@@ -63,9 +63,20 @@
           <td>{{ pl.source or '—' }}</td>
           <td>{{ pl.notes or '' }}</td>
           <td>
-            <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/remove" style="display:inline" onsubmit="return confirm('Mark as removed?')">
-              <button class="btn btn-xs btn-ghost" type="submit">Remove</button>
-            </form>
+            <div style="display:flex;gap:.35rem;align-items:center">
+              <button class="btn btn-xs btn-ghost" type="button"
+                data-id="{{ pl.id }}"
+                data-common-name="{{ pl.common_name|e or '' }}"
+                data-species="{{ pl.species|e or '' }}"
+                data-added-date="{{ pl.added_date or '' }}"
+                data-source="{{ pl.source|e or '' }}"
+                data-notes="{{ pl.notes|e or '' }}"
+                onclick="openEditPlant(this)">Edit</button>
+              <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations?link_type=plant&link_id={{ pl.id }}">📝 Notes</a>
+              <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/remove" onsubmit="return confirm('Mark as removed?')">
+                <button class="btn btn-xs btn-ghost" type="submit">Remove</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -159,9 +170,21 @@
           <td>{{ hs.added_date or '—' }}</td>
           <td>{{ hs.notes or '' }}</td>
           <td>
-            <form method="post" action="/tanks/{{ tank.id }}/hardscape/{{ hs.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this hardscape item?')">
-              <button class="btn btn-xs btn-danger" type="submit">✕</button>
-            </form>
+            <div style="display:flex;gap:.35rem;align-items:center">
+              <button class="btn btn-xs btn-ghost" type="button"
+                data-id="{{ hs.id }}"
+                data-item="{{ hs.item|e or '' }}"
+                data-quantity="{{ hs.quantity or 1 }}"
+                data-source="{{ hs.source|e or '' }}"
+                data-cost="{{ hs.cost if hs.cost is not none else '' }}"
+                data-added-date="{{ hs.added_date or '' }}"
+                data-notes="{{ hs.notes|e or '' }}"
+                onclick="openEditHardscape(this)">Edit</button>
+              <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations?link_type=hardscape&link_id={{ hs.id }}">📝 Notes</a>
+              <form method="post" action="/tanks/{{ tank.id }}/hardscape/{{ hs.id }}/delete" onsubmit="return confirm('Delete this hardscape item?')">
+                <button class="btn btn-xs btn-ghost" type="submit">Delete</button>
+              </form>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -175,6 +198,43 @@
   <p class="muted panel-empty">No hardscape recorded.</p>
 </div>
 {% endif %}
+
+<!-- Edit Plant Modal -->
+<div id="modal-edit-plant" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit Plant</h3><button class="modal-close" onclick="closeModal('modal-edit-plant')">×</button></div>
+    <form method="post" id="form-edit-plant">
+      <div class="form-group"><label>Common Name</label><input type="text" name="common_name" id="ep-common_name"></div>
+      <div class="form-group"><label>Species</label><input type="text" name="species" id="ep-species"></div>
+      <div class="form-group"><label>Date Added</label><input type="date" name="added_date" id="ep-added_date"></div>
+      <div class="form-group"><label>Source</label><input type="text" name="source" id="ep-source"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="ep-notes"></textarea></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-plant')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Hardscape Modal -->
+<div id="modal-edit-hardscape" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit Hardscape</h3><button class="modal-close" onclick="closeModal('modal-edit-hardscape')">×</button></div>
+    <form method="post" id="form-edit-hardscape">
+      <div class="form-group"><label>Item *</label><input type="text" name="item" id="eh-item" required></div>
+      <div class="form-group"><label>Quantity</label><input type="number" name="quantity" id="eh-quantity" min="1"></div>
+      <div class="form-group"><label>Source</label><input type="text" name="source" id="eh-source"></div>
+      <div class="form-group"><label>Cost ($)</label><input type="number" step="0.01" name="cost" id="eh-cost"></div>
+      <div class="form-group"><label>Date Added</label><input type="date" name="added_date" id="eh-added_date"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="eh-notes"></textarea></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-hardscape')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- Reference Info Modal -->
 <div id="modal-ref-info" class="modal" style="display:none">
@@ -250,6 +310,27 @@
 
 {% block scripts %}
 <script>
+function openEditPlant(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-edit-plant').action = `/tanks/{{ tank.id }}/plants/${d.id}/update`;
+  document.getElementById('ep-common_name').value = d.commonName;
+  document.getElementById('ep-species').value = d.species;
+  document.getElementById('ep-added_date').value = d.addedDate;
+  document.getElementById('ep-source').value = d.source;
+  document.getElementById('ep-notes').value = d.notes;
+  openModal('modal-edit-plant');
+}
+function openEditHardscape(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-edit-hardscape').action = `/tanks/{{ tank.id }}/hardscape/${d.id}/update`;
+  document.getElementById('eh-item').value = d.item;
+  document.getElementById('eh-quantity').value = d.quantity || 1;
+  document.getElementById('eh-source').value = d.source;
+  document.getElementById('eh-cost').value = d.cost;
+  document.getElementById('eh-added_date').value = d.addedDate;
+  document.getElementById('eh-notes').value = d.notes;
+  openModal('modal-edit-hardscape');
+}
 function openRefInfoFrom(el) {
   openRefInfo(
     el.dataset.type, el.dataset.name, el.dataset.display,

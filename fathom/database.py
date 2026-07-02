@@ -183,6 +183,10 @@ def init_db():
                 tank_id INTEGER NOT NULL,
                 related_event_id INTEGER,
                 related_test_id INTEGER,
+                related_inhabitant_id INTEGER,
+                related_plant_id INTEGER,
+                related_hardscape_id INTEGER,
+                related_equipment_id INTEGER,
                 source TEXT DEFAULT 'manual' CHECK(source IN ('auto','manual')),
                 text TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
@@ -301,11 +305,18 @@ def init_db():
                     updated_at TEXT DEFAULT (datetime('now')),
                     FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
                 );
-                INSERT INTO observations_new SELECT * FROM observations;
+                INSERT INTO observations_new (id, tank_id, related_event_id, related_test_id, source, text, created_at, updated_at)
+                    SELECT id, tank_id, related_event_id, related_test_id, source, text, created_at, updated_at FROM observations;
                 DROP TABLE observations;
                 ALTER TABLE observations_new RENAME TO observations;
                 CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
             """)
+
+        # Migration: add entity-linkage columns to observations if not present
+        obs_cols = {row[1] for row in conn.execute("PRAGMA table_info(observations)").fetchall()}
+        for col in ("related_inhabitant_id", "related_plant_id", "related_hardscape_id", "related_equipment_id"):
+            if col not in obs_cols:
+                conn.execute(f"ALTER TABLE observations ADD COLUMN {col} INTEGER")
 
 
 def init_ref_cache_db():

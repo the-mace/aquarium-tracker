@@ -8,6 +8,13 @@
   <button class="btn btn-primary" onclick="openModal('modal-add-obs')">+ Add Note</button>
 </div>
 
+{% if active_filter %}
+<div class="filter-bar" style="margin-bottom:1rem">
+  <span>Showing notes for: <strong>{{ active_filter.label }}</strong> <span class="muted">({{ active_filter.type }})</span></span>
+  <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations">Clear filter</a>
+</div>
+{% endif %}
+
 {% if observations %}
 <div class="observations-list">
   {% for obs in observations %}
@@ -19,6 +26,7 @@
       <span class="obs-time">{{ obs.created_at }}</span>
       {% if obs.related_test_id %}<span class="obs-link muted">linked to test #{{ obs.related_test_id }}</span>{% endif %}
       {% if obs.related_event_id %}<span class="obs-link muted">linked to event #{{ obs.related_event_id }}</span>{% endif %}
+      {% if obs.link_label %}<span class="obs-link muted">linked to {{ obs.link_type }}: {{ obs.link_label }}</span>{% endif %}
     </div>
     <div class="obs-body">{{ obs.text }}</div>
     <div class="obs-actions">
@@ -40,6 +48,40 @@
     <div class="modal-header"><h3>Add Observation</h3><button class="modal-close" onclick="closeModal('modal-add-obs')">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/observations">
       <div class="form-group"><label>Observation</label><textarea name="text" rows="6" placeholder="What did you notice?"></textarea></div>
+      <div class="form-group">
+        <label>Relates to (optional)</label>
+        <select name="link_ref">
+          <option value="">— none —</option>
+          {% if entity_options.inhabitant %}
+          <optgroup label="Inhabitants">
+            {% for opt in entity_options.inhabitant %}
+            <option value="inhabitant:{{ opt.id }}" {% if active_filter and active_filter.type == 'inhabitant' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if entity_options.plant %}
+          <optgroup label="Plants">
+            {% for opt in entity_options.plant %}
+            <option value="plant:{{ opt.id }}" {% if active_filter and active_filter.type == 'plant' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if entity_options.hardscape %}
+          <optgroup label="Hardscape">
+            {% for opt in entity_options.hardscape %}
+            <option value="hardscape:{{ opt.id }}" {% if active_filter and active_filter.type == 'hardscape' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if entity_options.equipment %}
+          <optgroup label="Equipment">
+            {% for opt in entity_options.equipment %}
+            <option value="equipment:{{ opt.id }}" {% if active_filter and active_filter.type == 'equipment' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        </select>
+      </div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>

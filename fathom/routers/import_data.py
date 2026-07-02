@@ -75,7 +75,7 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
     {"title": "", "description": "", "status": "open", "opened_at": "YYYY-MM-DD", "resolved_at": null, "notes": ""}
   ],
   "observations": [
-    {"text": "", "created_at": "YYYY-MM-DD HH:MM:SS"}
+    {"text": "", "created_at": "YYYY-MM-DD HH:MM:SS", "subject_type": null, "subject_name": null}
   ],
   "recurring_schedule": [
     {"category": "feeding", "tracking_mode": "reference_only", "day_of_week": "mon",
@@ -111,6 +111,7 @@ EXTRACTION RULES (follow carefully):
    - COUNT CHANGES: If a species' count changes over time (initial purchase, then deaths/losses, then stabilization), emit a SEPARATE inhabitants entry for EACH point in the journal where the count is explicitly stated or clearly inferable, using the date and count at that moment. Example: "received 20 fire red shrimp Jan 15 — lost several to shipping stress — stabilized at 10 by Jan 25" → two entries: {count:20, added_date:"2026-01-15"} and {count:10, added_date:"2026-01-25"}. The import system selects the most recent entry as the current count, so never collapse multiple count states into just the first mention.
    - BREEDING COLONIES: For invertebrates (snails, copepods, ostracods, worms) that start with a countable number but are later described as breeding, multiplying, laying eggs, or growing in uncountable numbers — emit a final entry with count_unknown=true and the date of the breeding/colony language. Example: journal shows 24 snails in April, then describes egg clutches and "lots growing" in June → emit {count:24, added_date:"2026-04-26"} and {count_unknown:true, count:null, added_date:"2026-06-26"}. The colony entry wins as the current state.
 6. OBSERVATIONS: Capture journal entries, personal qualitative notes, and observations (e.g. "shrimp seem very active today", "noticed some plant melt on the anubias"). Do NOT duplicate structured measurement data as observations.
+   SUBJECT TAGGING: If an observation is clearly about one specific inhabitant, plant, hardscape item, or equipment piece (rather than the tank in general), set subject_type to one of "inhabitant"/"plant"/"hardscape"/"equipment" and subject_name to that item's name as it appears elsewhere in this same extraction, or as it's likely already recorded in the tank (e.g. "Amano Shrimp", "Java Fern", "Driftwood", "Fluval heater"). Leave both null for general/tank-wide notes or when the subject is ambiguous (e.g. "the fish", "everyone", "the tank looks great").
 7. FLAGS: Flag values that seem incorrect or unusual:
    - Water parameters out of normal range for the tank type (KH > 15 for freshwater, pH > 8.5 or < 5.5 for freshwater, ammonia > 4, nitrate > 160)
    - Counts that contradict the narrative (e.g. extracted count=5 but the text says "11 shrimp")
@@ -130,6 +131,8 @@ Valid issue status: open, monitoring, resolved
 Valid plant status: active, removed
 
 12. PLANTS: Always fill in the scientific species name when known, in addition to the common name. Examples: Java moss → species="Taxiphyllum barbieri", common_name="Java Moss"; Anubias nana → species="Anubias barteri var. nana", common_name="Anubias Nana"; Java fern → species="Microsorum pteropus", common_name="Java Fern"; Hornwort → species="Ceratophyllum demersum", common_name="Hornwort"; Water sprite → species="Ceratopteris thalictroides", common_name="Water Sprite"; Christmas moss → species="Vesicularia montagnei", common_name="Christmas Moss"; Frogbit → species="Limnobium laevigatum", common_name="Frogbit"; Hygrophila → species="Hygrophila polysperma", common_name="Hygrophila"; Littorella → species="Littorella uniflora", common_name="Littorella"; Pellia → species="Pellia endiviifolia", common_name="Pellia". If you can identify the species with high confidence, fill in both fields. Never leave both null.
+
+13. HARDSCAPE ITEM NAMES: The item field should be a short, clean name (e.g. "Coconut shell shrimp cave", "Lava rock", "Dragon stone"). If the source text includes a parenthetical description after the item name (e.g. "Coconut shell shrimp cave (1/4 coconut shell covered in Java moss)"), strip the parenthetical from item and move it into the notes field instead. Never include parenthetical text in the item name.
 
 Use "YYYY-MM-DD 00:00:00" for timestamps where time is unknown. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
@@ -182,6 +185,17 @@ def _merge_results(results: list) -> tuple:
             if section in section_offsets:
                 adjusted["index"] = flag.get("index", 0) + section_offsets[section]
             all_flags.append(adjusted)
+    # Strip parenthetical descriptions from hardscape item names → notes
+    import re as _re
+    for hs in merged.get("hardscape", []):
+        item = hs.get("item") or ""
+        m = _re.match(r'^(.*?)\s*\((.+)\)\s*$', item)
+        if m:
+            hs["item"] = m.group(1).strip()
+            paren_text = m.group(2).strip()
+            existing_notes = hs.get("notes") or ""
+            hs["notes"] = (existing_notes + "; " + paren_text).lstrip("; ") if existing_notes else paren_text
+
     return merged, all_flags
 
 
@@ -635,6 +649,32 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
 
         inserted = {}
 
+        # Subject-linkage lookup maps (canonical name -> id), preloaded with existing tank
+        # entities so observations can link to items untouched by this import, then kept
+        # up to date as each section below inserts/updates its rows.
+        inh_id_by_name: dict = {}
+        for r in conn.execute("SELECT id, species, common_name FROM inhabitants WHERE tank_id=?", (tank_id,)).fetchall():
+            for name in (r[1], r[2]):
+                if name:
+                    inh_id_by_name[_canonical(name)] = r[0]
+        plant_id_by_name: dict = {}
+        for r in conn.execute("SELECT id, species, common_name FROM plants WHERE tank_id=?", (tank_id,)).fetchall():
+            for name in (r[1], r[2]):
+                if name:
+                    plant_id_by_name[_canonical(name)] = r[0]
+        hardscape_id_by_name: dict = {
+            _canonical(r[1]): r[0]
+            for r in conn.execute("SELECT id, item FROM hardscape WHERE tank_id=?", (tank_id,)).fetchall()
+            if r[1]
+        }
+        equipment_id_by_name: dict = {}
+        for r in conn.execute("SELECT id, category, brand, model FROM tank_equipment WHERE tank_id=? AND is_active=1", (tank_id,)).fetchall():
+            label = f"{r[2] or ''} {r[3] or ''}".strip()
+            if label:
+                equipment_id_by_name[_canonical(label)] = r[0]
+            if r[1]:
+                equipment_id_by_name.setdefault(_canonical(r[1]), r[0])
+
         # Tank specs — UPDATE the existing tank record
         specs = preview.get("tank_specs")
         if specs and isinstance(specs, dict):
@@ -715,6 +755,9 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                     "UPDATE inhabitants SET count=?, updated_at=datetime('now') WHERE id=?",
                     (count_val, existing[0]),
                 )
+                for name in (inh.get("species"), inh.get("common_name")):
+                    if name:
+                        inh_id_by_name[_canonical(name)] = existing[0]
                 conn.execute(
                     "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes) VALUES (?,?,?,?,?)",
                     (tank_id, existing[0], "added", count_val, "count updated via import"),
@@ -731,6 +774,9 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                     (tank_id, inh.get("species"), inh.get("common_name"), count_val,
                      added_date, inh.get("source"), inh.get("notes")),
                 )
+                for name in (inh.get("species"), inh.get("common_name")):
+                    if name:
+                        inh_id_by_name[_canonical(name)] = cur.lastrowid
                 if added_date:
                     conn.execute(
                         "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, timestamp) VALUES (?,?,?,?,?)",
@@ -745,11 +791,14 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
 
         # Plants
         for pl in preview.get("plants", []):
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO plants (tank_id, species, common_name, added_date, source, notes, status) VALUES (?,?,?,?,?,?,?)",
                 (tank_id, pl.get("species"), pl.get("common_name"),
                  pl.get("added_date"), pl.get("source"), pl.get("notes"), pl.get("status", "active")),
             )
+            for name in (pl.get("species"), pl.get("common_name")):
+                if name:
+                    plant_id_by_name[_canonical(name)] = cur.lastrowid
         inserted["plants"] = len(preview.get("plants", []))
 
         # Equipment
@@ -759,21 +808,28 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 specs_val = json.dumps(specs_val)
             removed = eq.get("removed_date") or None
             is_active = 0 if removed else 1
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO tank_equipment (tank_id, category, brand, model, specs, installed_date, removed_date, is_active, notes)"
                 " VALUES (?,?,?,?,?,?,?,?,?)",
                 (tank_id, eq.get("category", "other"), eq.get("brand"),
                  eq.get("model"), specs_val, eq.get("installed_date"), removed, is_active, eq.get("notes")),
             )
+            eq_label = f"{eq.get('brand') or ''} {eq.get('model') or ''}".strip()
+            if eq_label:
+                equipment_id_by_name[_canonical(eq_label)] = cur.lastrowid
+            if eq.get("category"):
+                equipment_id_by_name.setdefault(_canonical(eq["category"]), cur.lastrowid)
         inserted["equipment"] = len(preview.get("equipment", []))
 
         # Hardscape
         for hs in preview.get("hardscape", []):
-            conn.execute(
+            cur = conn.execute(
                 "INSERT INTO hardscape (tank_id, item, quantity, source, cost, added_date, notes) VALUES (?,?,?,?,?,?,?)",
                 (tank_id, hs.get("item", ""), hs.get("quantity", 1),
                  hs.get("source"), hs.get("cost"), hs.get("added_date"), hs.get("notes")),
             )
+            if hs.get("item"):
+                hardscape_id_by_name[_canonical(hs["item"])] = cur.lastrowid
         inserted["hardscape"] = len(preview.get("hardscape", []))
 
         # Issues — if title matches an existing open/monitoring issue and this one is resolved, UPDATE instead of INSERT
@@ -801,19 +857,45 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
         inserted["issues"] = len(preview.get("issues", []))
 
         # Observations — use source='import'; flag notes use source='auto' (AI-generated)
+        subject_map_by_type = {
+            "inhabitant": inh_id_by_name,
+            "plant": plant_id_by_name,
+            "hardscape": hardscape_id_by_name,
+            "equipment": equipment_id_by_name,
+        }
         for obs in preview.get("observations", []):
             text = obs.get("text", "")
             src = "auto" if text.startswith("Import note:") else "import"
             ts = obs.get("created_at")
+
+            related_inh = related_plant = related_hs = related_eq = None
+            subject_map = subject_map_by_type.get(obs.get("subject_type") or "")
+            subject_name = obs.get("subject_name")
+            if subject_map and subject_name:
+                subject_id = subject_map.get(_canonical(subject_name))
+                if subject_id is not None:
+                    if obs["subject_type"] == "inhabitant":
+                        related_inh = subject_id
+                    elif obs["subject_type"] == "plant":
+                        related_plant = subject_id
+                    elif obs["subject_type"] == "hardscape":
+                        related_hs = subject_id
+                    elif obs["subject_type"] == "equipment":
+                        related_eq = subject_id
+
             if ts:
                 conn.execute(
-                    "INSERT INTO observations (tank_id, source, text, created_at) VALUES (?,?,?,?)",
-                    (tank_id, src, text, ts),
+                    "INSERT INTO observations (tank_id, source, text, created_at,"
+                    " related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (tank_id, src, text, ts, related_inh, related_plant, related_hs, related_eq),
                 )
             else:
                 conn.execute(
-                    "INSERT INTO observations (tank_id, source, text) VALUES (?,?,?)",
-                    (tank_id, src, text),
+                    "INSERT INTO observations (tank_id, source, text,"
+                    " related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    (tank_id, src, text, related_inh, related_plant, related_hs, related_eq),
                 )
         inserted["observations"] = len(preview.get("observations", []))
 

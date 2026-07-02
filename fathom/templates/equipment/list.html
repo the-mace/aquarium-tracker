@@ -32,6 +32,7 @@
         <td><span class="badge {% if eq.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ 'active' if eq.is_active else 'inactive' }}</span></td>
         <td class="muted">{{ eq.notes or '' }}</td>
         <td>
+          <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations?link_type=equipment&link_id={{ eq.id }}">📝 Notes</a>
           <form method="post" action="/tanks/{{ tank.id }}/equipment/{{ eq.id }}/delete" style="display:inline" onsubmit="return confirm('Remove this equipment?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>
           </form>

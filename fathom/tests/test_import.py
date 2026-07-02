@@ -177,6 +177,61 @@ def test_import_confirm_observations_with_timestamp(client, tank_id):
     assert row[2] == "2026-01-10 14:00:00"
 
 
+def test_import_confirm_observation_links_to_inhabitant_from_same_import(client, tank_id):
+    preview = {
+        "inhabitants": [{"common_name": "Amano Shrimp", "species": "Caridina multidentata", "count": 5}],
+        "observations": [{"text": "Amano shrimp very active", "subject_type": "inhabitant", "subject_name": "Amano Shrimp"}],
+    }
+    client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": preview})
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    inh_id = conn.execute("SELECT id FROM inhabitants WHERE tank_id=?", (tank_id,)).fetchone()[0]
+    row = conn.execute(
+        "SELECT related_inhabitant_id FROM observations WHERE tank_id=? AND text=?",
+        (tank_id, "Amano shrimp very active"),
+    ).fetchone()
+    conn.close()
+    assert row[0] == inh_id
+
+
+def test_import_confirm_observation_links_to_preexisting_plant(client, tank_id):
+    client.post(f"/tanks/{tank_id}/import/confirm", json={
+        "preview": {"plants": [{"common_name": "Java Fern", "species": "Microsorum pteropus", "status": "active"}]}
+    })
+    conn = sqlite3.connect(_db.DB_PATH)
+    plant_id = conn.execute("SELECT id FROM plants WHERE tank_id=?", (tank_id,)).fetchone()[0]
+    conn.close()
+
+    preview = {
+        "observations": [{"text": "Java Fern showing new growth", "subject_type": "plant", "subject_name": "Java Fern"}],
+    }
+    client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": preview})
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute(
+        "SELECT related_plant_id FROM observations WHERE tank_id=? AND text=?",
+        (tank_id, "Java Fern showing new growth"),
+    ).fetchone()
+    conn.close()
+    assert row[0] == plant_id
+
+
+def test_import_confirm_observation_unmatched_subject_stays_unlinked(client, tank_id):
+    preview = {
+        "observations": [{"text": "General tank note", "subject_type": "inhabitant", "subject_name": "Nonexistent Species"}],
+    }
+    client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": preview})
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute(
+        "SELECT related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id"
+        " FROM observations WHERE tank_id=? AND text=?",
+        (tank_id, "General tank note"),
+    ).fetchone()
+    conn.close()
+    assert row == (None, None, None, None)
+
+
 def test_import_confirm_plants_stored(client, tank_id):
     preview = {"plants": [{"common_name": "Java Fern", "species": "Microsorum pteropus", "status": "active"}]}
     r = client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": preview})

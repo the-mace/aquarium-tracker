@@ -119,11 +119,12 @@ async def update_inhabitant(
     inh_id: int,
     species: Optional[str] = Form(None),
     common_name: Optional[str] = Form(None),
-    count: Optional[int] = Form(None),
+    count: Optional[str] = Form(None),
     count_unknown: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
-    actual_count = None if count_unknown else (count if count is not None else 0)
+    count_int = int(count) if count and count.strip() else None
+    actual_count = None if count_unknown else (count_int if count_int is not None else 0)
     with get_db() as conn:
         old = row_to_dict(conn.execute(
             "SELECT count FROM inhabitants WHERE id = ? AND tank_id = ?", (inh_id, tank_id),

@@ -132,6 +132,28 @@ async def add_plant(
     return RedirectResponse(url=f"/tanks/{tank_id}/plants", status_code=303)
 
 
+@router.post("/plants/{plant_id}/update")
+async def update_plant(
+    tank_id: int,
+    plant_id: int,
+    common_name: Optional[str] = Form(None),
+    species: Optional[str] = Form(None),
+    added_date: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+    status: Optional[str] = Form(None),
+):
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE plants SET common_name=?, species=?, added_date=?, source=?, notes=?,
+               status=COALESCE(?,status), updated_at=datetime('now')
+               WHERE id=? AND tank_id=?""",
+            (common_name or None, species or None, added_date or None,
+             source or None, notes or None, status or None, plant_id, tank_id),
+        )
+    return RedirectResponse(url=f"/tanks/{tank_id}/plants", status_code=303)
+
+
 @router.post("/plants/{plant_id}/remove")
 async def remove_plant(tank_id: int, plant_id: int):
     with get_db() as conn:
@@ -156,14 +178,15 @@ async def add_hardscape(
     item: str = Form(...),
     quantity: int = Form(1),
     source: Optional[str] = Form(None),
-    cost: Optional[float] = Form(None),
+    cost: Optional[str] = Form(None),
     added_date: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
+    cost_val = float(cost) if cost and cost.strip() else None
     with get_db() as conn:
         conn.execute(
             "INSERT INTO hardscape (tank_id, item, quantity, source, cost, added_date, notes) VALUES (?,?,?,?,?,?,?)",
-            (tank_id, item, quantity, source or None, cost, added_date or None, notes or None),
+            (tank_id, item, quantity, source or None, cost_val, added_date or None, notes or None),
         )
 
     entity_name = _canonical(item)
@@ -173,6 +196,27 @@ async def add_hardscape(
         wt = (t or {}).get("water_type", "freshwater") or "freshwater"
         maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, item, wt)
 
+    return RedirectResponse(url=f"/tanks/{tank_id}/plants", status_code=303)
+
+
+@router.post("/hardscape/{hs_id}/update")
+async def update_hardscape(
+    tank_id: int,
+    hs_id: int,
+    item: str = Form(...),
+    quantity: int = Form(1),
+    source: Optional[str] = Form(None),
+    cost: Optional[str] = Form(None),
+    added_date: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    cost_val = float(cost) if cost and cost.strip() else None
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE hardscape SET item=?, quantity=?, source=?, cost=?, added_date=?, notes=?
+               WHERE id=? AND tank_id=?""",
+            (item, quantity, source or None, cost_val, added_date or None, notes or None, hs_id, tank_id),
+        )
     return RedirectResponse(url=f"/tanks/{tank_id}/plants", status_code=303)
 
 
