@@ -11,21 +11,22 @@
 <form method="post" action="/tanks/{{ tank.id }}/tests" class="form-card">
   <div class="form-section">
     <div class="form-group">
-      <label>Timestamp (leave blank for now)</label>
-      <input type="datetime-local" name="timestamp">
+      <label>Date &amp; Time</label>
+      <input type="datetime-local" name="timestamp" id="test-timestamp">
     </div>
   </div>
   <div class="form-section">
     <h3>Parameters</h3>
+    <p class="muted" style="font-size:.85rem;margin-top:-.5rem;margin-bottom:.75rem">Prefilled from your last test — edit as needed.</p>
     <div class="form-grid">
-      <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph" placeholder="7.0"></div>
-      <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh"></div>
-      <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh"></div>
-      <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia" placeholder="0.0"></div>
-      <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite" placeholder="0.0"></div>
-      <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" name="nitrate"></div>
-      <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds"></div>
-      <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp"></div>
+      <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph" placeholder="7.0" value="{{ latest.ph if latest and latest.ph is not none else '' }}"></div>
+      <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh" value="{{ latest.gh if latest and latest.gh is not none else '' }}"></div>
+      <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh" value="{{ latest.kh if latest and latest.kh is not none else '' }}"></div>
+      <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia" placeholder="0.0" value="{{ latest.ammonia if latest and latest.ammonia is not none else '' }}"></div>
+      <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite" placeholder="0.0" value="{{ latest.nitrite if latest and latest.nitrite is not none else '' }}"></div>
+      <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" name="nitrate" value="{{ latest.nitrate if latest and latest.nitrate is not none else '' }}"></div>
+      <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds" value="{{ latest.tds if latest and latest.tds is not none else '' }}"></div>
+      <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp" value="{{ latest.temp if latest and latest.temp is not none else '' }}"></div>
     </div>
   </div>
   <div class="form-section">
@@ -36,4 +37,12 @@
     <button type="submit" class="btn btn-primary">Save Test Result</button>
   </div>
 </form>
+<script>
+  (function () {
+    var input = document.getElementById('test-timestamp');
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    input.value = now.toISOString().slice(0, 16);
+  })();
+</script>
 {% endblock %}

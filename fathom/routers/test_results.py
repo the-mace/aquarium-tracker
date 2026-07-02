@@ -26,9 +26,13 @@ async def list_tests(request: Request, tank_id: int):
 async def new_test_form(request: Request, tank_id: int):
     with get_db() as conn:
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
-    if not tank:
-        raise HTTPException(status_code=404, detail="Tank not found")
-    return templates.TemplateResponse("tests/form.html", {"request": request, "tank": tank})
+        if not tank:
+            raise HTTPException(status_code=404, detail="Tank not found")
+        latest = row_to_dict(conn.execute(
+            "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1",
+            (tank_id,),
+        ).fetchone())
+    return templates.TemplateResponse("tests/form.html", {"request": request, "tank": tank, "latest": latest})
 
 
 @router.post("")
@@ -63,8 +67,9 @@ async def add_test_result(
             )
         result_id = cur.lastrowid
 
-    from routers.ai_analysis import run_ai_analysis
+    from routers.ai_analysis import run_ai_analysis, run_test_recommendation
     background_tasks.add_task(run_ai_analysis, tank_id, "test", result_id)
+    background_tasks.add_task(run_test_recommendation, tank_id, result_id)
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:

@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+from datetime import date, timedelta
 from database import get_db, rows_to_list, row_to_dict
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,56 @@ def _fmt_events(rows):
     if not rows:
         return "  None"
     return "\n".join(f"  {r['timestamp']} {r['event_type']}: {r.get('notes','')}" for r in rows)
+
+
+def _fmt_schedule(rows):
+    if not rows:
+        return "  No recurring schedule configured."
+    lines = []
+    for r in rows:
+        cat = r.get("category")
+        desc = r.get("description")
+        if r.get("tracking_mode") == "logged":
+            interval = r.get("interval_days") or "?"
+            last_done = r.get("last_done") or "never"
+            next_due = r.get("next_due") or "not set"
+            lines.append(f"  [{cat}] {desc} — every {interval} days, last done {last_done}, next due {next_due}")
+        else:
+            dow = r.get("day_of_week") or "unscheduled"
+            lines.append(f"  [{cat}] {desc} — {dow}")
+    return "\n".join(lines)
+
+
+def _fmt_timeline_rows(rows):
+    if not rows:
+        return "  No recent activity."
+    lines = []
+    for r in rows:
+        header = r.get("kind") or ""
+        if r.get("subtype"):
+            header += f"/{r['subtype']}"
+        text = " ".join(filter(None, [r.get("label"), r.get("detail")]))
+        lines.append(f"  {r.get('ts')} [{header}] {text}".rstrip())
+    return "\n".join(lines)
+
+
+def build_recommendation_prompt(tank, test_result, schedule_rows, timeline_rows):
+    return f"""You are an expert aquarium keeper. A new water test was just logged for this tank. Recommend what action(s), if any, should be taken next.
+
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
+
+Water test just recorded:
+{_fmt_test_results([test_result])}
+
+Recurring feeding/dosing/maintenance schedule:
+{_fmt_schedule(schedule_rows)}
+
+Tank activity over the last 4 weeks (newest first):
+{_fmt_timeline_rows(timeline_rows)}
+
+Usually the right recommendation is simply to follow the normal water change process from the maintenance schedule above. But look at recent history first — e.g. if a water change was already done very recently, or a test parameter suggests a different response is needed, recommend that instead.
+
+Respond with ONLY the recommendation itself: one short, specific, actionable paragraph, plain text, no markdown, no preamble or label (it will be appended directly to the test result's notes)."""
 
 
 def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape):
@@ -216,3 +267,69 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
 
     except Exception as e:
         logger.error("AI analysis failed for tank %d: %s", tank_id, e)
+
+
+async def run_test_recommendation(tank_id: int, result_id: int):
+    """Ask Claude for a recommended action after a manually-logged test result, and
+    append the answer to that test result's notes. Only wired up from the manual
+    'Add Test Result' form submit — not run for tests inserted via import."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set, skipping test recommendation")
+        return
+
+    try:
+        import anthropic
+        from routers.timeline import _QUERY as _TIMELINE_QUERY
+
+        with get_db() as conn:
+            tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+            test_result = row_to_dict(conn.execute(
+                "SELECT * FROM test_results WHERE id = ? AND tank_id = ?", (result_id, tank_id)
+            ).fetchone())
+            if not tank or not test_result:
+                return
+
+            schedule_rows = rows_to_list(conn.execute(
+                "SELECT * FROM recurring_schedule WHERE tank_id = ? AND is_active = 1", (tank_id,)
+            ).fetchall())
+
+            timeline_rows = rows_to_list(conn.execute(_TIMELINE_QUERY, (tank_id,) * 9).fetchall())
+
+        cutoff = (date.today() - timedelta(days=28)).isoformat()
+        timeline_rows = [r for r in timeline_rows if (r.get("ts") or "")[:10] >= cutoff]
+
+        client = anthropic.Anthropic(api_key=api_key)
+
+        prompt = build_recommendation_prompt(tank, test_result, schedule_rows, timeline_rows)
+        logger.info("Claude call: test_recommendation | tank=%d test=%d", tank_id, result_id)
+        t0 = time.monotonic()
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=60.0,
+        )
+        logger.info("Claude done: test_recommendation | tank=%d test=%d | in=%d out=%d elapsed=%.1fs",
+                    tank_id, result_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
+        recommendation = msg.content[0].text.strip()
+        if not recommendation:
+            return
+
+        with get_db() as conn:
+            current = conn.execute(
+                "SELECT notes FROM test_results WHERE id = ? AND tank_id = ?", (result_id, tank_id)
+            ).fetchone()
+            if current is None:
+                return
+            existing_notes = (current[0] or "").strip()
+            new_notes = f"{existing_notes}\n\nAI Recommendation: {recommendation}" if existing_notes else f"AI Recommendation: {recommendation}"
+            conn.execute(
+                "UPDATE test_results SET notes = ?, updated_at = datetime('now') WHERE id = ?",
+                (new_notes, result_id),
+            )
+
+        logger.info("Test recommendation complete for tank %d test %d", tank_id, result_id)
+
+    except Exception as e:
+        logger.error("Test recommendation failed for tank %d test %d: %s", tank_id, result_id, e)

@@ -4,7 +4,8 @@ import database as _db
 from database import row_to_dict, rows_to_list, init_db, get_db
 from routers.ai_analysis import (
     _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
-    _fmt_issues, _fmt_events,
+    _fmt_issues, _fmt_events, _fmt_schedule, _fmt_timeline_rows,
+    build_recommendation_prompt,
 )
 
 
@@ -159,3 +160,54 @@ def test_fmt_events_formats_row():
     result = _fmt_events(rows)
     assert "water_change" in result
     assert "30%" in result
+
+
+def test_fmt_schedule_empty():
+    assert "No recurring schedule" in _fmt_schedule([])
+
+
+def test_fmt_schedule_logged_row():
+    rows = [{"category": "maintenance", "description": "Weekly water change",
+             "tracking_mode": "logged", "interval_days": 7,
+             "last_done": "2026-06-20", "next_due": "2026-06-27"}]
+    result = _fmt_schedule(rows)
+    assert "Weekly water change" in result
+    assert "every 7 days" in result
+    assert "2026-06-20" in result
+
+
+def test_fmt_schedule_reference_only_row():
+    rows = [{"category": "feeding", "description": "Flakes",
+             "tracking_mode": "reference_only", "day_of_week": "mon"}]
+    result = _fmt_schedule(rows)
+    assert "Flakes" in result
+    assert "mon" in result
+
+
+def test_fmt_timeline_rows_empty():
+    assert "No recent activity" in _fmt_timeline_rows([])
+
+
+def test_fmt_timeline_rows_formats_entry():
+    rows = [{"kind": "event", "subtype": "water_change", "ts": "2026-06-20 08:00:00",
+             "label": "water_change", "detail": "30%"}]
+    result = _fmt_timeline_rows(rows)
+    assert "event/water_change" in result
+    assert "30%" in result
+
+
+def test_build_recommendation_prompt_includes_key_sections():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5}
+    test_result = {"timestamp": "2026-07-02 08:00:00", "ph": 7.0, "gh": None, "kh": None,
+                    "ammonia": 0.0, "nitrite": 0.0, "nitrate": 10.0, "tds": None, "temp": 76.0,
+                    "notes": "did a partial water change"}
+    schedule_rows = [{"category": "maintenance", "description": "Weekly water change",
+                       "tracking_mode": "logged", "interval_days": 7,
+                       "last_done": "2026-06-20", "next_due": "2026-06-27"}]
+    timeline_rows = [{"kind": "event", "subtype": "water_change", "ts": "2026-06-25 08:00:00",
+                       "label": "water_change", "detail": "25%"}]
+    prompt = build_recommendation_prompt(tank, test_result, schedule_rows, timeline_rows)
+    assert "5G Tank" in prompt
+    assert "did a partial water change" in prompt
+    assert "Weekly water change" in prompt
+    assert "25%" in prompt

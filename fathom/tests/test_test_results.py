@@ -84,6 +84,40 @@ def test_delete_test_result_wrong_tank_leaves_row(client, make_tank):
     assert count == 1  # row untouched
 
 
+def test_new_test_form_no_prior_tests(client, tank_id):
+    r = client.get(f"/tanks/{tank_id}/tests/new")
+    assert r.status_code == 200
+    assert 'name="ph"' in r.text
+
+
+def test_new_test_form_prefills_from_latest(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"ph": "7.3", "nitrate": "15"},
+        headers={"Accept": "application/json"},
+    )
+    r = client.get(f"/tanks/{tank_id}/tests/new")
+    assert r.status_code == 200
+    assert 'value="7.3"' in r.text
+    assert 'value="15.0"' in r.text
+
+
+def test_new_test_form_prefills_from_most_recent_of_several(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"ph": "6.5", "timestamp": "2026-01-01 00:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"ph": "7.9", "timestamp": "2026-02-01 00:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    r = client.get(f"/tanks/{tank_id}/tests/new")
+    assert 'value="7.9"' in r.text
+    assert 'value="6.5"' not in r.text
+
+
 def test_multiple_test_results_ordered_by_chart(client, tank_id):
     for ph in [7.0, 7.2, 7.4]:
         client.post(

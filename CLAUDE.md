@@ -207,7 +207,8 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-07-02)
 
-- Timeline now includes water tests and observations, with out-of-range test params colored (see below); 206 tests passing
+- Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes
+- Timeline now includes water tests and observations, with out-of-range test params colored (see below); 218 tests passing
 - Observation ↔ entity linkage now supports multiple entities per note via an `observation_links` junction table (see below), incl. on-page "linked to" filter + editable links
 - Reference Info feature added (see above)
 - Quick Log feature added
@@ -220,15 +221,21 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-206 pytest integration tests in `fathom/tests/`. Run with:
+218 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring).
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring), test-form prefill, post-submit AI recommendation.
 
-AI calls are mocked in all tests: `run_ai_analysis` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests.
+AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-02 session (fourth)
+
+- **Add Test Result form prefill**: `GET /tanks/{id}/tests/new` now fetches the tank's most recent `test_results` row and prefills every parameter field's `value=`; a small `<script>` sets the `datetime-local` timestamp field to the browser's current local time on load (server can't know the client's timezone). Renamed the field label from "Timestamp (leave blank for now)" to "Date & Time" — the blank-defaults-to-now behavior in `test_results.py`'s POST handler is unchanged, prefilling is purely a UX convenience.
+- **Post-submit AI recommendation**: new `run_test_recommendation(tank_id, result_id)` in `ai_analysis.py`, queued as a second `BackgroundTask` from `test_results.py`'s `POST /tanks/{id}/tests` handler only (not triggered by import or quick-log inserts). Gathers the just-saved test result, all active `recurring_schedule` rows, and the tank's timeline entries from the last 28 days (reuses `routers.timeline._QUERY`, filtered in Python by date since it's a plain SQL string built for a different endpoint). Prompt asks Claude to recommend an action — usually "follow the normal water-change schedule" but it can deviate if history suggests otherwise (e.g. a change was already done recently). The response text is appended to the test result's own `notes` column as `\n\nAI Recommendation: {text}`, preserving whatever the human typed. Mocked to a no-op in `conftest.py` like `run_ai_analysis`.
+- Verified live against tank 5 with a real API call (not just mocked tests) — Claude correctly pulled the last water-change date and dosing amount from the schedule/timeline context into its recommendation.
 
 ### Changes in 2026-07-02 session (third)
 
