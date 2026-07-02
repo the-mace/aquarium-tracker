@@ -1,7 +1,7 @@
 import os
 import time
 import logging
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from database import get_db, rows_to_list, row_to_dict
 
 logger = logging.getLogger(__name__)
@@ -321,7 +321,7 @@ async def run_test_recommendation(tank_id: int, result_id: int):
 
             timeline_rows = rows_to_list(conn.execute(_TIMELINE_QUERY, (tank_id,) * 9).fetchall())
 
-        cutoff = (date.today() - timedelta(days=28)).isoformat()
+        cutoff = (datetime.now(timezone.utc).date() - timedelta(days=28)).isoformat()
         timeline_rows = [r for r in timeline_rows if (r.get("ts") or "")[:10] >= cutoff]
 
         client = anthropic.Anthropic(api_key=api_key)

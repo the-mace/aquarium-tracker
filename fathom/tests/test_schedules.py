@@ -144,6 +144,40 @@ def test_mark_done_no_interval_leaves_next_due_null(client, tank_id):
     assert "manual reminder" in r.text
 
 
+def test_mark_done_redirects_to_schedule_page_when_marked_from_there(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "description": "Clean filter", "interval_days": "30"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/tanks/{tank_id}/schedule")
+    import re
+    match = re.search(r"/tanks/\d+/schedule/(\d+)/mark-done", r.text)
+    sch_id = match.group(1)
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/mark-done",
+        data={"return_to": "schedule"},
+        follow_redirects=False,
+    )
+    assert r.headers["location"] == f"/tanks/{tank_id}/schedule"
+
+
+def test_mark_done_redirects_to_dashboard_by_default(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "description": "Clean filter", "interval_days": "30"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/tanks/{tank_id}/schedule")
+    import re
+    match = re.search(r"/tanks/\d+/schedule/(\d+)/mark-done", r.text)
+    sch_id = match.group(1)
+
+    r = client.post(f"/tanks/{tank_id}/schedule/{sch_id}/mark-done", follow_redirects=False)
+    assert r.headers["location"] == f"/tanks/{tank_id}"
+
+
 def test_dashboard_today_schedule_widget(client, tank_id):
     today_dow = date.today().strftime('%a').lower()
     client.post(

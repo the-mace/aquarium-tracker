@@ -134,6 +134,51 @@ def test_import_confirm_inhabitants_creates_population_event(client, tank_id):
     assert row[1] == 8
 
 
+def test_import_confirm_inhabitants_multiple_count_states_log_deltas(client, tank_id):
+    # A single import with several count-state entries for the same species
+    # (e.g. arrived, then losses, then a stabilized recount) should produce a
+    # population_events row per transition with the correct sign/magnitude and
+    # timestamp — not just the final count as a single "added" event.
+    preview = {"inhabitants": [
+        {"species": "Neocaridina davidi", "common_name": "Fire Red Shrimp",
+         "added_date": "2026-05-21", "count": 19},
+        {"species": "Neocaridina davidi", "common_name": "Fire Red Shrimp",
+         "added_date": "2026-05-29", "count": 10},
+        {"species": "Neocaridina davidi", "common_name": "Fire Red Shrimp",
+         "added_date": "2026-06-01", "count": 11},
+    ]}
+    client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": preview})
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    inh = conn.execute("SELECT count FROM inhabitants WHERE tank_id=?", (tank_id,)).fetchone()
+    events = conn.execute(
+        "SELECT event_type, count, timestamp FROM population_events WHERE tank_id=? ORDER BY timestamp",
+        (tank_id,),
+    ).fetchall()
+    conn.close()
+
+    assert inh[0] == 11
+    assert events == [
+        ("added", 19, "2026-05-21 12:00:00"),
+        ("died", 9, "2026-05-29 12:00:00"),
+        ("added", 1, "2026-06-01 12:00:00"),
+    ]
+
+
+def test_find_duplicates_inhabitant_earlier_count_state_not_auto_unchecked(client, tank_id):
+    # Two entries for the same new species in one import — the earlier one is a
+    # historical count state, not a duplicate, and must stay checked so confirm
+    # logs it as a population event.
+    preview = {"inhabitants": [
+        {"species": "Neocaridina davidi", "added_date": "2026-05-21", "count": 19},
+        {"species": "Neocaridina davidi", "added_date": "2026-06-01", "count": 11},
+    ]}
+    with _db.get_db() as conn:
+        dups = _find_duplicates(tank_id, preview, conn)
+    earlier = next(d for d in dups if d["index"] == 0)
+    assert earlier["auto_uncheck"] is False
+
+
 def test_import_confirm_equipment_specs_dict_serialized(client, tank_id):
     preview = {
         "equipment": [{"category": "filter", "brand": "AquaClear", "model": "20",

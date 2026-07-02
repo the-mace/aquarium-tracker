@@ -46,7 +46,7 @@
       {% if latest_test.temp is not none %}<div class="param-item"><span class="param-label">Temp</span><span class="param-value">{{ latest_test.temp }}°</span></div>{% endif %}
       {% if latest_test.tds is not none %}<div class="param-item"><span class="param-label">TDS</span><span class="param-value">{{ latest_test.tds }}</span></div>{% endif %}
     </div>
-    <div class="stat-card-footer">{{ latest_test.timestamp }}</div>
+    <div class="stat-card-footer ts-local" data-utc="{{ latest_test.timestamp }}">{{ latest_test.timestamp }}</div>
   </div>
   {% else %}
   <div class="stat-card stat-card-empty">
@@ -187,6 +187,7 @@
           {% endif %}
         </div>
         <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" style="display:inline">
+          <input type="hidden" name="return_to" value="dashboard">
           <button class="btn btn-xs btn-ghost" type="submit">✓ Done</button>
         </form>
       </div>
@@ -262,7 +263,7 @@
     <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
       <div class="obs-meta">
         <span class="obs-source">{% if obs.source == 'auto' %}AI{% elif obs.source == 'import' %}Import{% else %}Manual{% endif %}</span>
-        <span class="obs-time">{{ obs.created_at }}</span>
+        <span class="obs-time ts-local" data-utc="{{ obs.created_at }}">{{ obs.created_at }}</span>
       </div>
       <p class="obs-text">{{ obs.text }}</p>
     </div>
@@ -381,9 +382,9 @@
 <div id="modal-test" class="modal" style="display:none">
   <div class="modal-box">
     <div class="modal-header"><h3>Log Water Test</h3><button class="modal-close" onclick="closeModal('modal-test')">×</button></div>
-    <form method="post" action="/tanks/{{ tank.id }}/tests">
+    <form method="post" action="/tanks/{{ tank.id }}/tests" onsubmit="return prepareLocalTimestamps(this)">
       <div class="form-grid">
-        <div class="form-group"><label>Timestamp</label><input type="datetime-local" name="timestamp"></div>
+        <div class="form-group"><label>Timestamp</label><input type="datetime-local" class="dt-local"><input type="hidden" name="timestamp" class="dt-utc"></div>
         <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph" placeholder="7.0"></div>
         <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh"></div>
         <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh"></div>
@@ -402,7 +403,7 @@
 <div id="modal-event" class="modal" style="display:none">
   <div class="modal-box">
     <div class="modal-header"><h3>Log Event</h3><button class="modal-close" onclick="closeModal('modal-event')">×</button></div>
-    <form method="post" action="/tanks/{{ tank.id }}/events">
+    <form method="post" action="/tanks/{{ tank.id }}/events" onsubmit="return prepareLocalTimestamps(this)">
       <div class="form-group"><label>Type</label>
         <select name="event_type">
           <option value="water_change">Water Change</option>
@@ -415,7 +416,7 @@
         </select>
       </div>
       <div class="form-group"><label>Amount (gallons / dose)</label><input type="number" step="0.1" name="amount"></div>
-      <div class="form-group"><label>Timestamp</label><input type="datetime-local" name="timestamp"></div>
+      <div class="form-group"><label>Timestamp</label><input type="datetime-local" class="dt-local"><input type="hidden" name="timestamp" class="dt-utc"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="3"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>

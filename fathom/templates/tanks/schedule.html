@@ -52,6 +52,7 @@
         <div class="sched-actions">
           {% if cat_key == 'maintenance' %}
           <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ s.id }}/mark-done" style="display:inline">
+            <input type="hidden" name="return_to" value="schedule">
             <button class="btn btn-xs btn-ghost" type="submit">✓ Done</button>
           </form>
           {% endif %}

@@ -88,7 +88,7 @@
       <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% elif obs.source == 'import' %}obs-import{% endif %}">
         {% if obs.source == 'auto' %}AI Analysis{% elif obs.source == 'import' %}Import Note{% else %}Manual Note{% endif %}
       </span>
-      <span class="obs-time">{{ obs.created_at }}</span>
+      <span class="obs-time ts-local" data-utc="{{ obs.created_at }}">{{ obs.created_at }}</span>
       {% if obs.related_test_id %}<span class="obs-link muted">linked to test #{{ obs.related_test_id }}</span>{% endif %}
       {% if obs.related_event_id %}<span class="obs-link muted">linked to event #{{ obs.related_event_id }}</span>{% endif %}
     </div>

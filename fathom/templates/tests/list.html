@@ -29,7 +29,7 @@
     <tbody>
       {% for t in tests %}
       <tr>
-        <td class="nowrap">{{ t.timestamp }}</td>
+        <td class="nowrap ts-local" data-utc="{{ t.timestamp }}">{{ t.timestamp }}</td>
         <td>{{ t.ph if t.ph is not none else '—' }}</td>
         <td>{{ t.gh if t.gh is not none else '—' }}</td>
         <td>{{ t.kh if t.kh is not none else '—' }}</td>

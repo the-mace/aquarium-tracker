@@ -122,7 +122,7 @@ EXTRACTION RULES (follow carefully):
 
 11. DATE INFERENCE: When a record has no explicit date of its own but appears within a dated log entry (or is clearly associated with one), use that entry's date for the record's date field — purchase_date, installed_date, added_date, created_at, etc. Never leave a date null if the surrounding context makes it inferable.
 
-10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun, or null for floating/weekly tasks.
+10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). A 'logged' task tied to a specific day_of_week (e.g. "Thursday: 20% water change") is itself a weekly frequency — always set interval_type='weekly' and interval_days=7 for these, even if the word "weekly" isn't used explicitly, so due-date tracking works after the first mark-done. If the text states a different frequency (monthly, every N days), use that instead. "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun, or null for floating/weekly tasks without a fixed day.
 
 Valid event_type values: water_change, feeding, purchase, observation, treatment, maintenance, other
 Valid equipment categories: filter, heater, light, uv, pump, co2, other
@@ -136,7 +136,7 @@ Valid plant status: active, removed
 
 14. EQUIPMENT BRAND/MODEL SPLIT: brand and model are separate fields — never dump the whole product name into model while leaving brand null. The brand is the manufacturer/product-line name, usually the leading word(s) of the product name; the model is the remaining descriptive part. Examples: "Aquarium Clean Light 3W Mini Submersible UV Light" → brand="Aquarium Clean", model="3W Mini Submersible UV Light"; "Fluval Spec V" → brand="Fluval", model="Spec V"; "Fluval 306 Canister Filter" → brand="Fluval", model="306 Canister Filter". Only leave brand null if no manufacturer/product-line name is identifiable in the text at all (e.g. a bare generic description like "small air pump").
 
-Use "YYYY-MM-DD 00:00:00" for timestamps where time is unknown. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
+Use "YYYY-MM-DD 12:00:00" for timestamps where time is unknown — timestamps are stored as UTC and displayed in the user's local timezone, so anchoring unknown times to noon (rather than midnight) keeps the displayed calendar date correct regardless of timezone offset. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
 TEXT TO PARSE:
 """
@@ -520,11 +520,14 @@ def _find_duplicates(tank_id: int, preview: dict, conn) -> list:
             continue
         new_count = None if inh.get("count_unknown") else inh.get("count")
 
-        # Within-preview: flag older entries for same species
+        # Within-preview: earlier entries for the same species are historical count
+        # states (e.g. 19 received -> 15 after losses -> 11 stabilized), not
+        # duplicates — leave them checked so confirm can log each as a population
+        # event. Only inform the user which entry represents the current count.
         latest_idx = species_latest.get(sp, (i, ""))[0]
         if latest_idx != i:
-            dups.append({"section": "inhabitants", "index": i, "auto_uncheck": True,
-                         "message": f"Earlier entry for '{name}' — the most recent entry will be applied."})
+            dups.append({"section": "inhabitants", "index": i, "auto_uncheck": False,
+                         "message": f"Earlier count state for '{name}' — will be logged as a population event."})
             continue
 
         # Against DB: check if species exists and whether count differs
@@ -760,10 +763,19 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 for name in (inh.get("species"), inh.get("common_name")):
                     if name:
                         inh_id_by_name[_canonical(name)] = existing[0]
-                conn.execute(
-                    "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes) VALUES (?,?,?,?,?)",
-                    (tank_id, existing[0], "added", count_val, "count updated via import"),
-                )
+                # Log the actual +/- change (not the absolute new count) so
+                # population history reflects deaths/losses, not a false "added".
+                if old_count is not None and count_val is not None:
+                    diff = count_val - old_count
+                    if diff != 0:
+                        etype = "added" if diff > 0 else "died"
+                        added_date = inh.get("added_date")
+                        ts = f"{added_date} 12:00:00" if added_date else None
+                        conn.execute(
+                            "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, timestamp, notes)"
+                            " VALUES (?,?,?,?,COALESCE(?, datetime('now')),?)",
+                            (tank_id, existing[0], etype, abs(diff), ts, "count updated via import"),
+                        )
                 if old_count != count_val:
                     display = inh.get("common_name") or inh.get("species") or sp
                     old_s = "unknown" if old_count is None else str(old_count)
@@ -782,7 +794,7 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 if added_date:
                     conn.execute(
                         "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, timestamp) VALUES (?,?,?,?,?)",
-                        (tank_id, cur.lastrowid, "added", count_val, added_date + " 00:00:00"),
+                        (tank_id, cur.lastrowid, "added", count_val, added_date + " 12:00:00"),
                     )
                 else:
                     conn.execute(

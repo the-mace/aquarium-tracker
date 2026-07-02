@@ -94,7 +94,7 @@
       <tbody>
         {% for ev in pop_events %}
         <tr>
-          <td class="nowrap">{{ ev.timestamp }}</td>
+          <td class="nowrap ts-local" data-utc="{{ ev.timestamp }}">{{ ev.timestamp }}</td>
           <td>{{ ev.common_name or ev.species or '—' }}</td>
           <td><span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span></td>
           <td>{% if ev.count %}{{ ev.count }}{% else %}—{% endif %}</td>

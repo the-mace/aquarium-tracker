@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -109,7 +109,7 @@ async def delete_schedule(tank_id: int, sch_id: int):
 
 
 @router.post("/{sch_id}/mark-done")
-async def mark_done(tank_id: int, sch_id: int):
+async def mark_done(tank_id: int, sch_id: int, return_to: Optional[str] = Form(None)):
     with get_db() as conn:
         sched = row_to_dict(conn.execute(
             "SELECT * FROM recurring_schedule WHERE id=? AND tank_id=?", (sch_id, tank_id)
@@ -117,17 +117,23 @@ async def mark_done(tank_id: int, sch_id: int):
         if not sched:
             raise HTTPException(status_code=404, detail="Schedule entry not found")
 
+        # last_done/next_due are calendar-day fields (day_of_week matching, due-date
+        # coloring) and stay on the server's local day. The event's own timestamp is
+        # a moment in time and is stored as real UTC so it sorts correctly among
+        # other UTC-stamped Timeline entries (e.g. AI Analysis observations).
         today = date.today().isoformat()
         next_due = None
         if sched.get("interval_days"):
             next_due = (date.today() + timedelta(days=sched["interval_days"])).isoformat()
 
+        utc_now = datetime.now(timezone.utc)
         conn.execute(
             "INSERT INTO events (tank_id, event_type, notes, schedule_id, timestamp) VALUES (?,?,?,?,?)",
-            (tank_id, "maintenance", sched["description"], sch_id, today + " 00:00:00"),
+            (tank_id, "maintenance", sched["description"], sch_id, utc_now.strftime("%Y-%m-%d %H:%M:%S")),
         )
         conn.execute(
             "UPDATE recurring_schedule SET last_done=?, next_due=?, updated_at=datetime('now') WHERE id=?",
             (today, next_due, sch_id),
         )
-    return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+    dest = f"/tanks/{tank_id}/schedule" if return_to == "schedule" else f"/tanks/{tank_id}"
+    return RedirectResponse(url=dest, status_code=303)

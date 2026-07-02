@@ -8,11 +8,12 @@
   <span class="muted">{{ tank.name }}</span>
 </div>
 
-<form method="post" action="/tanks/{{ tank.id }}/tests" class="form-card">
+<form method="post" action="/tanks/{{ tank.id }}/tests" class="form-card" onsubmit="return prepareLocalTimestamps(this)">
   <div class="form-section">
     <div class="form-group">
       <label>Date &amp; Time</label>
-      <input type="datetime-local" name="timestamp" id="test-timestamp">
+      <input type="datetime-local" class="dt-local" id="test-timestamp">
+      <input type="hidden" name="timestamp" class="dt-utc">
     </div>
   </div>
   <div class="form-section">

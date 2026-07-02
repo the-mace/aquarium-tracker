@@ -263,3 +263,52 @@ async function loadCostCharts(tankId) {
     }
   } catch (e) { console.warn('Cost chart error:', e); }
 }
+
+/* ── Timestamps: stored UTC, shown/entered in browser-local time ─────────── */
+function _pad(n) { return String(n).padStart(2, '0'); }
+
+// Build the "YYYY-MM-DDTHH:mm" a <input type="datetime-local"> needs, using
+// local getters (not toISOString, which reports UTC and would mislabel the
+// field's displayed value as local time when it isn't).
+function localNowInputValue() {
+  const d = new Date();
+  return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}T${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
+}
+
+// A datetime-local value like "2026-07-02T13:15" is parsed by `Date` as local
+// time; reformat it to the "YYYY-MM-DD HH:MM:SS" UTC string the backend stores.
+function localDatetimeToUTCString(localValue) {
+  if (!localValue) return '';
+  const d = new Date(localValue);
+  if (isNaN(d)) return '';
+  return `${d.getUTCFullYear()}-${_pad(d.getUTCMonth() + 1)}-${_pad(d.getUTCDate())} ${_pad(d.getUTCHours())}:${_pad(d.getUTCMinutes())}:${_pad(d.getUTCSeconds())}`;
+}
+
+// Wire up on a form's onsubmit: for every visible .dt-local input, fill its
+// paired hidden .dt-utc input (same .form-group) with the converted UTC value.
+function prepareLocalTimestamps(form) {
+  form.querySelectorAll('input.dt-local').forEach(local => {
+    const group = local.closest('.form-group');
+    const hidden = group && group.querySelector('input.dt-utc');
+    if (!hidden) return;
+    hidden.value = local.value ? localDatetimeToUTCString(local.value) : '';
+  });
+  return true;
+}
+
+// Parse a stored "YYYY-MM-DD HH:MM:SS" UTC string and format it for display
+// in the browser's local timezone.
+function formatLocalTimestamp(utcString) {
+  if (!utcString) return '';
+  const iso = utcString.includes('T') ? utcString : utcString.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (isNaN(d)) return utcString;
+  return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
+}
+
+function hydrateLocalTimestamps(root = document) {
+  root.querySelectorAll('.ts-local[data-utc]').forEach(el => {
+    el.textContent = formatLocalTimestamp(el.dataset.utc);
+  });
+}
+document.addEventListener('DOMContentLoaded', () => hydrateLocalTimestamps());

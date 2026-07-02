@@ -207,9 +207,10 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-07-02)
 
+- All moment-in-time timestamps (`events.timestamp`, `test_results.timestamp`, `observations.created_at`) are now standardized on UTC storage with browser-local display/input via new `app.js` helpers (see below); 230 tests passing
 - Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes — prompt tuned to be terse and skip restating tank inventory (see below)
 - Timeline entries are now individually deletable, routed by kind to the existing per-entity delete endpoint (see below)
-- `tanks.notes` (free-text field, e.g. "Targets: GH 7-8, KH 2-10...") is now included in every AI prompt (recommendation, analysis, summary, chat) so tank-specific accepted baselines override generic species norms (see below); 226 tests passing
+- `tanks.notes` (free-text field, e.g. "Targets: GH 7-8, KH 2-10...") is now included in every AI prompt (recommendation, analysis, summary, chat) so tank-specific accepted baselines override generic species norms (see below)
 - Observation ↔ entity linkage now supports multiple entities per note via an `observation_links` junction table (see below), incl. on-page "linked to" filter + editable links
 - Reference Info feature added (see above)
 - Quick Log feature added
@@ -222,7 +223,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-226 pytest integration tests in `fathom/tests/`. Run with:
+230 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
@@ -231,6 +232,15 @@ Template: `fathom/templates/tanks/quick_log.html`
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation.
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-02 session (sixth)
+
+- **Quick Log / Import recurring_schedule bug**: `SECTION_CONFIG` in both `tanks/quick_log.html` and `tanks/import.html` (the JS objects driving the review-table checkboxes) never got a `recurring_schedule` entry when that feature was added — the backend extracted schedule rows fine, but the frontend had no table to render them, so "Save Selected" always saw zero rows for a schedule-only quick log. Added the missing section config to both templates. Rob's real feeding/maintenance schedule (8 rows, later 12 after a prompt fix below) was saved live via the fixed flow.
+- **mark-done redirect**: `POST /tanks/{id}/schedule/{sch_id}/mark-done` always redirected to the dashboard, even when clicked from the Schedule page itself. Added a `return_to` hidden form field (`schedule.html` sends `"schedule"`, `detail.html`'s dashboard widget sends `"dashboard"`); `mark_done` in `schedules.py` branches the `RedirectResponse` target on it.
+- **Weekly day-of-week maintenance never got a due date**: `mark_done` only computes `next_due` from `interval_days`, but the import prompt (rule 10) only set `interval_days` for explicit day-count phrasing ("clean filter monthly" → 30) — a task tied to a `day_of_week` (e.g. "Thursday: water change") never triggered that rule, so `next_due` stayed null forever after the first mark-done. Fixed rule 10 to always set `interval_type='weekly'`/`interval_days=7` for `logged` tasks with a `day_of_week`.
+- **Timestamps standardized on UTC, displayed/entered in browser-local time**: found while debugging why mark-done completions weren't sorting correctly on the Timeline — the app mixed UTC (SQL `DEFAULT (datetime('now'))`, already UTC everywhere) with server-local Python-built timestamps (`schedules.py` mark_done, `ai_analysis.py`'s 28-day cutoff) and *raw, unconverted* browser-local strings from the three `datetime-local` inputs (Add Test Result page, dashboard's Log Water Test / Log Event modals). Now: `mark_done` stores `events.timestamp` via `datetime.now(timezone.utc)`; new `app.js` helpers (`localDatetimeToUTCString`, `prepareLocalTimestamps`) convert each `datetime-local` input to UTC via a paired hidden field before submit (`onsubmit="return prepareLocalTimestamps(this)"`); `formatLocalTimestamp`/`hydrateLocalTimestamps` rewrite every `<span class="ts-local" data-utc="...">` (5 sites: observations list, dashboard latest-test/observations panels, population-event history, tests list) to local time on `DOMContentLoaded`. AI-extracted dates with unknown time-of-day now pad to `12:00:00` (noon) instead of midnight, so the noon anchor never rolls to the wrong local calendar day after UTC→local conversion (`import_data.py` prompt + the two population-event insert sites). **Scoped out deliberately**: `recurring_schedule.last_done`/`next_due`, `tanks.py`'s `today_dow`/`today_date`, and Timeline's date-group headers stay on server-local time — those are calendar-day concepts (schedule matching, overdue coloring), not moments in time; making them browser-tz-aware would need a new cookie+`zoneinfo` mechanism, judged out of scope for "standardize timestamps." No DB migration — current dev DB is disposable test data per Rob.
+- Verified live with Playwright forcing a non-UTC/non-server browser timezone (`Asia/Tokyo`, UTC+9): a stored `17:45:27` UTC row displayed as `2026-07-03 02:45`; a `09:00` local `datetime-local` input landed in the DB as the correctly-shifted UTC value. No JS console errors across the dashboard, tests, observations, inhabitants, schedule, and timeline pages.
+- Two mark-done events from earlier in the session (before the UTC fix existed) had been hand-patched via raw SQL to local-time strings for a prior debugging step, and were never migrated — corrected to true UTC (+4h, EDT) so they sort correctly on the Timeline. One older test result also had a pre-fix malformed `"...T11:38"` timestamp (raw, unconverted `datetime-local` value, predating this session's fix) that sorted out of order due to `T` > space in raw string comparison — corrected to proper `"... 15:38:00"` UTC format.
 
 ### Changes in 2026-07-02 session (fifth)
 
