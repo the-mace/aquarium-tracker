@@ -72,7 +72,7 @@
                 data-source="{{ pl.source|e or '' }}"
                 data-notes="{{ pl.notes|e or '' }}"
                 onclick="openEditPlant(this)">Edit</button>
-              <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations?link_type=plant&link_id={{ pl.id }}">📝 Notes</a>
+              <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=plant&link_id={{ pl.id }}">💬 Observations</a>
               <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/remove" onsubmit="return confirm('Mark as removed?')">
                 <button class="btn btn-xs btn-ghost" type="submit">Remove</button>
               </form>
@@ -180,7 +180,7 @@
                 data-added-date="{{ hs.added_date or '' }}"
                 data-notes="{{ hs.notes|e or '' }}"
                 onclick="openEditHardscape(this)">Edit</button>
-              <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations?link_type=hardscape&link_id={{ hs.id }}">📝 Notes</a>
+              <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=hardscape&link_id={{ hs.id }}">💬 Observations</a>
               <form method="post" action="/tanks/{{ tank.id }}/hardscape/{{ hs.id }}/delete" onsubmit="return confirm('Delete this hardscape item?')">
                 <button class="btn btn-xs btn-ghost" type="submit">Delete</button>
               </form>

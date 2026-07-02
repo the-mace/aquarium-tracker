@@ -11,9 +11,30 @@
 {% if active_filter %}
 <div class="filter-bar" style="margin-bottom:1rem">
   <span>Showing notes for: <strong>{{ active_filter.label }}</strong> <span class="muted">({{ active_filter.type }})</span></span>
-  <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations">Clear filter</a>
+  <a class="btn btn-xs btn-ghost" href="{{ clear_link_url }}">Clear filter</a>
 </div>
 {% endif %}
+
+<form method="get" action="/tanks/{{ tank.id }}/observations" class="filter-bar" style="margin-bottom:1.25rem">
+  {% if active_filter %}
+  <input type="hidden" name="link_type" value="{{ active_filter.type }}">
+  <input type="hidden" name="link_id" value="{{ active_filter.id }}">
+  {% endif %}
+  <input type="text" name="search" value="{{ filter_search }}" placeholder="Search…" style="width:180px;font-size:.85rem;padding:.35rem .6rem">
+  <select name="source" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+    <option value="" {% if not filter_source %}selected{% endif %}>All sources</option>
+    <option value="manual" {% if filter_source=='manual' %}selected{% endif %}>Manual</option>
+    <option value="auto" {% if filter_source=='auto' %}selected{% endif %}>AI Analysis</option>
+    <option value="import" {% if filter_source=='import' %}selected{% endif %}>Import</option>
+  </select>
+  <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+  <span class="muted" style="font-size:.8rem">to</span>
+  <input type="date" name="date_to" value="{{ filter_date_to }}" title="To date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+  <button class="btn btn-sm btn-ghost" type="submit">Filter</button>
+  {% if filter_search or filter_source or filter_date_from or filter_date_to %}
+  <a href="{{ clear_search_url }}" class="btn btn-sm btn-ghost">Clear</a>
+  {% endif %}
+</form>
 
 {% if observations %}
 <div class="observations-list">
@@ -37,9 +58,14 @@
 </div>
 {% else %}
 <div class="empty-state">
+  {% if active_filter or filter_search or filter_source or filter_date_from or filter_date_to %}
+  <h2>No results</h2>
+  <p>No observations match the current filter.</p>
+  {% else %}
   <h2>No observations yet</h2>
   <p>Observations are added automatically when you log tests or events, or you can add them manually.</p>
   <button class="btn btn-primary" onclick="openModal('modal-add-obs')">Add Observation</button>
+  {% endif %}
 </div>
 {% endif %}
 

@@ -385,6 +385,8 @@ p { margin-bottom: .5rem; }
 .btn-ghost:hover { background: var(--card-alt); text-decoration: none; }
 .btn-danger { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3); color: #f87171; }
 .btn-danger:hover { background: rgba(239,68,68,.25); }
+.btn-accent { background: rgba(56,189,248,.15); border-color: rgba(56,189,248,.3); color: var(--accent); }
+.btn-accent:hover { background: rgba(56,189,248,.25); text-decoration: none; }
 .btn-sm { padding: .35rem .7rem; font-size: .8rem; }
 .btn-xs { padding: .2rem .45rem; font-size: .72rem; }
 .btn-link { background: none; border: none; padding: 0; color: var(--primary); cursor: pointer; font-size: inherit; }

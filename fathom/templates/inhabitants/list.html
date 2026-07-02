@@ -68,7 +68,7 @@
         <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openPopEvent({{ inh.id }}, '{{ inh.common_name or inh.species }}')">Log Event</button>
           <button class="btn btn-xs btn-ghost" onclick="openEditInh({{ inh.id }}, {{ inh.count if inh.count is not none else 'null' }}, {{ 'true' if inh.count is none else 'false' }}, '{{ inh.common_name or '' }}', '{{ inh.species or '' }}')">Edit</button>
-          <a class="btn btn-xs btn-ghost" href="/tanks/{{ tank.id }}/observations?link_type=inhabitant&link_id={{ inh.id }}">📝 Notes</a>
+          <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=inhabitant&link_id={{ inh.id }}">💬 Observations</a>
           <form method="post" action="/tanks/{{ tank.id }}/inhabitants/{{ inh.id }}/delete" style="display:inline" onsubmit="return confirm('Remove {{ inh.common_name or inh.species }}?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>
           </form>

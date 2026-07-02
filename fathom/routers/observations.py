@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlencode
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -48,7 +49,16 @@ def _entity_options(conn, tank_id: int) -> dict:
 
 
 @router.get("", response_class=HTMLResponse)
-async def list_observations(request: Request, tank_id: int, link_type: Optional[str] = None, link_id: Optional[int] = None):
+async def list_observations(
+    request: Request,
+    tank_id: int,
+    link_type: Optional[str] = None,
+    link_id: Optional[int] = None,
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
     with get_db() as conn:
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
         if not tank:
@@ -63,10 +73,24 @@ async def list_observations(request: Request, tank_id: int, link_type: Optional[
             match = next((o for o in entity_options[link_type] if o["id"] == link_id), None)
             if match:
                 active_filter = {"type": link_type, "id": link_id, "label": match["label"]}
-                extra_where = f" AND o.{COLUMN_BY_TYPE[link_type]} = ?"
+                extra_where += f" AND o.{COLUMN_BY_TYPE[link_type]} = ?"
                 params.append(link_id)
 
-        limit_clause = "" if active_filter else " LIMIT 50"
+        if search:
+            extra_where += " AND lower(o.text) LIKE ?"
+            params.append(f"%{search.lower()}%")
+        if source in ("manual", "auto", "import"):
+            extra_where += " AND o.source = ?"
+            params.append(source)
+        if date_from:
+            extra_where += " AND date(o.created_at) >= ?"
+            params.append(date_from)
+        if date_to:
+            extra_where += " AND date(o.created_at) <= ?"
+            params.append(date_to)
+
+        any_filter = bool(active_filter or search or source or date_from or date_to)
+        limit_clause = "" if any_filter else " LIMIT 50"
         observations = rows_to_list(conn.execute(
             f"""SELECT o.*,
                    i.common_name AS li_common, i.species AS li_species,
@@ -96,9 +120,23 @@ async def list_observations(request: Request, tank_id: int, link_type: Optional[
         else:
             obs["link_type"] = obs["link_label"] = None
 
+    base_url = f"/tanks/{tank_id}/observations"
+    search_params = {k: v for k, v in {
+        "search": search, "source": source, "date_from": date_from, "date_to": date_to,
+    }.items() if v}
+    link_params = {"link_type": active_filter["type"], "link_id": active_filter["id"]} if active_filter else {}
+
+    # "Clear filter" (banner) drops the entity link but keeps text/source/date filters
+    clear_link_url = base_url + (f"?{urlencode(search_params)}" if search_params else "")
+    # "Clear" (filter bar) drops text/source/date filters but keeps the entity link
+    clear_search_url = base_url + (f"?{urlencode(link_params)}" if link_params else "")
+
     return templates.TemplateResponse("observations/list.html", {
         "request": request, "tank": tank, "observations": observations,
         "entity_options": entity_options, "active_filter": active_filter,
+        "clear_link_url": clear_link_url, "clear_search_url": clear_search_url,
+        "filter_search": search or "", "filter_source": source or "",
+        "filter_date_from": date_from or "", "filter_date_to": date_to or "",
     })
 
 
