@@ -52,6 +52,15 @@ _ILLUSTRATION_PATTERN = re.compile(
     r"range[-_ ]?map|\bnymap\b|\bBB-\d{4}\b|\bNA-\d{4}\b)"
 )
 
+# Filename patterns rarely say "illustration" (e.g. Commons' bulk-uploaded
+# "FMIB_12345_..." scans from 1920s field guides). Commons attaches a category
+# like "X - botanical illustrations" to nearly all of these regardless of
+# filename, so checking categories catches what the filename regex misses.
+_ILLUSTRATION_CATEGORY_PATTERN = re.compile(
+    r"(?i)(illustration|engraving|lithograph|woodcut|clip ?art|line art|"
+    r"herbarium|diagram|drawing|sketch|distribution map|range map)"
+)
+
 
 def _canonical(name: str) -> str:
     return name.lower().strip() if name else ""
@@ -173,7 +182,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                     wiki_api = (
                         f"https://commons.wikimedia.org/w/api.php?action=query"
                         f"&generator=search&gsrsearch={wiki_query}&gsrnamespace=6&gsrlimit=8"
-                        f"&prop=imageinfo&iiprop=url&format=json"
+                        f"&prop=imageinfo|categories&iiprop=url&cllimit=50&format=json"
                     )
                     wiki_req = urllib.request.Request(wiki_api, headers={"User-Agent": "Fathom/1.0"})
                     t1 = time.monotonic()
@@ -182,11 +191,14 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                     pages = wiki_data.get("query", {}).get("pages", {})
                     for page in pages.values():
                         title = page.get("title", "")
+                        categories = " | ".join(c.get("title", "") for c in page.get("categories", []))
+                        if _ILLUSTRATION_PATTERN.search(title) or _ILLUSTRATION_CATEGORY_PATTERN.search(categories):
+                            continue
                         for ii in page.get("imageinfo", []):
                             url = ii.get("url", "")
                             if url and url.startswith("https://") and re.search(
                                 r"\.(jpg|jpeg|png|webp)$", url, re.IGNORECASE
-                            ) and not _ILLUSTRATION_PATTERN.search(title) and not _ILLUSTRATION_PATTERN.search(url):
+                            ) and not _ILLUSTRATION_PATTERN.search(url):
                                 candidates.append((url, "commons.wikimedia.org"))
                     logger.info("Wikimedia Commons search | %s/%s | %d candidates | elapsed=%.1fs",
                                 entity_type, entity_name, len(candidates), time.monotonic() - t1)
