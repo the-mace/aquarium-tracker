@@ -9,6 +9,10 @@ router = APIRouter(prefix="/tanks/{tank_id}/tests", tags=["tests"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
+def _parse_float(value: Optional[str]) -> Optional[float]:
+    return float(value) if value and value.strip() else None
+
+
 @router.get("", response_class=HTMLResponse)
 async def list_tests(request: Request, tank_id: int):
     with get_db() as conn:
@@ -41,17 +45,21 @@ async def add_test_result(
     tank_id: int,
     background_tasks: BackgroundTasks,
     timestamp: Optional[str] = Form(None),
-    ph: Optional[float] = Form(None),
-    gh: Optional[float] = Form(None),
-    kh: Optional[float] = Form(None),
-    ammonia: Optional[float] = Form(None),
-    nitrite: Optional[float] = Form(None),
-    nitrate: Optional[float] = Form(None),
-    tds: Optional[float] = Form(None),
-    temp: Optional[float] = Form(None),
+    ph: Optional[str] = Form(None),
+    gh: Optional[str] = Form(None),
+    kh: Optional[str] = Form(None),
+    ammonia: Optional[str] = Form(None),
+    nitrite: Optional[str] = Form(None),
+    nitrate: Optional[str] = Form(None),
+    tds: Optional[str] = Form(None),
+    temp: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
     ts = timestamp or None
+    ph, gh, kh, ammonia, nitrite, nitrate, tds, temp = (
+        _parse_float(ph), _parse_float(gh), _parse_float(kh), _parse_float(ammonia),
+        _parse_float(nitrite), _parse_float(nitrate), _parse_float(tds), _parse_float(temp),
+    )
     with get_db() as conn:
         if ts:
             cur = conn.execute(

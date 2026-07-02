@@ -15,6 +15,24 @@ def test_add_test_result_returns_id(client, tank_id):
     assert body["status"] == "created"
 
 
+def test_add_test_result_with_empty_string_fields(client, tank_id):
+    # Real browser form submits every field, including untouched ones, as "".
+    r = client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"timestamp": "", "ph": "7.2", "gh": "", "kh": "", "ammonia": "0",
+              "nitrite": "0", "nitrate": "10", "tds": "", "temp": "", "notes": ""},
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 201
+    result_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute("SELECT ph, gh, tds FROM test_results WHERE id=?", (result_id,)).fetchone()
+    conn.close()
+    assert abs(row[0] - 7.2) < 0.001
+    assert row[1] is None
+    assert row[2] is None
+
+
 def test_add_test_result_persisted_to_db(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/tests",
