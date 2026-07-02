@@ -183,15 +183,21 @@ def init_db():
                 tank_id INTEGER NOT NULL,
                 related_event_id INTEGER,
                 related_test_id INTEGER,
-                related_inhabitant_id INTEGER,
-                related_plant_id INTEGER,
-                related_hardscape_id INTEGER,
-                related_equipment_id INTEGER,
                 source TEXT DEFAULT 'manual' CHECK(source IN ('auto','manual')),
                 text TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS observation_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                observation_id INTEGER NOT NULL,
+                entity_type TEXT NOT NULL CHECK(entity_type IN ('inhabitant','plant','hardscape','equipment')),
+                entity_id INTEGER NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (observation_id) REFERENCES observations(id) ON DELETE CASCADE,
+                UNIQUE(observation_id, entity_type, entity_id)
             );
 
             CREATE TABLE IF NOT EXISTS tank_state_summary (
@@ -278,6 +284,8 @@ def init_db():
             );
 
             CREATE INDEX IF NOT EXISTS idx_reference_info_lookup ON reference_info(entity_type, entity_name);
+            CREATE INDEX IF NOT EXISTS idx_observation_links_obs ON observation_links(observation_id);
+            CREATE INDEX IF NOT EXISTS idx_observation_links_entity ON observation_links(entity_type, entity_id);
         """)
 
         # Migration: add schedule_id to events if not present
@@ -286,6 +294,50 @@ def init_db():
             conn.execute(
                 "ALTER TABLE events ADD COLUMN schedule_id INTEGER REFERENCES recurring_schedule(id) ON DELETE SET NULL"
             )
+
+        # Migration: move per-entity observation links (previously 4 nullable FK columns) into
+        # the observation_links junction table so one observation can link to multiple entities
+        # (e.g. "pruned frogbit, ramshorn snails died, UV light back on" -> 3 links).
+        obs_cols = {row[1] for row in conn.execute("PRAGMA table_info(observations)").fetchall()}
+        legacy_link_cols = ["related_inhabitant_id", "related_plant_id", "related_hardscape_id", "related_equipment_id"]
+        if any(col in obs_cols for col in legacy_link_cols):
+            # Read the legacy links into memory first: observation_links has an ON DELETE
+            # CASCADE FK to observations, so populating it before the DROP TABLE below would
+            # have SQLite cascade-delete everything we just inserted.
+            present_cols = [c for c in legacy_link_cols if c in obs_cols]
+            legacy_rows = conn.execute(
+                f"SELECT id, {', '.join(present_cols)} FROM observations"
+            ).fetchall()
+
+            conn.executescript("""
+                DROP TABLE IF EXISTS observations_new2;
+                CREATE TABLE observations_new2 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tank_id INTEGER NOT NULL,
+                    related_event_id INTEGER,
+                    related_test_id INTEGER,
+                    source TEXT DEFAULT 'manual' CHECK(source IN ('auto','manual','import')),
+                    text TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+                );
+                INSERT INTO observations_new2 (id, tank_id, related_event_id, related_test_id, source, text, created_at, updated_at)
+                    SELECT id, tank_id, related_event_id, related_test_id, source, text, created_at, updated_at FROM observations;
+                DROP TABLE observations;
+                ALTER TABLE observations_new2 RENAME TO observations;
+                CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
+            """)
+
+            etype_by_col = dict(zip(legacy_link_cols, ["inhabitant", "plant", "hardscape", "equipment"]))
+            for row in legacy_rows:
+                obs_id = row[0]
+                for col, entity_id in zip(present_cols, row[1:]):
+                    if entity_id is not None:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO observation_links (observation_id, entity_type, entity_id) VALUES (?,?,?)",
+                            (obs_id, etype_by_col[col], entity_id),
+                        )
 
         # Migration: add 'import' to observations.source CHECK constraint
         obs_sql = conn.execute(
@@ -311,12 +363,6 @@ def init_db():
                 ALTER TABLE observations_new RENAME TO observations;
                 CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
             """)
-
-        # Migration: add entity-linkage columns to observations if not present
-        obs_cols = {row[1] for row in conn.execute("PRAGMA table_info(observations)").fetchall()}
-        for col in ("related_inhabitant_id", "related_plant_id", "related_hardscape_id", "related_equipment_id"):
-            if col not in obs_cols:
-                conn.execute(f"ALTER TABLE observations ADD COLUMN {col} INTEGER")
 
 
 def init_ref_cache_db():

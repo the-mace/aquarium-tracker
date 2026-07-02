@@ -2,32 +2,32 @@
 {% block title %}Observations — {{ tank.name }} — Fathom{% endblock %}
 {% set active = "observations" %}
 
-{% macro entity_optgroups(entity_options, sel_type, sel_id) -%}
+{% macro entity_optgroups(entity_options, selected_refs=[]) -%}
 {% if entity_options.inhabitant %}
 <optgroup label="Inhabitants">
   {% for opt in entity_options.inhabitant %}
-  <option value="inhabitant:{{ opt.id }}" {% if sel_type == 'inhabitant' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  <option value="inhabitant:{{ opt.id }}" {% if ('inhabitant:' ~ opt.id) in selected_refs %}selected{% endif %}>{{ opt.label }}</option>
   {% endfor %}
 </optgroup>
 {% endif %}
 {% if entity_options.plant %}
 <optgroup label="Plants">
   {% for opt in entity_options.plant %}
-  <option value="plant:{{ opt.id }}" {% if sel_type == 'plant' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  <option value="plant:{{ opt.id }}" {% if ('plant:' ~ opt.id) in selected_refs %}selected{% endif %}>{{ opt.label }}</option>
   {% endfor %}
 </optgroup>
 {% endif %}
 {% if entity_options.hardscape %}
 <optgroup label="Hardscape">
   {% for opt in entity_options.hardscape %}
-  <option value="hardscape:{{ opt.id }}" {% if sel_type == 'hardscape' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  <option value="hardscape:{{ opt.id }}" {% if ('hardscape:' ~ opt.id) in selected_refs %}selected{% endif %}>{{ opt.label }}</option>
   {% endfor %}
 </optgroup>
 {% endif %}
 {% if entity_options.equipment %}
 <optgroup label="Equipment">
   {% for opt in entity_options.equipment %}
-  <option value="equipment:{{ opt.id }}" {% if sel_type == 'equipment' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  <option value="equipment:{{ opt.id }}" {% if ('equipment:' ~ opt.id) in selected_refs %}selected{% endif %}>{{ opt.label }}</option>
   {% endfor %}
 </optgroup>
 {% endif %}
@@ -58,7 +58,8 @@
     <option value="" {% if not active_filter %}selected{% endif %}>Linked to: anything</option>
     <option value="any" {% if active_filter and active_filter.type == 'any' %}selected{% endif %}>🔗 Any linked item</option>
     <option value="none" {% if active_filter and active_filter.type == 'none' %}selected{% endif %}>Unlinked only</option>
-    {{ entity_optgroups(entity_options, active_filter.type if active_filter else None, active_filter.id if active_filter else None) }}
+    {% set filter_selected_refs = [(active_filter.type ~ ':' ~ active_filter.id)] if active_filter and active_filter.type not in ('any', 'none') else [] %}
+    {{ entity_optgroups(entity_options, filter_selected_refs) }}
   </select>
   <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
   <span class="muted" style="font-size:.8rem">to</span>
@@ -72,7 +73,6 @@
 {% if observations %}
 <div class="observations-list">
   {% for obs in observations %}
-  {% set cur_ref = 'inhabitant:' ~ obs.related_inhabitant_id if obs.related_inhabitant_id else ('plant:' ~ obs.related_plant_id if obs.related_plant_id else ('hardscape:' ~ obs.related_hardscape_id if obs.related_hardscape_id else ('equipment:' ~ obs.related_equipment_id if obs.related_equipment_id else ''))) %}
   <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
     <div class="obs-meta">
       <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% elif obs.source == 'import' %}obs-import{% endif %}">
@@ -81,12 +81,12 @@
       <span class="obs-time">{{ obs.created_at }}</span>
       {% if obs.related_test_id %}<span class="obs-link muted">linked to test #{{ obs.related_test_id }}</span>{% endif %}
       {% if obs.related_event_id %}<span class="obs-link muted">linked to event #{{ obs.related_event_id }}</span>{% endif %}
-      {% if obs.link_label %}<span class="obs-link muted">linked to {{ obs.link_type }}: {{ obs.link_label }}</span>{% endif %}
     </div>
     <div class="obs-body">{{ obs.text }}</div>
     <div class="obs-actions">
-      <button class="btn btn-xs btn-ghost" onclick="openEditLink({{ obs.id }}, '{{ cur_ref }}')">🔗 {% if obs.link_label %}Change link{% else %}Add link{% endif %}</button>
+      <button class="btn btn-xs btn-ghost" onclick='openEditLink({{ obs.id }}, {{ obs.link_refs | tojson }})'>🔗 {% if obs.links %}Change links{% else %}Add link{% endif %}</button>
       <button class="btn btn-xs btn-ghost" onclick="deleteObs({{ obs.id }}, this)">✕ Remove</button>
+      {% for link in obs.links %}<a class="obs-link-pill" href="/tanks/{{ tank.id }}/observations?link_ref={{ link.type }}:{{ link.id }}">{{ link.label }}</a>{% endfor %}
     </div>
   </div>
   {% endfor %}
@@ -110,10 +110,10 @@
     <form method="post" action="/tanks/{{ tank.id }}/observations">
       <div class="form-group"><label>Observation</label><textarea name="text" rows="6" placeholder="What did you notice?"></textarea></div>
       <div class="form-group">
-        <label>Relates to (optional)</label>
-        <select name="link_ref">
-          <option value="">— none —</option>
-          {{ entity_optgroups(entity_options, active_filter.type if active_filter else None, active_filter.id if active_filter else None) }}
+        <label>Relates to (optional — ctrl/cmd-click to select multiple)</label>
+        {% set add_selected_refs = [(active_filter.type ~ ':' ~ active_filter.id)] if active_filter and active_filter.type not in ('any', 'none') else [] %}
+        <select name="link_ref" multiple size="6">
+          {{ entity_optgroups(entity_options, add_selected_refs) }}
         </select>
       </div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
@@ -126,10 +126,9 @@
     <div class="modal-header"><h3>Link Observation</h3><button class="modal-close" onclick="closeModal('modal-edit-link')">×</button></div>
     <form id="edit-link-form">
       <div class="form-group">
-        <label>Relates to</label>
-        <select id="edit-link-select">
-          <option value="">— none —</option>
-          {{ entity_optgroups(entity_options, None, None) }}
+        <label>Relates to (ctrl/cmd-click to select multiple)</label>
+        <select id="edit-link-select" multiple size="8">
+          {{ entity_optgroups(entity_options) }}
         </select>
       </div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-link')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
@@ -146,8 +145,11 @@ function deleteObs(id, btn) {
     .then(() => location.reload());
 }
 
-function openEditLink(obsId, currentRef) {
-  document.getElementById('edit-link-select').value = currentRef || '';
+function openEditLink(obsId, currentRefs) {
+  const select = document.getElementById('edit-link-select');
+  for (const opt of select.options) {
+    opt.selected = currentRefs.includes(opt.value);
+  }
   document.getElementById('edit-link-form').dataset.obsId = obsId;
   openModal('modal-edit-link');
 }
@@ -155,11 +157,13 @@ function openEditLink(obsId, currentRef) {
 document.getElementById('edit-link-form').addEventListener('submit', function (e) {
   e.preventDefault();
   const obsId = this.dataset.obsId;
-  const ref = document.getElementById('edit-link-select').value;
+  const select = document.getElementById('edit-link-select');
+  const refs = Array.from(select.selectedOptions).map(o => o.value);
+  const body = refs.length ? refs.map(r => 'link_ref=' + encodeURIComponent(r)).join('&') : 'link_ref=';
   fetch(`/tanks/{{ tank.id }}/observations/${obsId}/link`, {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: 'link_ref=' + encodeURIComponent(ref),
+    body: body,
   }).then(() => location.reload());
 });
 </script>

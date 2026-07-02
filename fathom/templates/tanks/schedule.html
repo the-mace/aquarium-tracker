@@ -55,7 +55,7 @@
             <button class="btn btn-xs btn-ghost" type="submit">✓ Done</button>
           </form>
           {% endif %}
-          <button class="btn btn-xs btn-ghost" onclick="openEditSched({{ s|tojson }})">Edit</button>
+          <button class="btn btn-xs btn-ghost" onclick='openEditSched({{ s|tojson }})'>Edit</button>
           <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ s.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Delete this schedule entry?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>

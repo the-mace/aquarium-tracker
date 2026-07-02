@@ -79,6 +79,15 @@ SELECT 'hardscape_added',
 FROM hardscape
 WHERE tank_id = ? AND added_date IS NOT NULL AND added_date != ''
 
+UNION ALL
+
+SELECT 'observation',
+       created_at, source,
+       NULL,
+       text, NULL, id
+FROM observations
+WHERE tank_id = ?
+
 ORDER BY ts DESC NULLS LAST, kind
 """
 
@@ -89,7 +98,36 @@ _KIND_GROUPS = {
     "population": {"population"},
     "plants": {"plant_added"},
     "hardscape": {"hardscape_added"},
+    "tests": {"test"},
+    "observations": {"observation"},
 }
+
+# (db column, display label, out-of-range classifier) — thresholds mirror
+# the dashboard's latest-test panel and the tests list table.
+_PARAM_DEFS = [
+    ("ph", "pH", None),
+    ("gh", "GH", None),
+    ("kh", "KH", None),
+    ("ammonia", "NH3", lambda v: "danger" if v > 0.25 else ("warn" if v > 0 else None)),
+    ("nitrite", "NO2", lambda v: "danger" if v > 0.1 else None),
+    ("nitrate", "NO3", lambda v: "warn" if v > 40 else None),
+    ("tds", "TDS", None),
+    ("temp", "Temp", None),
+]
+
+
+def _test_params(test_row: dict) -> list:
+    params = []
+    for key, label, classify in _PARAM_DEFS:
+        value = test_row.get(key)
+        if value is None:
+            continue
+        params.append({
+            "label": label,
+            "value": value,
+            "cls": classify(value) if classify else None,
+        })
+    return params
 
 
 @router.get("/{tank_id}/timeline", response_class=HTMLResponse)
@@ -105,7 +143,21 @@ async def tank_timeline(
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
-        rows = rows_to_list(conn.execute(_QUERY, (tank_id,) * 8).fetchall())
+        rows = rows_to_list(conn.execute(_QUERY, (tank_id,) * 9).fetchall())
+        test_results = rows_to_list(conn.execute(
+            "SELECT id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes"
+            " FROM test_results WHERE tank_id = ?",
+            (tank_id,),
+        ).fetchall())
+
+    for t in test_results:
+        rows.append({
+            "kind": "test", "ts": t["timestamp"], "subtype": None,
+            "label": None, "detail": t.get("notes"), "amount": None,
+            "item_id": t["id"], "params": _test_params(t),
+        })
+    rows.sort(key=lambda r: r.get("kind") or "")
+    rows.sort(key=lambda r: r.get("ts") or "", reverse=True)
 
     # Apply Python-level filters
     allowed_kinds = _KIND_GROUPS.get(kind) if kind else None
@@ -120,8 +172,9 @@ async def tank_timeline(
         if allowed_kinds and r.get("kind") not in allowed_kinds:
             return False
         if search_lower:
+            param_text = " ".join(f"{p['label']} {p['value']}" for p in r.get("params") or [])
             haystack = " ".join(filter(None, [
-                r.get("label") or "", r.get("detail") or "", r.get("subtype") or ""
+                r.get("label") or "", r.get("detail") or "", r.get("subtype") or "", param_text
             ])).lower()
             if search_lower not in haystack:
                 return False

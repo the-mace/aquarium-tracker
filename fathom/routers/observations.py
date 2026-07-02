@@ -3,18 +3,13 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from typing import Optional
+from typing import List, Optional
 from database import get_db, rows_to_list, row_to_dict
 
 router = APIRouter(prefix="/tanks/{tank_id}/observations", tags=["observations"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
-COLUMN_BY_TYPE = {
-    "inhabitant": "related_inhabitant_id",
-    "plant": "related_plant_id",
-    "hardscape": "related_hardscape_id",
-    "equipment": "related_equipment_id",
-}
+ENTITY_TYPES = ("inhabitant", "plant", "hardscape", "equipment")
 
 
 def _entity_options(conn, tank_id: int) -> dict:
@@ -52,9 +47,67 @@ def _parse_link_ref(link_ref: Optional[str]):
     """Parse a "type:id" link_ref into (type, id), or (None, None) if invalid/absent."""
     if link_ref and ":" in link_ref:
         ltype, _, lid = link_ref.partition(":")
-        if ltype in COLUMN_BY_TYPE and lid.isdigit():
+        if ltype in ENTITY_TYPES and lid.isdigit():
             return ltype, int(lid)
     return None, None
+
+
+def _parse_link_refs(link_refs) -> list:
+    """Parse a list of "type:id" refs into deduped (type, id) tuples, skipping invalid/empty ones."""
+    seen = []
+    for ref in link_refs or []:
+        ltype, lid = _parse_link_ref(ref)
+        if ltype and (ltype, lid) not in seen:
+            seen.append((ltype, lid))
+    return seen
+
+
+def _links_by_observation(conn, obs_ids: list) -> dict:
+    """Fetch all observation_links rows for the given observation ids, resolved to display labels."""
+    if not obs_ids:
+        return {}
+    placeholders = ",".join("?" for _ in obs_ids)
+    rows = conn.execute(
+        f"""SELECT ol.observation_id, ol.entity_type, ol.entity_id,
+               i.common_name AS i_common, i.species AS i_species,
+               p.common_name AS p_common, p.species AS p_species,
+               h.item AS h_item,
+               e.category AS e_category, e.brand AS e_brand, e.model AS e_model
+            FROM observation_links ol
+            LEFT JOIN inhabitants i ON i.id = ol.entity_id AND ol.entity_type='inhabitant'
+            LEFT JOIN plants p ON p.id = ol.entity_id AND ol.entity_type='plant'
+            LEFT JOIN hardscape h ON h.id = ol.entity_id AND ol.entity_type='hardscape'
+            LEFT JOIN tank_equipment e ON e.id = ol.entity_id AND ol.entity_type='equipment'
+            WHERE ol.observation_id IN ({placeholders})
+            ORDER BY ol.id""",
+        obs_ids,
+    ).fetchall()
+
+    links_by_obs: dict = {}
+    for row in rows:
+        etype = row["entity_type"]
+        if etype == "inhabitant":
+            label = row["i_common"] or row["i_species"] or f"Inhabitant #{row['entity_id']}"
+        elif etype == "plant":
+            label = row["p_common"] or row["p_species"] or f"Plant #{row['entity_id']}"
+        elif etype == "hardscape":
+            label = row["h_item"] or f"Hardscape #{row['entity_id']}"
+        else:
+            label = f"{row['e_brand'] or ''} {row['e_model'] or ''}".strip() or row["e_category"] or f"Equipment #{row['entity_id']}"
+        links_by_obs.setdefault(row["observation_id"], []).append(
+            {"type": etype, "id": row["entity_id"], "label": label}
+        )
+    return links_by_obs
+
+
+def _set_observation_links(conn, obs_id: int, refs: list):
+    """Replace all entity links on an observation with the given deduped (type, id) tuples."""
+    conn.execute("DELETE FROM observation_links WHERE observation_id=?", (obs_id,))
+    for ltype, lid in refs:
+        conn.execute(
+            "INSERT OR IGNORE INTO observation_links (observation_id, entity_type, entity_id) VALUES (?,?,?)",
+            (obs_id, ltype, lid),
+        )
 
 
 @router.get("", response_class=HTMLResponse)
@@ -84,21 +137,21 @@ async def list_observations(
         params: list = [tank_id]
         if link_ref == "any":
             active_filter = {"type": "any", "id": None, "label": "any linked item"}
-            extra_where += (" AND (o.related_inhabitant_id IS NOT NULL OR o.related_plant_id IS NOT NULL"
-                             " OR o.related_hardscape_id IS NOT NULL OR o.related_equipment_id IS NOT NULL)")
+            extra_where += " AND EXISTS (SELECT 1 FROM observation_links ol2 WHERE ol2.observation_id = o.id)"
         elif link_ref == "none":
             active_filter = {"type": "none", "id": None, "label": "unlinked notes"}
-            extra_where += (" AND o.related_inhabitant_id IS NULL AND o.related_plant_id IS NULL"
-                             " AND o.related_hardscape_id IS NULL AND o.related_equipment_id IS NULL")
+            extra_where += " AND NOT EXISTS (SELECT 1 FROM observation_links ol2 WHERE ol2.observation_id = o.id)"
         else:
             ref_type, ref_id = _parse_link_ref(link_ref)
-            if ref_type is None and link_type in COLUMN_BY_TYPE and link_id is not None:
+            if ref_type is None and link_type in ENTITY_TYPES and link_id is not None:
                 ref_type, ref_id = link_type, link_id
-            if ref_type in COLUMN_BY_TYPE and ref_id is not None:
+            if ref_type in ENTITY_TYPES and ref_id is not None:
                 match = next((o for o in entity_options[ref_type] if o["id"] == ref_id), None)
                 if match:
                     active_filter = {"type": ref_type, "id": ref_id, "label": match["label"]}
-                    extra_where += f" AND o.{COLUMN_BY_TYPE[ref_type]} = ?"
+                    extra_where += (" AND EXISTS (SELECT 1 FROM observation_links ol2"
+                                     " WHERE ol2.observation_id = o.id AND ol2.entity_type = ? AND ol2.entity_id = ?)")
+                    params.append(ref_type)
                     params.append(ref_id)
 
         if search:
@@ -117,33 +170,17 @@ async def list_observations(
         any_filter = bool(active_filter or search or source or date_from or date_to)
         limit_clause = "" if any_filter else " LIMIT 50"
         observations = rows_to_list(conn.execute(
-            f"""SELECT o.*,
-                   i.common_name AS li_common, i.species AS li_species,
-                   p.common_name AS lp_common, p.species AS lp_species,
-                   h.item AS lh_item,
-                   e.category AS le_category, e.brand AS le_brand, e.model AS le_model
-                FROM observations o
-                LEFT JOIN inhabitants i ON i.id = o.related_inhabitant_id
-                LEFT JOIN plants p ON p.id = o.related_plant_id
-                LEFT JOIN hardscape h ON h.id = o.related_hardscape_id
-                LEFT JOIN tank_equipment e ON e.id = o.related_equipment_id
+            f"""SELECT o.* FROM observations o
                 WHERE o.tank_id = ?{extra_where}
                 ORDER BY o.created_at DESC{limit_clause}""",
             params,
         ).fetchall())
 
+        links_by_obs = _links_by_observation(conn, [o["id"] for o in observations])
+
     for obs in observations:
-        if obs.get("li_common") or obs.get("li_species"):
-            obs["link_type"], obs["link_label"] = "inhabitant", obs.get("li_common") or obs.get("li_species")
-        elif obs.get("lp_common") or obs.get("lp_species"):
-            obs["link_type"], obs["link_label"] = "plant", obs.get("lp_common") or obs.get("lp_species")
-        elif obs.get("lh_item"):
-            obs["link_type"], obs["link_label"] = "hardscape", obs["lh_item"]
-        elif obs.get("le_category") or obs.get("le_brand") or obs.get("le_model"):
-            obs["link_type"] = "equipment"
-            obs["link_label"] = f"{obs.get('le_brand') or ''} {obs.get('le_model') or ''}".strip() or obs.get("le_category")
-        else:
-            obs["link_type"] = obs["link_label"] = None
+        obs["links"] = links_by_obs.get(obs["id"], [])
+        obs["link_refs"] = [f"{l['type']}:{l['id']}" for l in obs["links"]]
 
     base_url = f"/tanks/{tank_id}/observations"
     search_params = {k: v for k, v in {
@@ -185,28 +222,16 @@ async def add_observation(
     text: str = Form(...),
     related_event_id: Optional[int] = Form(None),
     related_test_id: Optional[int] = Form(None),
-    link_ref: Optional[str] = Form(None),
+    link_ref: List[str] = Form([]),
 ):
-    related_inhabitant_id = related_plant_id = related_hardscape_id = related_equipment_id = None
-    ltype, lid = _parse_link_ref(link_ref)
-    if ltype == "inhabitant":
-        related_inhabitant_id = lid
-    elif ltype == "plant":
-        related_plant_id = lid
-    elif ltype == "hardscape":
-        related_hardscape_id = lid
-    elif ltype == "equipment":
-        related_equipment_id = lid
-
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO observations (tank_id, related_event_id, related_test_id,"
-            " related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id, source, text)"
-            " VALUES (?,?,?,?,?,?,?,'manual',?)",
-            (tank_id, related_event_id, related_test_id,
-             related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id, text),
+            "INSERT INTO observations (tank_id, related_event_id, related_test_id, source, text)"
+            " VALUES (?,?,?,'manual',?)",
+            (tank_id, related_event_id, related_test_id, text),
         )
         obs_id = cur.lastrowid
+        _set_observation_links(conn, obs_id, _parse_link_refs(link_ref))
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
@@ -215,28 +240,14 @@ async def add_observation(
 
 
 @router.post("/{obs_id}/link")
-async def set_observation_link(tank_id: int, obs_id: int, link_ref: Optional[str] = Form(None)):
-    """Set, change, or clear the entity link on an existing observation. Empty link_ref clears it."""
-    related_inhabitant_id = related_plant_id = related_hardscape_id = related_equipment_id = None
-    ltype, lid = _parse_link_ref(link_ref)
-    if ltype == "inhabitant":
-        related_inhabitant_id = lid
-    elif ltype == "plant":
-        related_plant_id = lid
-    elif ltype == "hardscape":
-        related_hardscape_id = lid
-    elif ltype == "equipment":
-        related_equipment_id = lid
-
+async def set_observation_link(tank_id: int, obs_id: int, link_ref: List[str] = Form([])):
+    """Set, change, or clear the entity links on an existing observation. Empty/no refs clears them all."""
     with get_db() as conn:
-        cur = conn.execute(
-            "UPDATE observations SET related_inhabitant_id=?, related_plant_id=?,"
-            " related_hardscape_id=?, related_equipment_id=?, updated_at=datetime('now')"
-            " WHERE id=? AND tank_id=?",
-            (related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id, obs_id, tank_id),
-        )
-        if cur.rowcount == 0:
+        obs_row = conn.execute("SELECT id FROM observations WHERE id=? AND tank_id=?", (obs_id, tank_id)).fetchone()
+        if not obs_row:
             raise HTTPException(status_code=404, detail="Observation not found")
+        _set_observation_links(conn, obs_id, _parse_link_refs(link_ref))
+        conn.execute("UPDATE observations SET updated_at=datetime('now') WHERE id=?", (obs_id,))
     return JSONResponse({"status": "updated"})
 
 

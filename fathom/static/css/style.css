@@ -324,7 +324,9 @@ p { margin-bottom: .5rem; }
 .obs-time { font-size: .75rem; color: var(--muted); }
 .obs-link { font-size: .72rem; }
 .obs-text, .obs-body { font-size: .875rem; white-space: pre-wrap; color: var(--text); }
-.obs-actions { margin-top: .5rem; }
+.obs-actions { margin-top: .5rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.obs-link-pill { display: inline-block; padding: .12rem .55rem; border-radius: 999px; background: rgba(56,189,248,.12); color: var(--accent); font-size: .72rem; font-weight: 600; text-decoration: none; cursor: pointer; transition: background .15s; }
+.obs-link-pill:hover { background: rgba(56,189,248,.25); text-decoration: none; }
 .observations-list .observation-item { margin-bottom: .5rem; }
 
 /* ── Event Row ──────────────────────────────────────────────────────────── */
@@ -841,6 +843,10 @@ p { margin-bottom: .5rem; }
 .tl-dot-pop-out       { background: #f87171; }
 .tl-dot-plant         { background: #86efac; }
 .tl-dot-hardscape     { background: #d4a27c; }
+.tl-dot-test          { background: #a78bfa; }
+.tl-dot-obs-manual    { background: var(--muted); }
+.tl-dot-obs-auto      { background: var(--primary); }
+.tl-dot-obs-import    { background: var(--accent); }
 
 .tl-body { flex: 1; min-width: 0; }
 .tl-header { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; line-height: 1.4; }
@@ -867,6 +873,13 @@ p { margin-bottom: .5rem; }
 .tl-badge-pop-born      { background: rgba(56,189,248,.12); color: var(--accent); }
 .tl-badge-pop-died      { background: rgba(239,68,68,.15); color: #f87171; }
 .tl-badge-pop-removed   { background: rgba(148,163,184,.12); color: var(--muted); }
+.tl-badge-test          { background: rgba(167,139,250,.15); color: #a78bfa; }
+.tl-badge-obs-manual    { background: rgba(148,163,184,.12); color: var(--muted); }
+.tl-badge-obs-auto      { background: rgba(0,196,160,.15); color: var(--primary); }
+.tl-badge-obs-import    { background: rgba(56,189,248,.12); color: var(--accent); }
+
+.tl-param-danger { color: #f87171; font-weight: 600; }
+.tl-param-warn   { color: var(--warning); font-weight: 600; }
 
 .tl-detail {
   font-size: .8rem;

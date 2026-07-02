@@ -75,7 +75,7 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
     {"title": "", "description": "", "status": "open", "opened_at": "YYYY-MM-DD", "resolved_at": null, "notes": ""}
   ],
   "observations": [
-    {"text": "", "created_at": "YYYY-MM-DD HH:MM:SS", "subject_type": null, "subject_name": null}
+    {"text": "", "created_at": "YYYY-MM-DD HH:MM:SS", "subjects": [{"subject_type": "", "subject_name": ""}]}
   ],
   "recurring_schedule": [
     {"category": "feeding", "tracking_mode": "reference_only", "day_of_week": "mon",
@@ -111,7 +111,7 @@ EXTRACTION RULES (follow carefully):
    - COUNT CHANGES: If a species' count changes over time (initial purchase, then deaths/losses, then stabilization), emit a SEPARATE inhabitants entry for EACH point in the journal where the count is explicitly stated or clearly inferable, using the date and count at that moment. Example: "received 20 fire red shrimp Jan 15 — lost several to shipping stress — stabilized at 10 by Jan 25" → two entries: {count:20, added_date:"2026-01-15"} and {count:10, added_date:"2026-01-25"}. The import system selects the most recent entry as the current count, so never collapse multiple count states into just the first mention.
    - BREEDING COLONIES: For invertebrates (snails, copepods, ostracods, worms) that start with a countable number but are later described as breeding, multiplying, laying eggs, or growing in uncountable numbers — emit a final entry with count_unknown=true and the date of the breeding/colony language. Example: journal shows 24 snails in April, then describes egg clutches and "lots growing" in June → emit {count:24, added_date:"2026-04-26"} and {count_unknown:true, count:null, added_date:"2026-06-26"}. The colony entry wins as the current state.
 6. OBSERVATIONS: Capture journal entries, personal qualitative notes, and observations (e.g. "shrimp seem very active today", "noticed some plant melt on the anubias"). Do NOT duplicate structured measurement data as observations.
-   SUBJECT TAGGING: If an observation is clearly about one specific inhabitant, plant, hardscape item, or equipment piece (rather than the tank in general), set subject_type to one of "inhabitant"/"plant"/"hardscape"/"equipment" and subject_name to that item's name as it appears elsewhere in this same extraction, or as it's likely already recorded in the tank (e.g. "Amano Shrimp", "Java Fern", "Driftwood", "Fluval heater"). Leave both null for general/tank-wide notes or when the subject is ambiguous (e.g. "the fish", "everyone", "the tank looks great").
+   SUBJECT TAGGING: subjects is a list of {subject_type, subject_name} objects — one entry per distinct inhabitant, plant, hardscape item, or equipment piece the note is clearly about. Most notes have zero or one subject, but a single note often covers several distinct items in one sentence (e.g. "Pruned some frogbit — algae under control since UV light back on. Ramshorn snails died off from lack of food." → three subjects: {subject_type:"plant", subject_name:"Frogbit"}, {subject_type:"equipment", subject_name:"UV light"}, {subject_type:"inhabitant", subject_name:"Ramshorn Snail"}). subject_type must be one of "inhabitant"/"plant"/"hardscape"/"equipment". subject_name should be the item's name as it appears elsewhere in this same extraction, or as it's likely already recorded in the tank (e.g. "Amano Shrimp", "Java Fern", "Driftwood", "Fluval heater"). Use an empty list for general/tank-wide notes or when a subject is ambiguous (e.g. "the fish", "everyone", "the tank looks great") — do not invent a subject that isn't clearly named.
 7. FLAGS: Flag values that seem incorrect or unusual:
    - Water parameters out of normal range for the tank type (KH > 15 for freshwater, pH > 8.5 or < 5.5 for freshwater, ammonia > 4, nitrate > 160)
    - Counts that contradict the narrative (e.g. extracted count=5 but the text says "11 shrimp")
@@ -868,34 +868,39 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
             src = "auto" if text.startswith("Import note:") else "import"
             ts = obs.get("created_at")
 
-            related_inh = related_plant = related_hs = related_eq = None
-            subject_map = subject_map_by_type.get(obs.get("subject_type") or "")
-            subject_name = obs.get("subject_name")
-            if subject_map and subject_name:
-                subject_id = subject_map.get(_canonical(subject_name))
-                if subject_id is not None:
-                    if obs["subject_type"] == "inhabitant":
-                        related_inh = subject_id
-                    elif obs["subject_type"] == "plant":
-                        related_plant = subject_id
-                    elif obs["subject_type"] == "hardscape":
-                        related_hs = subject_id
-                    elif obs["subject_type"] == "equipment":
-                        related_eq = subject_id
-
             if ts:
-                conn.execute(
-                    "INSERT INTO observations (tank_id, source, text, created_at,"
-                    " related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id)"
-                    " VALUES (?,?,?,?,?,?,?,?)",
-                    (tank_id, src, text, ts, related_inh, related_plant, related_hs, related_eq),
+                cur = conn.execute(
+                    "INSERT INTO observations (tank_id, source, text, created_at) VALUES (?,?,?,?)",
+                    (tank_id, src, text, ts),
                 )
             else:
+                cur = conn.execute(
+                    "INSERT INTO observations (tank_id, source, text) VALUES (?,?,?)",
+                    (tank_id, src, text),
+                )
+            obs_id = cur.lastrowid
+
+            # Backward-compatible with the older singular subject_type/subject_name shape,
+            # in case a cached preview from before the multi-subject prompt update is confirmed.
+            subjects = obs.get("subjects")
+            if not subjects and obs.get("subject_type") and obs.get("subject_name"):
+                subjects = [{"subject_type": obs["subject_type"], "subject_name": obs["subject_name"]}]
+
+            linked = set()
+            for subj in subjects or []:
+                if not isinstance(subj, dict):
+                    continue
+                subject_map = subject_map_by_type.get(subj.get("subject_type") or "")
+                subject_name = subj.get("subject_name")
+                if not (subject_map and subject_name):
+                    continue
+                subject_id = subject_map.get(_canonical(subject_name))
+                if subject_id is None or (subj["subject_type"], subject_id) in linked:
+                    continue
+                linked.add((subj["subject_type"], subject_id))
                 conn.execute(
-                    "INSERT INTO observations (tank_id, source, text,"
-                    " related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (tank_id, src, text, related_inh, related_plant, related_hs, related_eq),
+                    "INSERT OR IGNORE INTO observation_links (observation_id, entity_type, entity_id) VALUES (?,?,?)",
+                    (obs_id, subj["subject_type"], subject_id),
                 )
         inserted["observations"] = len(preview.get("observations", []))
 

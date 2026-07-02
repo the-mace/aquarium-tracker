@@ -27,6 +27,8 @@
     <option value="population" {% if filter_kind=='population' %}selected{% endif %}>Population</option>
     <option value="plants" {% if filter_kind=='plants' %}selected{% endif %}>Plants</option>
     <option value="hardscape" {% if filter_kind=='hardscape' %}selected{% endif %}>Hardscape</option>
+    <option value="tests" {% if filter_kind=='tests' %}selected{% endif %}>Water tests</option>
+    <option value="observations" {% if filter_kind=='observations' %}selected{% endif %}>Observations</option>
   </select>
   <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
   <span class="muted" style="font-size:.8rem">to</span>
@@ -45,7 +47,7 @@
   <p>No timeline entries match the current filter.</p>
   {% else %}
   <h2>No history yet</h2>
-  <p>Events, issues, equipment changes, and population events will appear here as you log them.</p>
+  <p>Events, issues, equipment changes, water tests, observations, and population events will appear here as you log them.</p>
   {% endif %}
 </div>
 {% else %}
@@ -58,6 +60,8 @@
   <span class="tl-legend-item"><span class="tl-dot tl-dot-population"></span> Population</span>
   <span class="tl-legend-item"><span class="tl-dot tl-dot-plant"></span> Plant</span>
   <span class="tl-legend-item"><span class="tl-dot tl-dot-hardscape"></span> Hardscape</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-test"></span> Water test</span>
+  <span class="tl-legend-item"><span class="tl-dot tl-dot-obs-manual"></span> Observation</span>
 </div>
 
 <div class="timeline">
@@ -65,7 +69,7 @@
   <div class="tl-date-group">
     <div class="tl-date-header">{{ group.date }}</div>
     {% for item in group.entries %}
-    <div class="tl-item tl-kind-{{ item.kind }}{% if item.kind == 'population' %}-{{ item.subtype }}{% endif %}">
+    <div class="tl-item tl-kind-{{ item.kind }}{% if item.kind in ('population', 'observation') %}-{{ item.subtype }}{% endif %}">
       <div class="tl-dot
         {%- if item.kind == 'event' %} tl-dot-event
         {%- elif item.kind == 'issue_open' %} tl-dot-issue_open
@@ -74,6 +78,8 @@
         {%- elif item.kind == 'equip_remove' %} tl-dot-equip_remove
         {%- elif item.kind == 'plant_added' %} tl-dot-plant
         {%- elif item.kind == 'hardscape_added' %} tl-dot-hardscape
+        {%- elif item.kind == 'test' %} tl-dot-test
+        {%- elif item.kind == 'observation' %} tl-dot-obs-{{ item.subtype }}
         {%- elif item.kind == 'population' and item.subtype in ('added','born') %} tl-dot-pop-in
         {%- else %} tl-dot-pop-out
         {%- endif %}"></div>
@@ -107,6 +113,13 @@
             <span class="tl-badge tl-badge-pop-{{ item.subtype }}">{{ item.subtype }}</span>
             {% if item.amount and item.amount > 0 %}<span class="tl-amount">×{{ item.amount | int }}</span>{% endif %}
             <span class="tl-label">{{ item.label }}</span>
+          {%- elif item.kind == 'test' %}
+            <span class="tl-badge tl-badge-test">water test</span>
+            <span class="tl-label">{% for p in item.params %}{% if not loop.first %} &nbsp; {% endif %}<span class="tl-param{% if p.cls %} tl-param-{{ p.cls }}{% endif %}">{{ p.label }} {{ p.value }}</span>{% endfor %}</span>
+          {%- elif item.kind == 'observation' %}
+            <span class="tl-badge tl-badge-obs-{{ item.subtype }}">
+              {%- if item.subtype == 'auto' %}AI analysis{% elif item.subtype == 'import' %}import note{% else %}manual note{% endif -%}
+            </span>
           {%- endif %}
         </div>
         {%- if item.detail and item.detail.strip() %}

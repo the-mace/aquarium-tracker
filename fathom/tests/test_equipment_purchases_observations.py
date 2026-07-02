@@ -128,12 +128,45 @@ def test_add_observation_with_link_ref_sets_related_id(client, tank_id):
     )
     obs_id = r.json()["id"]
     conn = sqlite3.connect(_db.DB_PATH)
-    row = conn.execute(
-        "SELECT related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id"
-        " FROM observations WHERE id=?", (obs_id,),
-    ).fetchone()
+    rows = conn.execute(
+        "SELECT entity_type, entity_id FROM observation_links WHERE observation_id=?", (obs_id,),
+    ).fetchall()
     conn.close()
-    assert row == (inh["id"], None, None, None)
+    assert rows == [("inhabitant", inh["id"])]
+
+
+def test_add_observation_with_multiple_link_refs(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Ramshorn Snail", "count": "10"},
+        headers={"Accept": "application/json"},
+    ).json()
+    client.post(f"/tanks/{tank_id}/plants", data={"common_name": "Frogbit"})
+    conn = sqlite3.connect(_db.DB_PATH)
+    plant = {"id": conn.execute(
+        "SELECT id FROM plants WHERE tank_id=? AND common_name=?", (tank_id, "Frogbit"),
+    ).fetchone()[0]}
+    conn.close()
+    r = client.post(
+        f"/tanks/{tank_id}/observations",
+        data={
+            "text": "Pruned frogbit, ramshorns died off",
+            "link_ref": [f"inhabitant:{inh['id']}", f"plant:{plant['id']}"],
+        },
+        headers={"Accept": "application/json"},
+    )
+    obs_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    rows = conn.execute(
+        "SELECT entity_type, entity_id FROM observation_links WHERE observation_id=? ORDER BY entity_type",
+        (obs_id,),
+    ).fetchall()
+    conn.close()
+    assert rows == [("inhabitant", inh["id"]), ("plant", plant["id"])]
+
+    r = client.get(f"/tanks/{tank_id}/observations")
+    assert 'class="obs-link-pill" href="/tanks/{}/observations?link_ref=inhabitant:{}">Ramshorn Snail</a>'.format(tank_id, inh["id"]) in r.text
+    assert 'class="obs-link-pill" href="/tanks/{}/observations?link_ref=plant:{}">Frogbit</a>'.format(tank_id, plant["id"]) in r.text
 
 
 def test_observations_filtered_by_link_type_and_id(client, tank_id):
@@ -224,9 +257,44 @@ def test_set_observation_link_on_existing(client, tank_id):
     assert r.status_code == 200
 
     conn = sqlite3.connect(_db.DB_PATH)
-    row = conn.execute("SELECT related_inhabitant_id FROM observations WHERE id=?", (obs["id"],)).fetchone()
+    rows = conn.execute(
+        "SELECT entity_type, entity_id FROM observation_links WHERE observation_id=?", (obs["id"],),
+    ).fetchall()
     conn.close()
-    assert row[0] == inh["id"]
+    assert rows == [("inhabitant", inh["id"])]
+
+
+def test_set_observation_link_replaces_with_multiple(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    client.post(f"/tanks/{tank_id}/plants", data={"common_name": "Frogbit"})
+    conn = sqlite3.connect(_db.DB_PATH)
+    plant = {"id": conn.execute(
+        "SELECT id FROM plants WHERE tank_id=? AND common_name=?", (tank_id, "Frogbit"),
+    ).fetchone()[0]}
+    conn.close()
+    obs = client.post(
+        f"/tanks/{tank_id}/observations",
+        data={"text": "General note", "link_ref": f"inhabitant:{inh['id']}"},
+        headers={"Accept": "application/json"},
+    ).json()
+
+    r = client.post(
+        f"/tanks/{tank_id}/observations/{obs['id']}/link",
+        data={"link_ref": [f"inhabitant:{inh['id']}", f"plant:{plant['id']}"]},
+    )
+    assert r.status_code == 200
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    rows = conn.execute(
+        "SELECT entity_type, entity_id FROM observation_links WHERE observation_id=? ORDER BY entity_type",
+        (obs["id"],),
+    ).fetchall()
+    conn.close()
+    assert rows == [("inhabitant", inh["id"]), ("plant", plant["id"])]
 
 
 def test_clear_observation_link(client, tank_id):
@@ -245,9 +313,9 @@ def test_clear_observation_link(client, tank_id):
     assert r.status_code == 200
 
     conn = sqlite3.connect(_db.DB_PATH)
-    row = conn.execute("SELECT related_inhabitant_id FROM observations WHERE id=?", (obs["id"],)).fetchone()
+    rows = conn.execute("SELECT * FROM observation_links WHERE observation_id=?", (obs["id"],)).fetchall()
     conn.close()
-    assert row[0] is None
+    assert rows == []
 
 
 def test_set_observation_link_404_for_unknown_observation(client, tank_id):
