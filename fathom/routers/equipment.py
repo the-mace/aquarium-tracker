@@ -10,6 +10,21 @@ router = APIRouter(prefix="/tanks/{tank_id}/equipment", tags=["equipment"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
+def _specs_display(specs: Optional[str]) -> str:
+    """Render stored specs (plain text, or JSON from imports/legacy entries) as plain text for editing."""
+    if not specs:
+        return ""
+    try:
+        parsed = json.loads(specs)
+    except json.JSONDecodeError:
+        return specs
+    if not isinstance(parsed, dict):
+        return specs
+    if set(parsed.keys()) == {"description"}:
+        return parsed["description"]
+    return ", ".join(f"{k}: {v}" for k, v in parsed.items())
+
+
 @router.get("", response_class=HTMLResponse)
 async def list_equipment(request: Request, tank_id: int):
     with get_db() as conn:
@@ -20,6 +35,8 @@ async def list_equipment(request: Request, tank_id: int):
             "SELECT * FROM tank_equipment WHERE tank_id = ? ORDER BY is_active DESC, category",
             (tank_id,),
         ).fetchall())
+    for eq in equipment:
+        eq["specs_display"] = _specs_display(eq.get("specs"))
     return templates.TemplateResponse("equipment/list.html", {
         "request": request, "tank": tank, "equipment": equipment,
     })

@@ -31,11 +31,11 @@
         <td>{{ eq.installed_date or '—' }}</td>
         <td><span class="badge {% if eq.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ 'active' if eq.is_active else 'inactive' }}</span></td>
         <td class="muted">{{ eq.notes or '' }}</td>
-        <td>
+        <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openEditEq(this)"
                   data-id="{{ eq.id }}" data-category="{{ eq.category or '' }}"
                   data-brand="{{ (eq.brand or '')|e }}" data-model="{{ (eq.model or '')|e }}"
-                  data-specs="{{ (eq.specs or '')|e }}" data-installed="{{ eq.installed_date or '' }}"
+                  data-specs="{{ (eq.specs_display or '')|e }}" data-installed="{{ eq.installed_date or '' }}"
                   data-removed="{{ eq.removed_date or '' }}" data-active="{{ eq.is_active }}"
                   data-notes="{{ (eq.notes or '')|e }}">Edit</button>
           <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=equipment&link_id={{ eq.id }}">💬 Observations</a>
@@ -81,7 +81,7 @@
           </select>
         </div>
       </div>
-      <div class="form-group"><label>Specs (JSON or description)</label><textarea name="specs" rows="2" placeholder='{"flow_rate": "500 gph", "wattage": "20W"}'></textarea></div>
+      <div class="form-group"><label>Specs</label><textarea name="specs" rows="2" placeholder="e.g. 500 gph, 20W"></textarea></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-eq')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
     </form>
@@ -115,7 +115,7 @@
           </select>
         </div>
       </div>
-      <div class="form-group"><label>Specs (JSON or description)</label><textarea name="specs" rows="2" id="edit-eq-specs"></textarea></div>
+      <div class="form-group"><label>Specs</label><textarea name="specs" rows="2" id="edit-eq-specs"></textarea></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-eq-notes"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-eq')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>

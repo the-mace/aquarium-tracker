@@ -518,6 +518,7 @@ p { margin-bottom: .5rem; }
 .cell-warn   { color: var(--warning); font-weight: 600; }
 .nowrap { white-space: nowrap; }
 .actions-cell { white-space: nowrap; }
+.actions-cell > * + * { margin-left: .35rem; }
 .italic { font-style: italic; }
 
 /* ── Tank Grid (list page) ──────────────────────────────────────────────── */
