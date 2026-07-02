@@ -163,6 +163,98 @@ def test_observations_invalid_link_id_falls_back_to_unfiltered(client, tank_id):
     assert "Showing notes for" not in r.text
 
 
+def test_observations_filtered_by_link_ref(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    client.post(
+        f"/tanks/{tank_id}/observations",
+        data={"text": "Linked note", "link_ref": f"inhabitant:{inh['id']}"},
+    )
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "Unrelated note"})
+
+    r = client.get(f"/tanks/{tank_id}/observations?link_ref=inhabitant:{inh['id']}")
+    assert "Linked note" in r.text
+    assert "Unrelated note" not in r.text
+
+
+def test_observations_filtered_by_link_ref_any(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "Linked note", "link_ref": f"inhabitant:{inh['id']}"})
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "Unrelated note"})
+
+    r = client.get(f"/tanks/{tank_id}/observations?link_ref=any")
+    assert "Linked note" in r.text
+    assert "Unrelated note" not in r.text
+
+
+def test_observations_filtered_by_link_ref_none(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "Linked note", "link_ref": f"inhabitant:{inh['id']}"})
+    client.post(f"/tanks/{tank_id}/observations", data={"text": "Unrelated note"})
+
+    r = client.get(f"/tanks/{tank_id}/observations?link_ref=none")
+    assert "Unrelated note" in r.text
+    assert "Linked note" not in r.text
+
+
+def test_set_observation_link_on_existing(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    obs = client.post(
+        f"/tanks/{tank_id}/observations",
+        data={"text": "General note"},
+        headers={"Accept": "application/json"},
+    ).json()
+
+    r = client.post(f"/tanks/{tank_id}/observations/{obs['id']}/link", data={"link_ref": f"inhabitant:{inh['id']}"})
+    assert r.status_code == 200
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute("SELECT related_inhabitant_id FROM observations WHERE id=?", (obs["id"],)).fetchone()
+    conn.close()
+    assert row[0] == inh["id"]
+
+
+def test_clear_observation_link(client, tank_id):
+    inh = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Amano Shrimp", "count": "5"},
+        headers={"Accept": "application/json"},
+    ).json()
+    obs = client.post(
+        f"/tanks/{tank_id}/observations",
+        data={"text": "Linked note", "link_ref": f"inhabitant:{inh['id']}"},
+        headers={"Accept": "application/json"},
+    ).json()
+
+    r = client.post(f"/tanks/{tank_id}/observations/{obs['id']}/link", data={"link_ref": ""})
+    assert r.status_code == 200
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute("SELECT related_inhabitant_id FROM observations WHERE id=?", (obs["id"],)).fetchone()
+    conn.close()
+    assert row[0] is None
+
+
+def test_set_observation_link_404_for_unknown_observation(client, tank_id):
+    r = client.post(f"/tanks/{tank_id}/observations/999999/link", data={"link_ref": ""})
+    assert r.status_code == 404
+
+
 def test_delete_observation(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/observations",

@@ -2,6 +2,37 @@
 {% block title %}Observations — {{ tank.name }} — Fathom{% endblock %}
 {% set active = "observations" %}
 
+{% macro entity_optgroups(entity_options, sel_type, sel_id) -%}
+{% if entity_options.inhabitant %}
+<optgroup label="Inhabitants">
+  {% for opt in entity_options.inhabitant %}
+  <option value="inhabitant:{{ opt.id }}" {% if sel_type == 'inhabitant' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  {% endfor %}
+</optgroup>
+{% endif %}
+{% if entity_options.plant %}
+<optgroup label="Plants">
+  {% for opt in entity_options.plant %}
+  <option value="plant:{{ opt.id }}" {% if sel_type == 'plant' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  {% endfor %}
+</optgroup>
+{% endif %}
+{% if entity_options.hardscape %}
+<optgroup label="Hardscape">
+  {% for opt in entity_options.hardscape %}
+  <option value="hardscape:{{ opt.id }}" {% if sel_type == 'hardscape' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  {% endfor %}
+</optgroup>
+{% endif %}
+{% if entity_options.equipment %}
+<optgroup label="Equipment">
+  {% for opt in entity_options.equipment %}
+  <option value="equipment:{{ opt.id }}" {% if sel_type == 'equipment' and sel_id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
+  {% endfor %}
+</optgroup>
+{% endif %}
+{%- endmacro %}
+
 {% block content %}
 <div class="page-header">
   <h1>Observations — {{ tank.name }}</h1>
@@ -10,22 +41,24 @@
 
 {% if active_filter %}
 <div class="filter-bar" style="margin-bottom:1rem">
-  <span>Showing notes for: <strong>{{ active_filter.label }}</strong> <span class="muted">({{ active_filter.type }})</span></span>
+  <span>Showing notes for: <strong>{{ active_filter.label }}</strong>{% if active_filter.type not in ('any', 'none') %} <span class="muted">({{ active_filter.type }})</span>{% endif %}</span>
   <a class="btn btn-xs btn-ghost" href="{{ clear_link_url }}">Clear filter</a>
 </div>
 {% endif %}
 
 <form method="get" action="/tanks/{{ tank.id }}/observations" class="filter-bar" style="margin-bottom:1.25rem">
-  {% if active_filter %}
-  <input type="hidden" name="link_type" value="{{ active_filter.type }}">
-  <input type="hidden" name="link_id" value="{{ active_filter.id }}">
-  {% endif %}
   <input type="text" name="search" value="{{ filter_search }}" placeholder="Search…" style="width:180px;font-size:.85rem;padding:.35rem .6rem">
   <select name="source" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
     <option value="" {% if not filter_source %}selected{% endif %}>All sources</option>
     <option value="manual" {% if filter_source=='manual' %}selected{% endif %}>Manual</option>
     <option value="auto" {% if filter_source=='auto' %}selected{% endif %}>AI Analysis</option>
     <option value="import" {% if filter_source=='import' %}selected{% endif %}>Import</option>
+  </select>
+  <select name="link_ref" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+    <option value="" {% if not active_filter %}selected{% endif %}>Linked to: anything</option>
+    <option value="any" {% if active_filter and active_filter.type == 'any' %}selected{% endif %}>🔗 Any linked item</option>
+    <option value="none" {% if active_filter and active_filter.type == 'none' %}selected{% endif %}>Unlinked only</option>
+    {{ entity_optgroups(entity_options, active_filter.type if active_filter else None, active_filter.id if active_filter else None) }}
   </select>
   <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
   <span class="muted" style="font-size:.8rem">to</span>
@@ -39,6 +72,7 @@
 {% if observations %}
 <div class="observations-list">
   {% for obs in observations %}
+  {% set cur_ref = 'inhabitant:' ~ obs.related_inhabitant_id if obs.related_inhabitant_id else ('plant:' ~ obs.related_plant_id if obs.related_plant_id else ('hardscape:' ~ obs.related_hardscape_id if obs.related_hardscape_id else ('equipment:' ~ obs.related_equipment_id if obs.related_equipment_id else ''))) %}
   <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
     <div class="obs-meta">
       <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% elif obs.source == 'import' %}obs-import{% endif %}">
@@ -51,6 +85,7 @@
     </div>
     <div class="obs-body">{{ obs.text }}</div>
     <div class="obs-actions">
+      <button class="btn btn-xs btn-ghost" onclick="openEditLink({{ obs.id }}, '{{ cur_ref }}')">🔗 {% if obs.link_label %}Change link{% else %}Add link{% endif %}</button>
       <button class="btn btn-xs btn-ghost" onclick="deleteObs({{ obs.id }}, this)">✕ Remove</button>
     </div>
   </div>
@@ -78,37 +113,26 @@
         <label>Relates to (optional)</label>
         <select name="link_ref">
           <option value="">— none —</option>
-          {% if entity_options.inhabitant %}
-          <optgroup label="Inhabitants">
-            {% for opt in entity_options.inhabitant %}
-            <option value="inhabitant:{{ opt.id }}" {% if active_filter and active_filter.type == 'inhabitant' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-          {% if entity_options.plant %}
-          <optgroup label="Plants">
-            {% for opt in entity_options.plant %}
-            <option value="plant:{{ opt.id }}" {% if active_filter and active_filter.type == 'plant' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-          {% if entity_options.hardscape %}
-          <optgroup label="Hardscape">
-            {% for opt in entity_options.hardscape %}
-            <option value="hardscape:{{ opt.id }}" {% if active_filter and active_filter.type == 'hardscape' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-          {% if entity_options.equipment %}
-          <optgroup label="Equipment">
-            {% for opt in entity_options.equipment %}
-            <option value="equipment:{{ opt.id }}" {% if active_filter and active_filter.type == 'equipment' and active_filter.id == opt.id %}selected{% endif %}>{{ opt.label }}</option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
+          {{ entity_optgroups(entity_options, active_filter.type if active_filter else None, active_filter.id if active_filter else None) }}
         </select>
       </div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-edit-link" class="modal" style="display:none">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header"><h3>Link Observation</h3><button class="modal-close" onclick="closeModal('modal-edit-link')">×</button></div>
+    <form id="edit-link-form">
+      <div class="form-group">
+        <label>Relates to</label>
+        <select id="edit-link-select">
+          <option value="">— none —</option>
+          {{ entity_optgroups(entity_options, None, None) }}
+        </select>
+      </div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-link')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
 </div>
@@ -121,5 +145,22 @@ function deleteObs(id, btn) {
   fetch(`/tanks/{{ tank.id }}/observations/${id}/delete`, {method:'POST'})
     .then(() => location.reload());
 }
+
+function openEditLink(obsId, currentRef) {
+  document.getElementById('edit-link-select').value = currentRef || '';
+  document.getElementById('edit-link-form').dataset.obsId = obsId;
+  openModal('modal-edit-link');
+}
+
+document.getElementById('edit-link-form').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const obsId = this.dataset.obsId;
+  const ref = document.getElementById('edit-link-select').value;
+  fetch(`/tanks/{{ tank.id }}/observations/${obsId}/link`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'link_ref=' + encodeURIComponent(ref),
+  }).then(() => location.reload());
+});
 </script>
 {% endblock %}

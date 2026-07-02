@@ -48,12 +48,22 @@ def _entity_options(conn, tank_id: int) -> dict:
     return {"inhabitant": inhabitants, "plant": plants, "hardscape": hardscape, "equipment": equipment}
 
 
+def _parse_link_ref(link_ref: Optional[str]):
+    """Parse a "type:id" link_ref into (type, id), or (None, None) if invalid/absent."""
+    if link_ref and ":" in link_ref:
+        ltype, _, lid = link_ref.partition(":")
+        if ltype in COLUMN_BY_TYPE and lid.isdigit():
+            return ltype, int(lid)
+    return None, None
+
+
 @router.get("", response_class=HTMLResponse)
 async def list_observations(
     request: Request,
     tank_id: int,
     link_type: Optional[str] = None,
     link_id: Optional[int] = None,
+    link_ref: Optional[str] = None,
     search: Optional[str] = None,
     source: Optional[str] = None,
     date_from: Optional[str] = None,
@@ -66,15 +76,30 @@ async def list_observations(
 
         entity_options = _entity_options(conn, tank_id)
 
+        # link_ref (from the on-page "Linked to" filter select) takes priority over the
+        # legacy link_type/link_id pair (still used by the "Observations" buttons on the
+        # inhabitant/plant/hardscape/equipment pages).
         active_filter = None
         extra_where = ""
         params: list = [tank_id]
-        if link_type in COLUMN_BY_TYPE and link_id is not None:
-            match = next((o for o in entity_options[link_type] if o["id"] == link_id), None)
-            if match:
-                active_filter = {"type": link_type, "id": link_id, "label": match["label"]}
-                extra_where += f" AND o.{COLUMN_BY_TYPE[link_type]} = ?"
-                params.append(link_id)
+        if link_ref == "any":
+            active_filter = {"type": "any", "id": None, "label": "any linked item"}
+            extra_where += (" AND (o.related_inhabitant_id IS NOT NULL OR o.related_plant_id IS NOT NULL"
+                             " OR o.related_hardscape_id IS NOT NULL OR o.related_equipment_id IS NOT NULL)")
+        elif link_ref == "none":
+            active_filter = {"type": "none", "id": None, "label": "unlinked notes"}
+            extra_where += (" AND o.related_inhabitant_id IS NULL AND o.related_plant_id IS NULL"
+                             " AND o.related_hardscape_id IS NULL AND o.related_equipment_id IS NULL")
+        else:
+            ref_type, ref_id = _parse_link_ref(link_ref)
+            if ref_type is None and link_type in COLUMN_BY_TYPE and link_id is not None:
+                ref_type, ref_id = link_type, link_id
+            if ref_type in COLUMN_BY_TYPE and ref_id is not None:
+                match = next((o for o in entity_options[ref_type] if o["id"] == ref_id), None)
+                if match:
+                    active_filter = {"type": ref_type, "id": ref_id, "label": match["label"]}
+                    extra_where += f" AND o.{COLUMN_BY_TYPE[ref_type]} = ?"
+                    params.append(ref_id)
 
         if search:
             extra_where += " AND lower(o.text) LIKE ?"
@@ -124,7 +149,10 @@ async def list_observations(
     search_params = {k: v for k, v in {
         "search": search, "source": source, "date_from": date_from, "date_to": date_to,
     }.items() if v}
-    link_params = {"link_type": active_filter["type"], "link_id": active_filter["id"]} if active_filter else {}
+    active_link_ref = None
+    if active_filter:
+        active_link_ref = active_filter["type"] if active_filter["type"] in ("any", "none") else f'{active_filter["type"]}:{active_filter["id"]}'
+    link_params = {"link_ref": active_link_ref} if active_link_ref else {}
 
     # "Clear filter" (banner) drops the entity link but keeps text/source/date filters
     clear_link_url = base_url + (f"?{urlencode(search_params)}" if search_params else "")
@@ -160,17 +188,15 @@ async def add_observation(
     link_ref: Optional[str] = Form(None),
 ):
     related_inhabitant_id = related_plant_id = related_hardscape_id = related_equipment_id = None
-    if link_ref and ":" in link_ref:
-        ltype, _, lid = link_ref.partition(":")
-        if ltype in COLUMN_BY_TYPE and lid.isdigit():
-            if ltype == "inhabitant":
-                related_inhabitant_id = int(lid)
-            elif ltype == "plant":
-                related_plant_id = int(lid)
-            elif ltype == "hardscape":
-                related_hardscape_id = int(lid)
-            elif ltype == "equipment":
-                related_equipment_id = int(lid)
+    ltype, lid = _parse_link_ref(link_ref)
+    if ltype == "inhabitant":
+        related_inhabitant_id = lid
+    elif ltype == "plant":
+        related_plant_id = lid
+    elif ltype == "hardscape":
+        related_hardscape_id = lid
+    elif ltype == "equipment":
+        related_equipment_id = lid
 
     with get_db() as conn:
         cur = conn.execute(
@@ -186,6 +212,32 @@ async def add_observation(
     if "application/json" in accept:
         return JSONResponse({"id": obs_id, "status": "created"}, status_code=201)
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+
+
+@router.post("/{obs_id}/link")
+async def set_observation_link(tank_id: int, obs_id: int, link_ref: Optional[str] = Form(None)):
+    """Set, change, or clear the entity link on an existing observation. Empty link_ref clears it."""
+    related_inhabitant_id = related_plant_id = related_hardscape_id = related_equipment_id = None
+    ltype, lid = _parse_link_ref(link_ref)
+    if ltype == "inhabitant":
+        related_inhabitant_id = lid
+    elif ltype == "plant":
+        related_plant_id = lid
+    elif ltype == "hardscape":
+        related_hardscape_id = lid
+    elif ltype == "equipment":
+        related_equipment_id = lid
+
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE observations SET related_inhabitant_id=?, related_plant_id=?,"
+            " related_hardscape_id=?, related_equipment_id=?, updated_at=datetime('now')"
+            " WHERE id=? AND tank_id=?",
+            (related_inhabitant_id, related_plant_id, related_hardscape_id, related_equipment_id, obs_id, tank_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Observation not found")
+    return JSONResponse({"status": "updated"})
 
 
 @router.post("/{obs_id}/delete")
