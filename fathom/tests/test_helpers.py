@@ -4,8 +4,9 @@ import database as _db
 from database import row_to_dict, rows_to_list, init_db, get_db
 from routers.ai_analysis import (
     _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
-    _fmt_issues, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
+    _fmt_issues, _fmt_issues_with_id, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
     build_recommendation_prompt, build_analysis_prompt, build_summary_prompt,
+    build_issue_review_prompt, _parse_issue_updates,
 )
 
 
@@ -111,6 +112,18 @@ def test_fmt_inhabitants_named():
     result = _fmt_inhabitants(rows)
     assert "6x" in result
     assert "Neon Tetra" in result
+
+
+def test_fmt_inhabitants_includes_added_date():
+    rows = [{"common_name": "Kuhli Loach", "species": None, "count": 3, "added_date": "2026-03-15"}]
+    result = _fmt_inhabitants(rows)
+    assert "2026-03-15" in result
+
+
+def test_fmt_inhabitants_no_added_date():
+    rows = [{"common_name": "Kuhli Loach", "species": None, "count": 3, "added_date": None}]
+    result = _fmt_inhabitants(rows)
+    assert "added" not in result.lower()
 
 
 def test_fmt_plants_empty():
@@ -254,3 +267,67 @@ def test_build_recommendation_prompt_includes_key_sections():
     assert "25%" in prompt
     assert "Neocaridina Shrimp" in prompt
     assert "10.0" in prompt  # prior test's nitrate value present for trend comparison
+
+
+def test_fmt_issues_with_id_empty():
+    assert "None" in _fmt_issues_with_id([])
+
+
+def test_fmt_issues_with_id_includes_id():
+    rows = [{"id": 42, "status": "open", "title": "KH instability", "description": "Dropped to 1 once"}]
+    result = _fmt_issues_with_id(rows)
+    assert "id=42" in result
+    assert "KH instability" in result
+
+
+def test_build_issue_review_prompt_includes_issues_and_tests():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5}
+    issues = [{"id": 7, "status": "open", "title": "KH instability", "description": "KH dropped to 1"}]
+    test_results = [{"timestamp": "2026-07-01 08:00:00", "ph": 7.0, "gh": 6.0, "kh": 5.0,
+                      "ammonia": 0.0, "nitrite": 0.0, "nitrate": 5.0, "tds": None, "temp": 76.0, "notes": None}]
+    prompt = build_issue_review_prompt(tank, issues, test_results)
+    assert "id=7" in prompt
+    assert "KH instability" in prompt
+    assert "KH=5.0" in prompt
+    assert "JSON array" in prompt
+
+
+def test_parse_issue_updates_valid_json():
+    raw = '[{"issue_id": 7, "status": "resolved", "reason": "KH stable across last 4 tests"}]'
+    updates = _parse_issue_updates(raw, {7})
+    assert updates == [{"issue_id": 7, "status": "resolved", "reason": "KH stable across last 4 tests"}]
+
+
+def test_parse_issue_updates_strips_code_fence():
+    raw = '```json\n[{"issue_id": 7, "status": "monitoring", "reason": "Improving"}]\n```'
+    updates = _parse_issue_updates(raw, {7})
+    assert updates[0]["status"] == "monitoring"
+
+
+def test_parse_issue_updates_empty_array():
+    assert _parse_issue_updates("[]", {7}) == []
+
+
+def test_parse_issue_updates_drops_unknown_issue_id():
+    raw = '[{"issue_id": 99, "status": "resolved", "reason": "n/a"}]'
+    assert _parse_issue_updates(raw, {7}) == []
+
+
+def test_parse_issue_updates_drops_invalid_status():
+    raw = '[{"issue_id": 7, "status": "closed", "reason": "n/a"}]'
+    assert _parse_issue_updates(raw, {7}) == []
+
+
+def test_parse_issue_updates_drops_missing_reason():
+    raw = '[{"issue_id": 7, "status": "resolved", "reason": ""}]'
+    assert _parse_issue_updates(raw, {7}) == []
+
+
+def test_parse_issue_updates_malformed_json_returns_empty():
+    assert _parse_issue_updates("not json at all", {7}) == []
+
+
+def test_parse_issue_updates_extracts_array_from_surrounding_text():
+    raw = 'Here is my answer:\n[{"issue_id": 7, "status": "resolved", "reason": "Stable"}]\nThanks.'
+    updates = _parse_issue_updates(raw, {7})
+    assert updates[0]["issue_id"] == 7

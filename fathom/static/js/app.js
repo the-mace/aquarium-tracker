@@ -151,6 +151,12 @@ async function loadWaterChart(tankId) {
 }
 
 /* ── Population Chart ───────────────────────────────────────────────────── */
+// Pest/hitchhiker invertebrates (snails, worms, copepods, ostracods, etc.) commonly
+// go from a countable number to "many" once they start breeding — once that happens
+// they're not worth a line on the chart (nothing actionable, just clutter). Fish and
+// true shrimp livestock stay on the chart even after going "many".
+const NON_LIVESTOCK_MANY_PATTERN = /\b(snail|worm|copepod|ostracod|seed shrimp|hydra|planaria|scud|amphipod|isopod|daphnia|rotifer)/i;
+
 async function loadPopChart(tankId) {
   const canvas = document.getElementById('popChart');
   if (!canvas) return;
@@ -191,6 +197,7 @@ async function loadPopChart(tankId) {
     const colors = ['#00c4a0','#38bdf8','#a78bfa','#fb923c','#facc15','#34d399','#f87171'];
     const datasets = speciesLabels.map((label, i) => {
       const nowUnknown = Object.prototype.hasOwnProperty.call(currentByLabel, label) && currentByLabel[label] === null;
+      if (nowUnknown && NON_LIVESTOCK_MANY_PATTERN.test(label)) return null;
       let running = 0;
       const data = dates.map(date => {
         if (date === today && Object.prototype.hasOwnProperty.call(currentByLabel, label)) {
@@ -209,7 +216,8 @@ async function loadPopChart(tankId) {
         stepped: true,
         pointRadius: 3,
       };
-    });
+    }).filter(Boolean);
+    if (!datasets.length) return;
 
     new Chart(canvas, {
       type: 'line',

@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from routers.reference_info import maybe_fetch_tank_dimensions
 
 router = APIRouter(prefix="/tanks", tags=["tanks"])
 
@@ -41,6 +42,7 @@ async def new_tank_form(request: Request):
 @router.post("", response_class=HTMLResponse)
 async def create_tank(
     request: Request,
+    background_tasks: BackgroundTasks,
     name: str = Form(...),
     water_type: str = Form("fresh"),
     volume_gallons: Optional[str] = Form(None),
@@ -68,6 +70,7 @@ async def create_tank(
              setup_date, status, notes),
         )
         tank_id = cur.lastrowid
+    maybe_fetch_tank_dimensions(background_tasks, tank_id)
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
 
 
@@ -135,7 +138,7 @@ async def tank_detail(request: Request, tank_id: int):
         today_schedule = rows_to_list(conn.execute(
             """SELECT * FROM recurring_schedule
                WHERE tank_id=? AND is_active=1 AND tracking_mode='reference_only'
-                 AND (day_of_week=? OR day_of_week IS NULL)
+                 AND day_of_week=?
                ORDER BY category,
                  CASE day_of_week WHEN 'mon' THEN 0 WHEN 'tue' THEN 1 WHEN 'wed' THEN 2
                    WHEN 'thu' THEN 3 WHEN 'fri' THEN 4 WHEN 'sat' THEN 5 WHEN 'sun' THEN 6
@@ -185,6 +188,7 @@ async def edit_tank_form(request: Request, tank_id: int):
 async def update_tank(
     request: Request,
     tank_id: int,
+    background_tasks: BackgroundTasks,
     name: str = Form(...),
     water_type: str = Form("fresh"),
     volume_gallons: Optional[str] = Form(None),
@@ -211,6 +215,7 @@ async def update_tank(
              shape, manufacturer, model, substrate_type, substrate_brand, _float(substrate_depth_inches),
              setup_date, status, notes, tank_id),
         )
+    maybe_fetch_tank_dimensions(background_tasks, tank_id)
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
 
 

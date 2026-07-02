@@ -7,7 +7,7 @@ import urllib.request
 import urllib.parse
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
-from database import get_ref_db, row_to_dict
+from database import get_db, get_ref_db, row_to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,100 @@ _ILLUSTRATION_CATEGORY_PATTERN = re.compile(
 
 def _canonical(name: str) -> str:
     return name.lower().strip() if name else ""
+
+
+# Tracks tank ids whose dimensions/volume fetch is currently running.
+_dim_in_flight: set[int] = set()
+
+
+def maybe_fetch_tank_dimensions(background_tasks: BackgroundTasks, tank_id: int):
+    """Queue a web-search fetch of a known tank product's volume/dimensions, if the tank
+    has a manufacturer or model on record but is still missing volume or dimensions."""
+    if tank_id in _dim_in_flight:
+        return
+    with get_db() as conn:
+        tank = row_to_dict(conn.execute(
+            "SELECT manufacturer, model, volume_gallons, dimensions_l, dimensions_w, dimensions_h"
+            " FROM tanks WHERE id = ?",
+            (tank_id,),
+        ).fetchone())
+    if not tank:
+        return
+    manufacturer, model = tank.get("manufacturer"), tank.get("model")
+    if not manufacturer and not model:
+        return
+    missing = (
+        tank.get("volume_gallons") is None or tank.get("dimensions_l") is None
+        or tank.get("dimensions_w") is None or tank.get("dimensions_h") is None
+    )
+    if not missing:
+        return
+    _dim_in_flight.add(tank_id)
+    background_tasks.add_task(fetch_tank_dimensions_bg, tank_id, manufacturer, model)
+
+
+def fetch_tank_dimensions_bg(tank_id: int, manufacturer: str, model: str):
+    """Sync background task: web-search for a known tank product's rated volume and external
+    dimensions, then backfill only the tank's still-empty spec fields — never overwrites a
+    value the user (or import extraction) already set."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        _dim_in_flight.discard(tank_id)
+        return
+
+    product_label = " ".join(p for p in (manufacturer, model) if p).strip()
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key, max_retries=0)
+        prompt = f"""Search the web for the official specifications of this aquarium tank/kit: "{product_label}"
+
+Find its rated volume (gallons) and external dimensions (length x width x height, in inches).
+
+Respond ONLY with valid JSON, no explanation or markdown fences:
+{{
+  "volume_gallons": <number or null>,
+  "dimensions_l": <number or null, inches, longest external side>,
+  "dimensions_w": <number or null, inches>,
+  "dimensions_h": <number or null, inches>,
+  "shape": "<rectangular|bowfront|cube|hexagon|other, or null>"
+}}"""
+
+        logger.info("Claude call: tank-dims | tank=%d | %s", tank_id, product_label)
+        t0 = time.monotonic()
+        msg = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}],
+            messages=[{"role": "user", "content": prompt}],
+            timeout=45.0,
+        )
+        logger.info("Claude done: tank-dims | tank=%d | in=%d out=%d elapsed=%.1fs",
+                    tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
+        raw_text = "".join(b.text for b in msg.content if hasattr(b, "text")).strip()
+        raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+        raw_text = re.sub(r"\s*```\s*$", "", raw_text)
+        m = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        data = json.loads(m.group(0) if m else raw_text)
+
+        with get_db() as conn:
+            conn.execute(
+                """UPDATE tanks SET
+                     volume_gallons = COALESCE(volume_gallons, ?),
+                     dimensions_l = COALESCE(dimensions_l, ?),
+                     dimensions_w = COALESCE(dimensions_w, ?),
+                     dimensions_h = COALESCE(dimensions_h, ?),
+                     shape = COALESCE(shape, ?),
+                     updated_at = datetime('now')
+                   WHERE id = ?""",
+                (data.get("volume_gallons"), data.get("dimensions_l"), data.get("dimensions_w"),
+                 data.get("dimensions_h"), data.get("shape"), tank_id),
+            )
+        logger.info("Tank dimensions fetched for tank=%d (%s)", tank_id, product_label)
+    except Exception as e:
+        logger.error("Tank dimensions fetch failed for tank=%d (%s): %s", tank_id, product_label, e)
+    finally:
+        _dim_in_flight.discard(tank_id)
 
 
 def maybe_fetch_reference_info(

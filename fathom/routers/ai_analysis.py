@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import time
 import logging
 from datetime import datetime, timedelta, timezone
@@ -36,7 +38,9 @@ def _fmt_inhabitants(rows):
         name = r.get("common_name") or r.get("species") or "Unknown"
         count = r.get("count")
         count_str = "many" if count is None else str(count)
-        lines.append(f"  {count_str}x {name}")
+        added = r.get("added_date")
+        added_str = f" (added {added})" if added else ""
+        lines.append(f"  {count_str}x {name}{added_str}")
     return "\n".join(lines)
 
 
@@ -61,6 +65,14 @@ def _fmt_issues(rows):
     if not rows:
         return "  None"
     return "\n".join(f"  [{r['status'].upper()}] {r['title']}: {r.get('description','')}" for r in rows)
+
+
+def _fmt_issues_with_id(rows):
+    if not rows:
+        return "  None"
+    return "\n".join(
+        f"  id={r['id']} [{r['status'].upper()}] {r['title']}: {r.get('description','')}" for r in rows
+    )
 
 
 def _fmt_events(rows):
@@ -182,6 +194,52 @@ Latest Analysis:
 Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, and any active concerns."""
 
 
+def build_issue_review_prompt(tank, issues, test_results):
+    return f"""You are an expert aquarium keeper reviewing open issues against recent water test data to decide whether any should change status.
+
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
+
+Open/monitoring issues (id, current status, title, description):
+{_fmt_issues_with_id(issues)}
+
+Recent test results (newest first):
+{_fmt_test_results(test_results)}
+
+For each issue, decide whether the recent data shows it has resolved (the underlying problem is no longer occurring — evidenced by MULTIPLE consecutive stable/normal readings, not just one good reading) or should move to "monitoring" (improving but not yet confirmed stable), or should move back to "open" (data shows the problem recurring). Be conservative: only mark an issue resolved when the trend is clearly and consistently stable across several recent data points. If there isn't enough recent data to judge, leave the issue unchanged.
+
+Return ONLY a JSON array (no markdown, no commentary) with one entry for EVERY issue whose status should change from its current status. Omit any issue that should remain unchanged. Each entry: {{"issue_id": <id>, "status": "open"|"monitoring"|"resolved", "reason": "one sentence citing the specific data that supports this"}}.
+
+If no issues should change, return an empty array: []"""
+
+
+def _parse_issue_updates(raw_text, valid_ids):
+    """Parse the issue-review JSON response, keeping only well-formed entries for known issue ids."""
+    text = re.sub(r"```json\s*", "", raw_text or "")
+    text = re.sub(r"```\s*", "", text).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]", text, re.DOTALL)
+        if not match:
+            return []
+        try:
+            parsed = json.loads(match.group())
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(parsed, list):
+        return []
+    updates = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            continue
+        issue_id = entry.get("issue_id")
+        status = entry.get("status")
+        reason = (entry.get("reason") or "").strip()
+        if issue_id in valid_ids and status in ("open", "monitoring", "resolved") and reason:
+            updates.append({"issue_id": issue_id, "status": status, "reason": reason})
+    return updates
+
+
 async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -241,6 +299,21 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                     tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
         analysis_text = msg.content[0].text
 
+        issue_updates = []
+        if issues:
+            issue_review_prompt = build_issue_review_prompt(tank, issues, test_results)
+            logger.info("Claude call: issue_review | tank=%d", tank_id)
+            t_ir = time.monotonic()
+            issue_msg = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=512,
+                messages=[{"role": "user", "content": issue_review_prompt}],
+                timeout=60.0,
+            )
+            logger.info("Claude done: issue_review | tank=%d | in=%d out=%d elapsed=%.1fs",
+                        tank_id, issue_msg.usage.input_tokens, issue_msg.usage.output_tokens, time.monotonic() - t_ir)
+            issue_updates = _parse_issue_updates(issue_msg.content[0].text, {i["id"] for i in issues})
+
         related_test_id = trigger_id if trigger_type == "test" else None
         related_event_id = trigger_id if trigger_type == "event" else None
 
@@ -250,6 +323,32 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                    VALUES (?, ?, ?, 'auto', ?)""",
                 (tank_id, related_event_id, related_test_id, analysis_text),
             )
+
+            issues_by_id = {i["id"]: i for i in issues}
+            for upd in issue_updates:
+                issue = issues_by_id.get(upd["issue_id"])
+                if not issue or upd["status"] == issue["status"]:
+                    continue
+                note_line = f"Auto-updated to '{upd['status']}' by AI analysis: {upd['reason']}"
+                new_notes = f"{issue.get('notes') or ''}\n\n{note_line}".strip()
+                if upd["status"] == "resolved":
+                    conn.execute(
+                        """UPDATE issues SET status=?, notes=?, resolved_at=datetime('now'),
+                           updated_at=datetime('now') WHERE id=?""",
+                        (upd["status"], new_notes, upd["issue_id"]),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE issues SET status=?, notes=?, updated_at=datetime('now') WHERE id=?",
+                        (upd["status"], new_notes, upd["issue_id"]),
+                    )
+                verb = {"resolved": "auto-resolved", "monitoring": "moved to monitoring", "open": "reopened"}[upd["status"]]
+                conn.execute(
+                    "INSERT INTO observations (tank_id, source, text) VALUES (?, 'auto', ?)",
+                    (tank_id, f"Issue \"{issue['title']}\" {verb} by AI analysis: {upd['reason']}"),
+                )
+                logger.info("Issue %d %s for tank %d: %s", upd["issue_id"], verb, tank_id, upd["reason"])
+                issue["status"] = upd["status"]
 
         summary_prompt = build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, analysis_text)
         logger.info("Claude call: summary | tank=%d", tank_id)

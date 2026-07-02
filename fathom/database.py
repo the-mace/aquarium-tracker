@@ -36,6 +36,36 @@ def get_db():
 
 
 @contextmanager
+def get_db_readonly():
+    """Read-only connection (SQLite URI mode=ro) for untrusted/AI-generated queries.
+
+    Guarantees no write can succeed even if SQL-text filtering upstream is imperfect.
+    """
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def get_schema_text():
+    """Table/column listing for the main DB, used to give the chat AI query-tool context."""
+    with get_db_readonly() as conn:
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+        lines = []
+        for row in tables:
+            name = row[0]
+            cols = conn.execute(f"PRAGMA table_info({name})").fetchall()
+            col_desc = ", ".join(f"{c[1]} {c[2]}" for c in cols)
+            lines.append(f"{name}({col_desc})")
+        return "\n".join(lines)
+
+
+@contextmanager
 def get_ref_db():
     """Context manager for the reference cache DB (separate from main DB so it survives resets)."""
     os.makedirs(os.path.dirname(REFERENCE_CACHE_DB_PATH), exist_ok=True)

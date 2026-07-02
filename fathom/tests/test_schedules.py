@@ -191,6 +191,17 @@ def test_dashboard_today_schedule_widget(client, tank_id):
     assert "Today's Schedule" in r.text
 
 
+def test_dashboard_today_schedule_excludes_floating_day(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "", "description": "Floating Food"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/tanks/{tank_id}")
+    assert r.status_code == 200
+    assert "Floating Food" not in r.text
+
+
 def test_dashboard_maintenance_widget(client, tank_id):
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     client.post(

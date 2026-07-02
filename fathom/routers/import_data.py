@@ -6,8 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Request, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from database import get_db, row_to_dict
-from routers.reference_info import maybe_fetch_reference_info, _canonical
+from database import get_db, row_to_dict, rows_to_list
+from routers.reference_info import maybe_fetch_reference_info, maybe_fetch_tank_dimensions, _canonical
 
 router = APIRouter(tags=["import"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -122,7 +122,7 @@ EXTRACTION RULES (follow carefully):
 
 11. DATE INFERENCE: When a record has no explicit date of its own but appears within a dated log entry (or is clearly associated with one), use that entry's date for the record's date field — purchase_date, installed_date, added_date, created_at, etc. Never leave a date null if the surrounding context makes it inferable.
 
-10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). A 'logged' task tied to a specific day_of_week (e.g. "Thursday: 20% water change") is itself a weekly frequency — always set interval_type='weekly' and interval_days=7 for these, even if the word "weekly" isn't used explicitly, so due-date tracking works after the first mark-done. If the text states a different frequency (monthly, every N days), use that instead. "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun, or null for floating/weekly tasks without a fixed day.
+10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). A 'logged' task tied to a specific day_of_week (e.g. "Thursday: 20% water change") is itself a weekly frequency — always set interval_type='weekly' and interval_days=7 for these, even if the word "weekly" isn't used explicitly, so due-date tracking works after the first mark-done. If the text states a different frequency (monthly, every N days), use that instead. "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun — for reference_only (feeding/dosing) rows, day_of_week is REQUIRED: only extract a feeding or dosing entry as recurring_schedule when the text ties it to a specific day of the week. Vague or occasional mentions with no identifiable day ("feeds bloodworms sometimes", "doses Flourish here and there") are not a recurring schedule — leave them out of recurring_schedule entirely (capture them as an observation or event instead if otherwise noteworthy). 'logged' maintenance rows may omit day_of_week when the frequency is interval-based rather than tied to a weekday (e.g. "clean filter monthly").
 
 Valid event_type values: water_change, feeding, purchase, observation, treatment, maintenance, other
 Valid equipment categories: filter, heater, light, uv, pump, co2, other
@@ -143,6 +143,10 @@ Valid plant status: active, removed
 17. HARDSCAPE IS FOR PERMANENT DECOR ONLY: hardscape means physical decor/structure (driftwood, rocks, coconut shells, ornaments) that stays in the tank indefinitely. Consumable items placed in the tank and gradually eaten or dissolved (cuttlebone, calcium blocks/bites, mineral chews, algae wafers left in the tank, filter floss/media) are NOT hardscape — extract them as a purchases record (category="consumables") if a cost is mentioned, and/or leave them described in the relevant event's notes. Never create a hardscape row for a consumable/food item.
 
 18. NAMING CONSISTENCY FOR THE SAME POPULATION: when the same real-world population of inhabitants is mentioned more than once in the text — e.g. introduced on one date, then later re-described with a recount or updated status ("could only count 3 on 6/5", "confirmed 6 on 6/5") — use the EXACT SAME species and common_name strings for every mention of it, so it collapses into one inhabitant entry (see rule on within-preview duplicate handling: an earlier entry becomes a population-event history state, the latest becomes the current count). Watch for a later passage silently re-narrating an earlier passage's purchase/death history in different words as a sign it's describing the same population, not a new one — do not let a vaguer species qualifier ("sp.") in one mention and a more specific one in another ("vittatus", "semicincta") cause the same population to be split into two entries. If two mentions might be genuinely different sub-populations (e.g. explicitly different color/local varieties bought separately), only keep them separate when the text actually distinguishes them (e.g. "zebra" vs a differently-described type) — do not invent a distinction the text doesn't make.
+
+19. NAMING CONSISTENCY FOR THE SAME EQUIPMENT ITEM: when the same physical piece of equipment is mentioned more than once in the text under different phrasing — e.g. a purchase/order listing name ("Filter Intake Protection Cover") and a later narrative mention of installing or working on it ("added the pre-filter sponge intake cover to the filter") — use the EXACT SAME brand and model strings for every mention, so it collapses into one equipment entry instead of being split into duplicates (see rule 3: a later mention of already-installed hardware is a maintenance event, not a second equipment record; see rule 18 for the identical pattern with inhabitants). Watch for a purchase description and a later "installed X" or "added X" narrative line describing the same real-world item in different words — do not treat differing phrasing alone as evidence of two distinct items.
+
+20. ADDING TO AN EXISTING POPULATION: if a "CURRENT TANK INHABITANTS ALREADY ON RECORD" context block appears below (listing species already tracked for this tank with their current counts), and the text describes buying/adding more individuals of one of those species ("bought 3 more X", "added another X"), the emitted inhabitants entry's count must be the NEW TOTAL — the recorded count from that context block PLUS the number newly added — never just the number newly added by itself. Set the entry's species/common_name to exactly match the context block's naming (so it collapses onto the existing record per rule 18) and its notes field to state the addition explicitly, e.g. "Added 3 more (was 6, now 9)". This is a genuinely new addition, not a recount — still also extract the purchase as its own purchases record with the actual per-purchase cost.
 
 Use "YYYY-MM-DD 12:00:00" for timestamps where time is unknown — timestamps are stored as UTC and displayed in the user's local timezone, so anchoring unknown times to noon (rather than midnight) keeps the displayed calendar date correct regardless of timezone offset. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
@@ -225,10 +229,30 @@ def _strip_html(html_content: str) -> str:
     return text.strip()
 
 
-async def _extraction_sse_stream(content: str, api_key: str):
+def _existing_inhabitants_context(existing_inhabitants: list) -> str:
+    """Build a context block listing the tank's already-recorded inhabitants, so the
+    extraction can correctly turn 'bought N more X' phrasing into a new total rather
+    than mistaking it for the species' full count."""
+    if not existing_inhabitants:
+        return ""
+    lines = []
+    for inh in existing_inhabitants:
+        name = inh.get("common_name") or inh.get("species") or "Unknown"
+        count = inh.get("count")
+        count_str = "many/unknown" if count is None else str(count)
+        lines.append(f"  - {name}: {count_str} currently on record")
+    return (
+        "\n\nCURRENT TANK INHABITANTS ALREADY ON RECORD (see rule 20 for how to use this):\n"
+        + "\n".join(lines) + "\n"
+    )
+
+
+async def _extraction_sse_stream(content: str, api_key: str, existing_inhabitants: list = None):
     """Async generator yielding SSE event strings for Claude-based text extraction."""
     import anthropic
     import re as _re
+
+    existing_inh_ctx = _existing_inhabitants_context(existing_inhabitants)
 
     chunks = _split_chunks(content, max_chars=60000)
     n_chunks = len(chunks)
@@ -277,7 +301,7 @@ async def _extraction_sse_stream(content: str, api_key: str):
             async with client.messages.stream(
                 model="claude-sonnet-4-6",
                 max_tokens=32000,
-                messages=[{"role": "user", "content": IMPORT_PROMPT + chunk_header + chunk}],
+                messages=[{"role": "user", "content": IMPORT_PROMPT + existing_inh_ctx + chunk_header + chunk}],
             ) as stream:
                 async for text in stream.text_stream:
                     full_text += text
@@ -382,6 +406,9 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
 
     with get_db() as conn:
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+        existing_inhabitants = rows_to_list(conn.execute(
+            "SELECT species, common_name, count FROM inhabitants WHERE tank_id = ?", (tank_id,)
+        ).fetchall())
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
 
@@ -399,7 +426,7 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
         content = content[:100000] + "\n...[truncated]"
 
     return StreamingResponse(
-        _extraction_sse_stream(content, api_key),
+        _extraction_sse_stream(content, api_key, existing_inhabitants),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -422,6 +449,9 @@ async def quick_log(tank_id: int, request: Request):
 
     with get_db() as conn:
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+        existing_inhabitants = rows_to_list(conn.execute(
+            "SELECT species, common_name, count FROM inhabitants WHERE tank_id = ?", (tank_id,)
+        ).fetchall())
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
 
@@ -438,7 +468,7 @@ async def quick_log(tank_id: int, request: Request):
     )
 
     return StreamingResponse(
-        _extraction_sse_stream(content, api_key),
+        _extraction_sse_stream(content, api_key, existing_inhabitants),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -713,6 +743,8 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 )
                 inserted["tank_specs"] = len(updates)
 
+        maybe_fetch_tank_dimensions(background_tasks, tank_id)
+
         # Test results
         for tr in preview.get("test_results", []):
             ts = tr.get("timestamp")
@@ -954,13 +986,17 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 (tank_id, "import", "Import updated inhabitants — " + ", ".join(inh_updates)),
             )
 
-        # Recurring schedule
+        # Recurring schedule. reference_only (feeding/dosing) rows without a day_of_week
+        # aren't a valid recurring entry — skip them rather than insert a dangling row.
+        rs_inserted = 0
         for rs in preview.get("recurring_schedule", []):
             cat = rs.get("category", "feeding")
             tracking_mode = "logged" if cat == "maintenance" else "reference_only"
             dow = rs.get("day_of_week")
             if dow and dow not in ("mon","tue","wed","thu","fri","sat","sun"):
                 dow = None
+            if tracking_mode == "reference_only" and not dow:
+                continue
             conn.execute(
                 """INSERT INTO recurring_schedule
                    (tank_id, category, tracking_mode, day_of_week, description,
@@ -970,7 +1006,8 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                  rs.get("description", ""), rs.get("interval_type"), rs.get("interval_days"),
                  rs.get("last_done"), rs.get("next_due"), rs.get("notes")),
             )
-        inserted["recurring_schedule"] = len(preview.get("recurring_schedule", []))
+            rs_inserted += 1
+        inserted["recurring_schedule"] = rs_inserted
 
     # Queue reference_info fetches for newly imported entities
     for inh in preview.get("inhabitants", []):

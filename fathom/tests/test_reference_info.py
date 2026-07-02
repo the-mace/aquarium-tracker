@@ -132,3 +132,71 @@ def test_plants_list_shows_ref_data(client, tank_id):
     r = client.get(f"/tanks/{tank_id}/plants", follow_redirects=True)
     assert r.status_code == 200
     assert "upload.wikimedia.org" in r.text
+
+
+# ── maybe_fetch_tank_dimensions ───────────────────────────────────────────
+
+def test_maybe_fetch_dimensions_queues_when_manufacturer_known_and_dims_missing(client, tank_id):
+    from unittest.mock import MagicMock
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.execute("UPDATE tanks SET manufacturer=?, model=? WHERE id=?", ("Seapora", "40 gallon long", tank_id))
+    conn.commit(); conn.close()
+    bt = MagicMock()
+    _ref.maybe_fetch_tank_dimensions(bt, tank_id)
+    bt.add_task.assert_called_once()
+    args = bt.add_task.call_args[0]
+    assert args[0] is _ref.fetch_tank_dimensions_bg
+    assert args[1:] == (tank_id, "Seapora", "40 gallon long")
+
+
+def test_maybe_fetch_dimensions_skips_without_manufacturer_or_model(client, tank_id):
+    from unittest.mock import MagicMock
+    bt = MagicMock()
+    _ref.maybe_fetch_tank_dimensions(bt, tank_id)
+    bt.add_task.assert_not_called()
+
+
+def test_maybe_fetch_dimensions_skips_when_already_complete(client, tank_id):
+    from unittest.mock import MagicMock
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.execute(
+        "UPDATE tanks SET manufacturer=?, model=?, volume_gallons=?, dimensions_l=?, dimensions_w=?, dimensions_h=? WHERE id=?",
+        ("Fluval", "Spec V", 5.0, 20.5, 10.2, 12.2, tank_id),
+    )
+    conn.commit(); conn.close()
+    bt = MagicMock()
+    _ref.maybe_fetch_tank_dimensions(bt, tank_id)
+    bt.add_task.assert_not_called()
+
+
+def test_maybe_fetch_dimensions_skips_unknown_tank(client):
+    from unittest.mock import MagicMock
+    bt = MagicMock()
+    _ref.maybe_fetch_tank_dimensions(bt, 999999)
+    bt.add_task.assert_not_called()
+
+
+def test_create_tank_with_manufacturer_triggers_dimensions_fetch(client, monkeypatch):
+    from unittest.mock import MagicMock
+    mock_fetch = MagicMock()
+    monkeypatch.setattr(_ref, "fetch_tank_dimensions_bg", mock_fetch)
+    r = client.post(
+        "/tanks",
+        data={"name": "Seapora Tank", "water_type": "fresh", "manufacturer": "Seapora", "model": "40 gallon long"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    mock_fetch.assert_called_once()
+
+
+def test_update_tank_with_manufacturer_triggers_dimensions_fetch(client, tank_id, monkeypatch):
+    from unittest.mock import MagicMock
+    mock_fetch = MagicMock()
+    monkeypatch.setattr(_ref, "fetch_tank_dimensions_bg", mock_fetch)
+    r = client.post(
+        f"/tanks/{tank_id}/edit",
+        data={"name": "Test Tank", "water_type": "fresh", "manufacturer": "Fluval", "model": "Spec V"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    mock_fetch.assert_called_once()

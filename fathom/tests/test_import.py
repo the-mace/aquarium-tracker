@@ -2,7 +2,7 @@
 import json
 import sqlite3
 import database as _db
-from routers.import_data import _strip_html, _find_duplicates, _merge_results, _split_chunks
+from routers.import_data import _strip_html, _find_duplicates, _merge_results, _split_chunks, _existing_inhabitants_context
 
 
 # ── _strip_html unit tests ──────────────────────────────────────────────────
@@ -54,6 +54,27 @@ def test_strip_html_collapses_excess_newlines():
 def test_strip_html_plain_text_unchanged():
     plain = "pH 7.2, temp 76F, all normal"
     assert _strip_html(plain) == plain
+
+
+# ── _existing_inhabitants_context unit tests ────────────────────────────────
+
+def test_existing_inhabitants_context_empty():
+    assert _existing_inhabitants_context([]) == ""
+    assert _existing_inhabitants_context(None) == ""
+
+
+def test_existing_inhabitants_context_includes_name_and_count():
+    rows = [{"common_name": "Dwarf Neon Rainbowfish", "species": None, "count": 6}]
+    ctx = _existing_inhabitants_context(rows)
+    assert "Dwarf Neon Rainbowfish" in ctx
+    assert "6 currently on record" in ctx
+    assert "CURRENT TANK INHABITANTS" in ctx
+
+
+def test_existing_inhabitants_context_null_count_shows_many():
+    rows = [{"common_name": "Ramshorn Snail", "species": None, "count": None}]
+    ctx = _existing_inhabitants_context(rows)
+    assert "many/unknown" in ctx
 
 
 # ── import/confirm endpoint tests ───────────────────────────────────────────

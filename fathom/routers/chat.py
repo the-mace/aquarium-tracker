@@ -1,22 +1,57 @@
 import os
+import re
+import json
 import time
 import logging
 from pathlib import Path
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from database import get_db, rows_to_list, row_to_dict
-from routers.ai_analysis import _fmt_tank_notes
+from database import get_db, get_db_readonly, get_schema_text, rows_to_list, row_to_dict
+from routers.ai_analysis import _fmt_tank_notes, _fmt_inhabitants
 
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 _conversations: dict[int, list[dict]] = {}
 MAX_TURNS = 10
+MAX_TOOL_ROUNDS = 4
+QUERY_ROW_LIMIT = 200
 
 
 class ChatMessage(BaseModel):
     message: str
+
+
+def _query_db_tool(tank_id):
+    return {
+        "name": "query_db",
+        "description": (
+            "Run a single read-only SQL SELECT query against the Fathom database for anything "
+            "not already covered by the context above — e.g. full test_results history/trends, "
+            "population_events (when an inhabitant was added/died/removed), purchase totals, "
+            f"older observations. This tank's id is {tank_id} — filter WHERE tank_id = {tank_id} "
+            f"unless the user is deliberately comparing tanks. Returns up to {QUERY_ROW_LIMIT} rows as JSON.\n\n"
+            f"Schema:\n{get_schema_text()}"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"sql": {"type": "string", "description": "A single SELECT statement."}},
+            "required": ["sql"],
+        },
+    }
+
+
+def _run_query_db(sql: str) -> dict:
+    stripped = (sql or "").strip().rstrip(";")
+    if not re.match(r"(?is)^\s*select\b", stripped):
+        return {"error": "Only SELECT statements are allowed."}
+    try:
+        with get_db_readonly() as conn:
+            rows = conn.execute(stripped).fetchmany(QUERY_ROW_LIMIT)
+            return {"rows": rows_to_list(rows)}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs):
@@ -52,13 +87,7 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         parts.append("\nLatest Water Parameters: none recorded")
 
     if inhabitants:
-        lines = []
-        for i in inhabitants:
-            name = i.get("common_name") or i.get("species") or "Unknown"
-            count = i.get("count")
-            count_str = "many" if count is None else str(count)
-            lines.append(f"  {count_str}x {name}")
-        parts.append("\nInhabitants:\n" + "\n".join(lines))
+        parts.append("\nInhabitants:\n" + _fmt_inhabitants(inhabitants))
     else:
         parts.append("\nInhabitants: none recorded")
 
@@ -87,6 +116,12 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
             ts = (obs.get("created_at") or "")[:10]
             parts.append(f"  [{obs['source']}] {ts}: {obs['text'][:200]}")
 
+    parts.append(
+        "\nThe context above is a snapshot (current inhabitants, latest test, recent items only). "
+        "Use the query_db tool whenever a question needs history or data beyond this snapshot — "
+        "e.g. 'when was X added', 'GH trend/history', 'how much have I spent on Y' — rather than "
+        "saying the data isn't available."
+    )
     parts.append("\nAnswer questions helpfully and concisely. Reference specific data from above when relevant. Do not use markdown formatting (no **bold**, no *italic*, no headers, no bullet dashes) — plain text only.")
     return "\n".join(parts)
 
@@ -112,7 +147,7 @@ async def chat(tank_id: int, body: ChatMessage):
         ).fetchone())
 
         inhabitants = rows_to_list(conn.execute(
-            "SELECT common_name, species, count FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
+            "SELECT common_name, species, count, added_date FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
             (tank_id,),
         ).fetchall())
 
@@ -147,21 +182,46 @@ async def chat(tank_id: int, body: ChatMessage):
     if len(history) > MAX_TURNS * 2:
         history = history[-(MAX_TURNS * 2):]
 
+    tools = [_query_db_tool(tank_id)]
+
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         logger.info("Claude call: chat | tank=%d turn=%d", tank_id, len(history) // 2 + 1)
         t0 = time.monotonic()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=system_prompt,
-            messages=history,
-        )
+
+        working_messages = list(history)
+        raw = None
+        for round_num in range(MAX_TOOL_ROUNDS + 1):
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=system_prompt,
+                tools=tools,
+                messages=working_messages,
+            )
+            if response.stop_reason != "tool_use" or round_num == MAX_TOOL_ROUNDS:
+                raw = "".join(b.text for b in response.content if b.type == "text")
+                if not raw:
+                    raw = "I wasn't able to find a complete answer within the allotted lookups — try rephrasing or asking a narrower question."
+                break
+
+            working_messages.append({"role": "assistant", "content": response.content})
+            tool_results = []
+            for block in response.content:
+                if block.type != "tool_use":
+                    continue
+                logger.info("Chat tool call: chat | tank=%d | query_db: %s", tank_id, block.input.get("sql", ""))
+                result = _run_query_db(block.input.get("sql", ""))
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": json.dumps(result, default=str),
+                })
+            working_messages.append({"role": "user", "content": tool_results})
+
         logger.info("Claude done: chat | tank=%d | in=%d out=%d elapsed=%.1fs",
                     tank_id, response.usage.input_tokens, response.usage.output_tokens, time.monotonic() - t0)
-        import re
-        raw = response.content[0].text
         # Strip markdown that the chat panel renders as literal characters
         reply = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', raw)   # **bold**, *italic*, ***both***
         reply = re.sub(r'^#{1,6}\s+', '', reply, flags=re.MULTILINE)  # headings
