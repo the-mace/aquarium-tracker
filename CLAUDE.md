@@ -230,6 +230,11 @@ Always run before committing. Coverage: tanks CRUD + cascade, test_results, even
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests.
 
+### Changes in 2026-07-02 session (third)
+
+- **Date filter UX fix on Timeline/Observations**: the inline `date_from`/`date_to` `<input type="date">` fields were replaced with a "📅 Dates" button that opens a modal (`tl-date-modal` / `obs-date-modal`, standard `.modal`/`.modal-box-sm` markup) — the date inputs live inside it and submit the same outer GET filter form on "Apply". Root cause: Safari renders an *empty* `<input type="date">` with today's date pre-filled in the digit sub-fields, and WebKit ignores `color` overrides on those fields entirely (confirmed by installing a real headless WebKit via Playwright and inspecting rendered pixels — `::-webkit-datetime-edit-text` recolors the `/` separators but not the digits), so there was no CSS-only fix. The "Dates" button highlights (`btn-accent`) when a filter is active instead, and — since the button's own text never changes — the Filter/Clear buttons after it never shift position.
+- Tried and reverted along the way: forcing the empty-state color via CSS class (no effect, per above); swapping `type="date"`/`type="text"` on focus/blur to fake a placeholder (caused a double-click-to-open-picker regression and field-width jumping); an always-visible "filtering X → Y" status line next to the fields (removed per Rob's feedback — the highlighted button alone reads clearly enough).
+
 ### Changes in 2026-07-02 session (second)
 
 - **Timeline gets water tests and observations**: `routers/timeline.py`'s `_QUERY` UNION gained an `observation` branch (badge text/color keyed off `source`: manual/auto/import); water tests are fetched via a separate query and merged + re-sorted in Python (`(tank_id,) * 9` for the UNION placeholders) rather than folded into the SQL string, because each test parameter needs individual out-of-range styling.
