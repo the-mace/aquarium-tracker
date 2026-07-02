@@ -134,6 +134,8 @@ Valid plant status: active, removed
 
 13. HARDSCAPE ITEM NAMES: The item field should be a short, clean name (e.g. "Coconut shell shrimp cave", "Lava rock", "Dragon stone"). If the source text includes a parenthetical description after the item name (e.g. "Coconut shell shrimp cave (1/4 coconut shell covered in Java moss)"), strip the parenthetical from item and move it into the notes field instead. Never include parenthetical text in the item name.
 
+14. EQUIPMENT BRAND/MODEL SPLIT: brand and model are separate fields — never dump the whole product name into model while leaving brand null. The brand is the manufacturer/product-line name, usually the leading word(s) of the product name; the model is the remaining descriptive part. Examples: "Aquarium Clean Light 3W Mini Submersible UV Light" → brand="Aquarium Clean", model="3W Mini Submersible UV Light"; "Fluval Spec V" → brand="Fluval", model="Spec V"; "Fluval 306 Canister Filter" → brand="Fluval", model="306 Canister Filter". Only leave brand null if no manufacturer/product-line name is identifiable in the text at all (e.g. a bare generic description like "small air pump").
+
 Use "YYYY-MM-DD 00:00:00" for timestamps where time is unknown. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
 TEXT TO PARSE:
