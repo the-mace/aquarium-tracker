@@ -140,6 +140,10 @@ Valid plant status: active, removed
 
 16. EQUIPMENT MODEL FIELD: model should be the product name only, not a full descriptive listing title. If the source text includes a parenthetical compatibility/spec note after the product name (e.g. "Prefilter Intake Cover for Fluval Flex Spec Evo (Spec III & V 2.6/5G)", "Wireless Digital Thermometer (±1°F)"), strip the parenthetical from model and move it into notes instead — e.g. model="Prefilter Intake Cover", notes="Compatible with Spec III & V 2.6/5G". Never include parenthetical text in the model field.
 
+17. HARDSCAPE IS FOR PERMANENT DECOR ONLY: hardscape means physical decor/structure (driftwood, rocks, coconut shells, ornaments) that stays in the tank indefinitely. Consumable items placed in the tank and gradually eaten or dissolved (cuttlebone, calcium blocks/bites, mineral chews, algae wafers left in the tank, filter floss/media) are NOT hardscape — extract them as a purchases record (category="consumables") if a cost is mentioned, and/or leave them described in the relevant event's notes. Never create a hardscape row for a consumable/food item.
+
+18. NAMING CONSISTENCY FOR THE SAME POPULATION: when the same real-world population of inhabitants is mentioned more than once in the text — e.g. introduced on one date, then later re-described with a recount or updated status ("could only count 3 on 6/5", "confirmed 6 on 6/5") — use the EXACT SAME species and common_name strings for every mention of it, so it collapses into one inhabitant entry (see rule on within-preview duplicate handling: an earlier entry becomes a population-event history state, the latest becomes the current count). Watch for a later passage silently re-narrating an earlier passage's purchase/death history in different words as a sign it's describing the same population, not a new one — do not let a vaguer species qualifier ("sp.") in one mention and a more specific one in another ("vittatus", "semicincta") cause the same population to be split into two entries. If two mentions might be genuinely different sub-populations (e.g. explicitly different color/local varieties bought separately), only keep them separate when the text actually distinguishes them (e.g. "zebra" vs a differently-described type) — do not invent a distinction the text doesn't make.
+
 Use "YYYY-MM-DD 12:00:00" for timestamps where time is unknown — timestamps are stored as UTC and displayed in the user's local timezone, so anchoring unknown times to noon (rather than midnight) keeps the displayed calendar date correct regardless of timezone offset. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
 TEXT TO PARSE:
@@ -499,44 +503,54 @@ def _find_duplicates(tank_id: int, preview: dict, conn) -> list:
             dups.append({"section": "purchases", "index": i,
                          "message": f"Purchase '{pur.get('item')}' on {d} already exists."})
 
-    # inhabitants: smart dedup — track existing counts, keep latest within preview
-    existing_inh = {
-        r[0]: r[1] for r in conn.execute(
-            "SELECT lower(trim(species)), count FROM inhabitants WHERE tank_id=? AND species IS NOT NULL", (tank_id,)
-        ).fetchall()
-    }
+    # inhabitants: smart dedup — track existing counts, keep latest within preview.
+    # Key on common_name when present (falling back to species) since real-world
+    # duplicates from the same population most often keep a stable common_name even
+    # when the AI's species text drifts between mentions (e.g. "Otocinclus sp." vs
+    # "Otocinclus vittatus" for the same fish recounted later in the source text).
+    existing_inh = {}
+    for r in conn.execute(
+        "SELECT lower(trim(common_name)), lower(trim(species)), count FROM inhabitants WHERE tank_id=?", (tank_id,)
+    ).fetchall():
+        key = r[0] or r[1]
+        if key:
+            existing_inh[key] = r[2]
+
+    def _inh_key(inh: dict) -> str:
+        return (inh.get("common_name") or inh.get("species") or "").lower().strip()
+
     inh_list = preview.get("inhabitants", [])
-    # Find the index of the latest (by added_date) entry per species within the preview
+    # Find the index of the latest (by added_date) entry per key within the preview
     species_latest: dict = {}
     for i, inh in enumerate(inh_list):
-        sp = (inh.get("species") or "").lower().strip()
-        if not sp:
+        key = _inh_key(inh)
+        if not key:
             continue
         d = inh.get("added_date") or ""
-        prev = species_latest.get(sp)
+        prev = species_latest.get(key)
         if prev is None or d > prev[1]:
-            species_latest[sp] = (i, d)
+            species_latest[key] = (i, d)
 
     for i, inh in enumerate(inh_list):
-        sp = (inh.get("species") or "").lower().strip()
+        key = _inh_key(inh)
         name = inh.get("common_name") or inh.get("species") or "inhabitant"
-        if not sp:
+        if not key:
             continue
         new_count = None if inh.get("count_unknown") else inh.get("count")
 
-        # Within-preview: earlier entries for the same species are historical count
+        # Within-preview: earlier entries for the same key are historical count
         # states (e.g. 19 received -> 15 after losses -> 11 stabilized), not
         # duplicates — leave them checked so confirm can log each as a population
         # event. Only inform the user which entry represents the current count.
-        latest_idx = species_latest.get(sp, (i, ""))[0]
+        latest_idx = species_latest.get(key, (i, ""))[0]
         if latest_idx != i:
             dups.append({"section": "inhabitants", "index": i, "auto_uncheck": False,
                          "message": f"Earlier count state for '{name}' — will be logged as a population event."})
             continue
 
-        # Against DB: check if species exists and whether count differs
-        if sp in existing_inh:
-            existing_count = existing_inh[sp]
+        # Against DB: check if this inhabitant already exists and whether count differs
+        if key in existing_inh:
+            existing_count = existing_inh[key]
             if existing_count == new_count or (existing_count is None and new_count is None):
                 dups.append({"section": "inhabitants", "index": i, "auto_uncheck": True,
                              "message": f"'{name}' already exists with the same count — no change needed."})
@@ -754,10 +768,21 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
         for inh in inh_preview:
             count_val = None if inh.get("count_unknown") else inh.get("count", 1)
             sp = (inh.get("species") or "").strip()
-            existing = conn.execute(
-                "SELECT id, count FROM inhabitants WHERE tank_id=? AND lower(trim(species))=lower(?)",
-                (tank_id, sp),
-            ).fetchone() if sp else None
+            # Match on common_name first, falling back to species — real-world
+            # duplicates from the same population most often keep a stable
+            # common_name even when the AI's species text drifts between mentions.
+            cn = (inh.get("common_name") or "").strip()
+            existing = None
+            if cn:
+                existing = conn.execute(
+                    "SELECT id, count FROM inhabitants WHERE tank_id=? AND lower(trim(common_name))=lower(?)",
+                    (tank_id, cn),
+                ).fetchone()
+            if existing is None and sp:
+                existing = conn.execute(
+                    "SELECT id, count FROM inhabitants WHERE tank_id=? AND lower(trim(species))=lower(?)",
+                    (tank_id, sp),
+                ).fetchone()
             if existing:
                 old_count = existing[1]
                 conn.execute(

@@ -17,7 +17,8 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
         inhabitants = rows_to_list(conn.execute(
-            "SELECT * FROM inhabitants WHERE tank_id = ? ORDER BY count DESC NULLS LAST, common_name, species",
+            "SELECT * FROM inhabitants WHERE tank_id = ? AND (count IS NULL OR count > 0)"
+            " ORDER BY count DESC NULLS LAST, common_name, species",
             (tank_id,),
         ).fetchall())
         pop_events = rows_to_list(conn.execute(
