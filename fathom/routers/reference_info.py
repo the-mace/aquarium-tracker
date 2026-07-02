@@ -41,6 +41,17 @@ KNOWN_IMAGES: dict[tuple[str, str], str] = {
 # and the list page is loaded repeatedly.
 _in_flight: set[tuple[str, str]] = set()
 
+# Wikimedia Commons is full of public-domain botanical/zoological plate scans
+# (Britton & Brown 1913 "BB-" plates, old "NA-" flora plates, herbarium sheet
+# scans, range maps) that rank highly for scientific-name searches but are
+# line drawings/diagrams, not photos. Filtered out of image candidates by
+# filename/title so we prefer actual photographs (e.g. iNaturalist uploads).
+_ILLUSTRATION_PATTERN = re.compile(
+    r"(?i)(illustration|drawing|engrav|lithograph|clip[- ]?art|line[-_ ]art|"
+    r"herbarium|specimen|woodcut|sketch|diagram|distribution[-_ ]?map|"
+    r"range[-_ ]?map|\bnymap\b|\bBB-\d{4}\b|\bNA-\d{4}\b)"
+)
+
 
 def _canonical(name: str) -> str:
     return name.lower().strip() if name else ""
@@ -170,11 +181,12 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                         wiki_data = json.loads(wiki_resp.read())
                     pages = wiki_data.get("query", {}).get("pages", {})
                     for page in pages.values():
+                        title = page.get("title", "")
                         for ii in page.get("imageinfo", []):
                             url = ii.get("url", "")
                             if url and url.startswith("https://") and re.search(
                                 r"\.(jpg|jpeg|png|webp)$", url, re.IGNORECASE
-                            ):
+                            ) and not _ILLUSTRATION_PATTERN.search(title) and not _ILLUSTRATION_PATTERN.search(url):
                                 candidates.append((url, "commons.wikimedia.org"))
                     logger.info("Wikimedia Commons search | %s/%s | %d candidates | elapsed=%.1fs",
                                 entity_type, entity_name, len(candidates), time.monotonic() - t1)
@@ -197,7 +209,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                         url = r.get("image", "")
                         if url and url.startswith("https://") and re.search(
                             r"\.(jpg|jpeg|png|webp)(\?|$)", url, re.IGNORECASE
-                        ):
+                        ) and not _ILLUSTRATION_PATTERN.search(url) and not _ILLUSTRATION_PATTERN.search(r.get("title", "")):
                             wiki_thumb = re.match(
                                 r"(https://upload\.wikimedia\.org/wikipedia/commons)/thumb(/[^/]+/[^/]+/[^/]+)/\d+px-.+",
                                 url,
