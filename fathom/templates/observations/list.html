@@ -61,13 +61,23 @@
     {% set filter_selected_refs = [(active_filter.type ~ ':' ~ active_filter.id)] if active_filter and active_filter.type not in ('any', 'none') else [] %}
     {{ entity_optgroups(entity_options, filter_selected_refs) }}
   </select>
-  <input type="date" name="date_from" value="{{ filter_date_from }}" title="From date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
-  <span class="muted" style="font-size:.8rem">to</span>
-  <input type="date" name="date_to" value="{{ filter_date_to }}" title="To date" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+  <button type="button" class="btn btn-sm {{ 'btn-accent' if filter_date_from or filter_date_to else 'btn-ghost' }}" onclick="openModal('obs-date-modal')">📅 Dates</button>
   <button class="btn btn-sm btn-ghost" type="submit">Filter</button>
   {% if filter_search or filter_source or filter_date_from or filter_date_to %}
   <a href="{{ clear_search_url }}" class="btn btn-sm btn-ghost">Clear</a>
   {% endif %}
+
+  <div id="obs-date-modal" class="modal" style="display:none">
+    <div class="modal-box modal-box-sm">
+      <div class="modal-header"><h3>Filter by Date</h3><button type="button" class="modal-close" onclick="closeModal('obs-date-modal')">×</button></div>
+      <div class="form-group"><label>From</label><input type="date" name="date_from" value="{{ filter_date_from }}"></div>
+      <div class="form-group"><label>To</label><input type="date" name="date_to" value="{{ filter_date_to }}"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('obs-date-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Apply</button>
+      </div>
+    </div>
+  </div>
 </form>
 
 {% if observations %}
