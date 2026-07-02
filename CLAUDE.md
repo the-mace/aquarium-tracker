@@ -208,6 +208,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 ## Current state (as of 2026-07-02)
 
 - Population chart now shows currently-"many"/unknown-count species as a gap + "(now: many)" legend label instead of freezing at a stale precise number; equipment and purchases are now editable in the UI; import prompt strips parenthetical detail out of `source` (inhabitants/plants/hardscape) and equipment `model` into `notes` (see below); 233 tests passing
+- Equipment's "Specs" field no longer implies JSON is required — edit modal flattens stored JSON specs to plain text; Equipment/Purchases row action buttons now have spacing between them (see below)
 - All moment-in-time timestamps (`events.timestamp`, `test_results.timestamp`, `observations.created_at`) are now standardized on UTC storage with browser-local display/input via new `app.js` helpers (see below)
 - Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes — prompt tuned to be terse and skip restating tank inventory (see below)
 - Timeline entries are now individually deletable, routed by kind to the existing per-entity delete endpoint (see below)
@@ -218,8 +219,8 @@ Template: `fathom/templates/tanks/quick_log.html`
 - Recurring schedule feature added; full app built and committed
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
-- **Not yet deployed to Mac mini** — commits on local main, remote: `git@github.com:the-mace/aquarium-tracker.git`
-- Next step: push to remote and restart launchd service on Mac mini (192.168.50.205)
+- **Not yet deployed to Mac mini** — commits pushed to `git@github.com:the-mace/aquarium-tracker.git` main, but the running service on the Mac mini hasn't pulled/restarted yet
+- Next step: pull latest on the Mac mini and restart launchd service (192.168.50.205)
 - **Prompt caching**: not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user
 
 ## Testing
@@ -233,6 +234,12 @@ Template: `fathom/templates/tanks/quick_log.html`
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation.
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-02 session (eighth)
+
+- **Equipment specs field UX**: the "Specs (JSON or description)" label/placeholder implied users should type JSON, but nobody would do that by hand. Relabeled to plain "Specs" on both Add and Edit forms. The edit modal was also prefilling the raw stored JSON (e.g. `{"type": "prefilter sponge"}` from imports, or `{"description": "..."}` for hand-typed text) straight into the textarea — added `_specs_display()` in `equipment.py` (list route only) to flatten any stored JSON back to readable plain text (`{"description": x}` → `x`; other dicts → `key: value, key: value`; falls back to raw string if not JSON). Saving still goes through the existing wrap-as-JSON-if-not-valid-JSON logic in the POST handlers, unchanged.
+- **Action button spacing**: Equipment and Purchases table rows had their Edit/💬 Observations/✕ delete buttons packed edge-to-edge with no gap (inline elements, no margin). Added `class="actions-cell"` to both tables' action `<td>` and a `.actions-cell > * + * { margin-left: .35rem }` CSS rule.
+- 1 test suite run only (no new tests — pure display/CSS fix, existing 233 still pass).
 
 ### Changes in 2026-07-02 session (seventh)
 
