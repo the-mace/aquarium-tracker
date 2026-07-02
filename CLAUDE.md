@@ -207,7 +207,8 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-07-02)
 
-- All moment-in-time timestamps (`events.timestamp`, `test_results.timestamp`, `observations.created_at`) are now standardized on UTC storage with browser-local display/input via new `app.js` helpers (see below); 230 tests passing
+- Population chart now shows currently-"many"/unknown-count species as a gap + "(now: many)" legend label instead of freezing at a stale precise number; equipment and purchases are now editable in the UI; import prompt strips parenthetical detail out of `source` (inhabitants/plants/hardscape) and equipment `model` into `notes` (see below); 233 tests passing
+- All moment-in-time timestamps (`events.timestamp`, `test_results.timestamp`, `observations.created_at`) are now standardized on UTC storage with browser-local display/input via new `app.js` helpers (see below)
 - Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes — prompt tuned to be terse and skip restating tank inventory (see below)
 - Timeline entries are now individually deletable, routed by kind to the existing per-entity delete endpoint (see below)
 - `tanks.notes` (free-text field, e.g. "Targets: GH 7-8, KH 2-10...") is now included in every AI prompt (recommendation, analysis, summary, chat) so tank-specific accepted baselines override generic species norms (see below)
@@ -223,7 +224,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-230 pytest integration tests in `fathom/tests/`. Run with:
+233 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
@@ -232,6 +233,13 @@ Template: `fathom/templates/tanks/quick_log.html`
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation.
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-02 session (seventh)
+
+- **Population chart froze at a stale precise number once a species' count became "many"/unknown**: `update_inhabitant` only ever inserted a `population_events` row when transitioning between two *known* counts (`actual_count is not None and old["count"] is not None`) — going from a known count to `count_unknown=true` (or back) silently updated `inhabitants.count` but recorded no event, so the chart's delta-summed line just kept showing the last known total forever (e.g. Ramshorn Snail frozen at 24, Bladder Snail frozen at 2, on Rob's real tank-5 data). Rather than invent a new event type for the delta model, `chart_population`'s `current` query (`routers/tanks.py`) dropped its `count > 0` filter so it now returns *every* inhabitant including unknown ones (`count: null`), and `loadPopChart` (`app.js`) uses that as the authoritative value for "today" instead of the summed running total — a `null` there is a real gap in the Chart.js line (default `spanGaps: false`), and the dataset legend label gets a `(now: many)` suffix. Verified live against tank 5 by inspecting the actual `Chart.js` dataset arrays via Playwright: Ramshorn/Bladder Snail data now end in `null` after their last known-count date, Fire Red Shrimp (still numerically tracked) is unaffected.
+- **Import prompt: parenthetical detail dumped into structured fields instead of notes**: same pattern as the existing hardscape-item-name (rule 13) and equipment-brand/model-split (rule 14) fixes, found in two more places on Rob's real tank-5 data. Rule 15: `source` (inhabitants/plants/hardscape) should be a short vendor/origin name only — `"SF Aquatic (purchased online, $31.02)"` should become `source="SF Aquatic"` + the parenthetical moved to `notes`. Rule 16: equipment `model` should be the product name only, not a full listing title — `"Prefilter Intake Cover for Fluval Flex Spec Evo (Spec III & V 2.6/5G)"` should become `model="Prefilter Intake Cover"` + the compatibility note moved to `notes`. Both are prompt-only fixes (`IMPORT_PROMPT` in `import_data.py`); existing bad rows in tank 5 were left as-is (real production data, not touched without being asked).
+- **Equipment and purchases were view/add/delete-only in the UI** — no way to fix a typo or update a value without deleting and re-adding. `equipment.py` already had a working `POST /{eq_id}/update` backend with no UI wired to it; added an edit modal + button to `equipment/list.html` (data-attributes read via JS, same pattern as the ref-info trigger, to avoid the quote-escaping fragility of the existing `openEditInh`-style inline-string approach). Purchases had no update endpoint at all — added `POST /purchases/{purchase_id}/update` to `purchases.py` (unprefixed, matching the existing delete route's shape) plus a matching edit modal in `purchases/list.html`. Both verified end-to-end live via Playwright (prefill → edit → save → persisted) against tank 4 (scratch tank).
+- 3 new tests: equipment update, purchase update, population-chart `current` includes unknown-count inhabitants.
 
 ### Changes in 2026-07-02 session (sixth)
 

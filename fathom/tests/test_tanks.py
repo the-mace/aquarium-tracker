@@ -156,6 +156,21 @@ def test_chart_population_shape(client, tank_id):
     assert "events" in body and "current" in body
 
 
+def test_chart_population_current_includes_unknown_count_inhabitants(client, tank_id):
+    # A species whose count later becomes "many"/unknown (count IS NULL) must still
+    # appear in `current` — the frontend chart uses it as the authoritative "today"
+    # value instead of a stale summed total. Previously `count > 0` filtered it out.
+    client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "Bladder Snail", "count_unknown": "on"},
+        headers={"Accept": "application/json"},
+    )
+    body = client.get(f"/tanks/{tank_id}/charts/population").json()
+    names = {c["common_name"]: c["count"] for c in body["current"]}
+    assert names.get("Bladder Snail") is None
+    assert "Bladder Snail" in names
+
+
 def test_chart_costs_shape(client, tank_id):
     body = client.get(f"/tanks/{tank_id}/charts/costs").json()
     assert "by_category" in body and "by_month" in body

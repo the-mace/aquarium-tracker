@@ -277,7 +277,7 @@ async def chart_population(tank_id: int):
             (tank_id,),
         ).fetchall())
         current = rows_to_list(conn.execute(
-            "SELECT common_name, species, count FROM inhabitants WHERE tank_id = ? AND count > 0",
+            "SELECT common_name, species, count FROM inhabitants WHERE tank_id = ?",
             (tank_id,),
         ).fetchall())
     return JSONResponse({"events": events, "current": current})

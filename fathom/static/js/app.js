@@ -156,7 +156,7 @@ async function loadPopChart(tankId) {
   if (!canvas) return;
   try {
     const res = await fetch(`/tanks/${tankId}/charts/population`);
-    const { events } = await res.json();
+    const { events, current } = await res.json();
     if (!events.length) return;
 
     // Sum each event's +/- delta into per-species, per-day buckets, then
@@ -176,19 +176,33 @@ async function loadPopChart(tankId) {
     });
     if (!speciesLabels.length) return;
 
+    // Current count per species, straight from the inhabitants table (not derived
+    // from summed deltas) — authoritative for "today", and null when the species'
+    // count has since become unknown/"many" (a state population_events can't record).
+    const currentByLabel = {};
+    (current || []).forEach(c => {
+      currentByLabel[c.common_name || c.species || 'Unknown'] = c.count;
+    });
+
     const today = new Date().toISOString().slice(0, 10);
     const dates = Object.keys(deltaByDate).sort();
     if (dates[dates.length - 1] !== today) dates.push(today);
 
     const colors = ['#00c4a0','#38bdf8','#a78bfa','#fb923c','#facc15','#34d399','#f87171'];
     const datasets = speciesLabels.map((label, i) => {
+      const nowUnknown = Object.prototype.hasOwnProperty.call(currentByLabel, label) && currentByLabel[label] === null;
       let running = 0;
       const data = dates.map(date => {
+        if (date === today && Object.prototype.hasOwnProperty.call(currentByLabel, label)) {
+          // Authoritative current value; null leaves a gap, signaling "now unknown"
+          // instead of freezing the line at a stale, misleadingly-precise number.
+          return currentByLabel[label];
+        }
         running += (deltaByDate[date] && deltaByDate[date][label]) || 0;
         return running;
       });
       return {
-        label,
+        label: nowUnknown ? `${label} (now: many)` : label,
         data,
         borderColor: colors[i % colors.length],
         backgroundColor: colors[i % colors.length] + '22',

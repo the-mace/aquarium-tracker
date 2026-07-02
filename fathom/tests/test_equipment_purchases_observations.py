@@ -49,6 +49,25 @@ def test_equipment_list_page(client, tank_id):
     assert client.get(f"/tanks/{tank_id}/equipment").status_code == 200
 
 
+def test_update_equipment(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/equipment",
+        data={"category": "filter", "brand": "AquaClear", "model": "20"},
+        headers={"Accept": "application/json"},
+    )
+    eq_id = r.json()["id"]
+    r2 = client.post(
+        f"/tanks/{tank_id}/equipment/{eq_id}/update",
+        data={"category": "filter", "brand": "Fluval", "model": "306", "is_active": "0", "notes": "Swapped out"},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 303
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute("SELECT brand, model, is_active, notes FROM tank_equipment WHERE id=?", (eq_id,)).fetchone()
+    conn.close()
+    assert row == ("Fluval", "306", 0, "Swapped out")
+
+
 def test_delete_equipment(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/equipment",
@@ -367,6 +386,29 @@ def test_add_purchase_persisted(client, tank_id):
 
 def test_list_purchases_page(client, tank_id):
     assert client.get(f"/tanks/{tank_id}/purchases").status_code == 200
+
+
+def test_update_purchase(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/purchases",
+        data={"item": "Filter media", "category": "consumables", "cost": "12.50"},
+        headers={"Accept": "application/json"},
+    )
+    pid = r.json()["id"]
+    r2 = client.post(
+        f"/purchases/{pid}/update",
+        data={"item": "Filter media (large)", "category": "equipment", "vendor": "LFS", "cost": "15.00", "purchase_date": "2026-06-01"},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 303
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute("SELECT item, category, vendor, cost, purchase_date FROM purchases WHERE id=?", (pid,)).fetchone()
+    conn.close()
+    assert row[0] == "Filter media (large)"
+    assert row[1] == "equipment"
+    assert row[2] == "LFS"
+    assert abs(row[3] - 15.0) < 0.001
+    assert row[4] == "2026-06-01"
 
 
 def test_delete_purchase(client, tank_id):

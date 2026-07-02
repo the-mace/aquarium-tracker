@@ -32,6 +32,12 @@
         <td><span class="badge {% if eq.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ 'active' if eq.is_active else 'inactive' }}</span></td>
         <td class="muted">{{ eq.notes or '' }}</td>
         <td>
+          <button class="btn btn-xs btn-ghost" onclick="openEditEq(this)"
+                  data-id="{{ eq.id }}" data-category="{{ eq.category or '' }}"
+                  data-brand="{{ (eq.brand or '')|e }}" data-model="{{ (eq.model or '')|e }}"
+                  data-specs="{{ (eq.specs or '')|e }}" data-installed="{{ eq.installed_date or '' }}"
+                  data-removed="{{ eq.removed_date or '' }}" data-active="{{ eq.is_active }}"
+                  data-notes="{{ (eq.notes or '')|e }}">Edit</button>
           <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=equipment&link_id={{ eq.id }}">💬 Observations</a>
           <form method="post" action="/tanks/{{ tank.id }}/equipment/{{ eq.id }}/delete" style="display:inline" onsubmit="return confirm('Remove this equipment?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>
@@ -81,4 +87,56 @@
     </form>
   </div>
 </div>
+
+<div id="modal-edit-eq" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit Equipment</h3><button class="modal-close" onclick="closeModal('modal-edit-eq')">×</button></div>
+    <form id="edit-eq-form" method="post" action="">
+      <div class="form-grid">
+        <div class="form-group"><label>Category *</label>
+          <select name="category" id="edit-eq-category" required>
+            <option value="filter">Filter</option>
+            <option value="heater">Heater</option>
+            <option value="light">Light</option>
+            <option value="uv">UV Sterilizer</option>
+            <option value="pump">Pump</option>
+            <option value="co2">CO₂</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Brand</label><input type="text" name="brand" id="edit-eq-brand"></div>
+        <div class="form-group"><label>Model</label><input type="text" name="model" id="edit-eq-model"></div>
+        <div class="form-group"><label>Installed Date</label><input type="date" name="installed_date" id="edit-eq-installed"></div>
+        <div class="form-group"><label>Removed Date</label><input type="date" name="removed_date" id="edit-eq-removed"></div>
+        <div class="form-group"><label>Status</label>
+          <select name="is_active" id="edit-eq-active">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Specs (JSON or description)</label><textarea name="specs" rows="2" id="edit-eq-specs"></textarea></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-eq-notes"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-eq')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEditEq(btn) {
+  const d = btn.dataset;
+  document.getElementById('edit-eq-form').action = `/tanks/{{ tank.id }}/equipment/${d.id}/update`;
+  document.getElementById('edit-eq-category').value = d.category;
+  document.getElementById('edit-eq-brand').value = d.brand;
+  document.getElementById('edit-eq-model').value = d.model;
+  document.getElementById('edit-eq-specs').value = d.specs;
+  document.getElementById('edit-eq-installed').value = d.installed;
+  document.getElementById('edit-eq-removed').value = d.removed;
+  document.getElementById('edit-eq-active').value = d.active;
+  document.getElementById('edit-eq-notes').value = d.notes;
+  openModal('modal-edit-eq');
+}
+</script>
 {% endblock %}

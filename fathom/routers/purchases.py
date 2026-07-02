@@ -52,6 +52,31 @@ async def add_purchase_for_tank(
     return RedirectResponse(url=f"/tanks/{tank_id}/purchases", status_code=303)
 
 
+@router.post("/purchases/{purchase_id}/update")
+async def update_purchase(
+    request: Request,
+    purchase_id: int,
+    item: str = Form(...),
+    category: str = Form("other"),
+    vendor: Optional[str] = Form(None),
+    cost: Optional[float] = Form(None),
+    purchase_date: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    with get_db() as conn:
+        row = row_to_dict(conn.execute(
+            "SELECT tank_id FROM purchases WHERE id = ?", (purchase_id,),
+        ).fetchone())
+        if not row:
+            raise HTTPException(status_code=404, detail="Purchase not found")
+        conn.execute(
+            "UPDATE purchases SET item=?, category=?, vendor=?, cost=?, purchase_date=?, notes=?,"
+            " updated_at=datetime('now') WHERE id=?",
+            (item, category, vendor, cost, purchase_date, notes, purchase_id),
+        )
+    return RedirectResponse(url=f"/tanks/{row['tank_id']}/purchases", status_code=303)
+
+
 @router.post("/purchases/{purchase_id}/delete")
 async def delete_purchase(request: Request, purchase_id: int):
     with get_db() as conn:

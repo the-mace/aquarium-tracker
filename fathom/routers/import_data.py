@@ -136,6 +136,10 @@ Valid plant status: active, removed
 
 14. EQUIPMENT BRAND/MODEL SPLIT: brand and model are separate fields — never dump the whole product name into model while leaving brand null. The brand is the manufacturer/product-line name, usually the leading word(s) of the product name; the model is the remaining descriptive part. Examples: "Aquarium Clean Light 3W Mini Submersible UV Light" → brand="Aquarium Clean", model="3W Mini Submersible UV Light"; "Fluval Spec V" → brand="Fluval", model="Spec V"; "Fluval 306 Canister Filter" → brand="Fluval", model="306 Canister Filter". Only leave brand null if no manufacturer/product-line name is identifiable in the text at all (e.g. a bare generic description like "small air pump").
 
+15. SOURCE FIELD (inhabitants, plants, hardscape): source should be a short vendor/origin name only (e.g. "SF Aquatic", "LFS", "Local breeder", "Trade"). If the source text includes a parenthetical qualifier after the name (e.g. "SF Aquatic (purchased online, $31.02)"), strip the parenthetical from source and move its contents into the notes field instead. Never include parenthetical text in the source field.
+
+16. EQUIPMENT MODEL FIELD: model should be the product name only, not a full descriptive listing title. If the source text includes a parenthetical compatibility/spec note after the product name (e.g. "Prefilter Intake Cover for Fluval Flex Spec Evo (Spec III & V 2.6/5G)", "Wireless Digital Thermometer (±1°F)"), strip the parenthetical from model and move it into notes instead — e.g. model="Prefilter Intake Cover", notes="Compatible with Spec III & V 2.6/5G". Never include parenthetical text in the model field.
+
 Use "YYYY-MM-DD 12:00:00" for timestamps where time is unknown — timestamps are stored as UTC and displayed in the user's local timezone, so anchoring unknown times to noon (rather than midnight) keeps the displayed calendar date correct regardless of timezone offset. Omit tank_specs fields that are null. Return empty arrays (not null) for sections with no data found. Do NOT invent data that is not present or clearly inferable.
 
 TEXT TO PARSE:
