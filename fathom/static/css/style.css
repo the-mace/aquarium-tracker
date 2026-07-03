@@ -746,7 +746,7 @@ p { margin-bottom: .5rem; }
 /* ── Tank Specs Panel ───────────────────────────────────────────────────── */
 .specs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: .5rem .75rem;
 }
 .spec-item { display: flex; flex-direction: column; gap: .1rem; }
