@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -55,6 +56,8 @@ async def update_issue(
     description: Optional[str] = Form(None),
     status: str = Form("open"),
     notes: Optional[str] = Form(None),
+    comment: Optional[str] = Form(None),
+    resolved_at: Optional[str] = Form(None),
 ):
     with get_db() as conn:
         existing = row_to_dict(conn.execute(
@@ -63,17 +66,27 @@ async def update_issue(
         if not existing:
             raise HTTPException(status_code=404, detail="Issue not found")
 
-        resolved_at = "datetime('now')" if status == "resolved" and existing["status"] != "resolved" else existing.get("resolved_at")
-        if status == "resolved" and existing["status"] != "resolved":
+        final_title = title if title is not None else existing["title"]
+        final_description = description if description is not None else existing["description"]
+        final_notes = notes if notes is not None else existing["notes"]
+        if comment:
+            final_notes = f"{final_notes}\n\n{comment}" if final_notes else comment
+
+        becoming_resolved = status == "resolved" and existing["status"] != "resolved"
+        if becoming_resolved:
+            resolved_value = (
+                f"{resolved_at} 12:00:00" if resolved_at
+                else datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            )
             conn.execute(
                 """UPDATE issues SET title=?, description=?, status=?, notes=?,
-                   resolved_at=datetime('now'), updated_at=datetime('now') WHERE id=?""",
-                (title or existing["title"], description, status, notes, issue_id),
+                   resolved_at=?, updated_at=datetime('now') WHERE id=?""",
+                (final_title, final_description, status, final_notes, resolved_value, issue_id),
             )
         else:
             conn.execute(
                 "UPDATE issues SET title=?, description=?, status=?, notes=?, updated_at=datetime('now') WHERE id=?",
-                (title or existing["title"], description, status, notes, issue_id),
+                (final_title, final_description, status, final_notes, issue_id),
             )
 
     accept = request.headers.get("accept", "")
