@@ -45,7 +45,19 @@ app = FastAPI(title="Fathom", description="Smart aquarium tracking")
 
 BASE_DIR = Path(__file__).parent
 
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+class NoCacheStaticFiles(StaticFiles):
+    """No build step means no versioned/hashed filenames for static assets, so a
+    browser's heuristic cache can sit on a stale style.css/app.js for a long time
+    after a deploy with no way to know it changed. Force revalidation on every
+    request (still cheap: unchanged files get a 304 via ETag/Last-Modified)."""
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
