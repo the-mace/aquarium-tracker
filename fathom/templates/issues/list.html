@@ -31,17 +31,18 @@
     {% if issue.notes %}<p class="issue-notes muted">{{ issue.notes }}</p>{% endif %}
     <div class="issue-card-footer">
       <span class="muted">Opened {{ issue.opened_at }}</span>
+      {% if issue.monitoring_at %}<span class="muted">Monitoring since {{ issue.monitoring_at }}</span>{% endif %}
       {% if issue.resolved_at %}<span class="muted">Resolved {{ issue.resolved_at }}</span>{% endif %}
       <div class="issue-actions">
-        {% if issue.status == 'monitoring' %}
+        {% if issue.status == 'open' %}
+        <button class="btn btn-xs btn-ghost" type="button" data-issue-id="{{ issue.id }}" data-issue-title="{{ issue.title }}" onclick="openMonitorModal(this)">→ Monitoring</button>
+        {% elif issue.status == 'monitoring' %}
         <button class="btn btn-xs btn-ghost" type="button" data-issue-id="{{ issue.id }}" data-issue-title="{{ issue.title }}" onclick="openResolveModal(this)">→ Resolved</button>
         {% else %}
         <form method="post" action="/tanks/{{ tank.id }}/issues/{{ issue.id }}/update" style="display:inline">
-          <input type="hidden" name="status" value="{% if issue.status == 'open' %}monitoring{% else %}open{% endif %}">
+          <input type="hidden" name="status" value="open">
           <input type="hidden" name="title" value="{{ issue.title }}">
-          <button class="btn btn-xs btn-ghost" type="submit">
-            {% if issue.status == 'open' %}→ Monitoring{% else %}Re-open{% endif %}
-          </button>
+          <button class="btn btn-xs btn-ghost" type="submit">Re-open</button>
         </form>
         {% endif %}
         <form method="post" action="/tanks/{{ tank.id }}/issues/{{ issue.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this issue?')">
@@ -93,6 +94,19 @@
     </form>
   </div>
 </div>
+
+<div id="modal-monitor-issue" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Move to Monitoring</h3><button class="modal-close" onclick="closeModal('modal-monitor-issue')">×</button></div>
+    <form id="monitor-issue-form" method="post">
+      <input type="hidden" name="status" value="monitoring">
+      <input type="hidden" name="title" id="monitor-issue-title">
+      <div class="form-group"><label>Monitoring since</label><input type="date" name="monitoring_at" id="monitor-issue-date" required></div>
+      <div class="form-group"><label>Note (optional)</label><textarea name="comment" rows="3" placeholder="What are you watching for?"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-monitor-issue')">Cancel</button><button class="btn btn-primary" type="submit">Move to Monitoring</button></div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -100,16 +114,24 @@
 let activeStatus = 'all';
 let sortOldestFirst = false;
 
-function openResolveModal(btn) {
+function _openIssueTransitionModal(modalId, formId, titleFieldId, dateFieldId, btn) {
   const issueId = btn.dataset.issueId;
-  const form = document.getElementById('resolve-issue-form');
+  const form = document.getElementById(formId);
   form.action = `/tanks/{{ tank.id }}/issues/${issueId}/update`;
-  document.getElementById('resolve-issue-title').value = btn.dataset.issueTitle;
+  document.getElementById(titleFieldId).value = btn.dataset.issueTitle;
   form.querySelector('textarea[name="comment"]').value = '';
   const d = new Date();
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  document.getElementById('resolve-issue-date').value = local.toISOString().slice(0, 10);
-  openModal('modal-resolve-issue');
+  document.getElementById(dateFieldId).value = local.toISOString().slice(0, 10);
+  openModal(modalId);
+}
+
+function openResolveModal(btn) {
+  _openIssueTransitionModal('modal-resolve-issue', 'resolve-issue-form', 'resolve-issue-title', 'resolve-issue-date', btn);
+}
+
+function openMonitorModal(btn) {
+  _openIssueTransitionModal('modal-monitor-issue', 'monitor-issue-form', 'monitor-issue-title', 'monitor-issue-date', btn);
 }
 
 function setStatusFilter(btn, status) {

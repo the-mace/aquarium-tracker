@@ -201,6 +201,7 @@ def init_db():
                 description TEXT,
                 status TEXT DEFAULT 'open' CHECK(status IN ('open','monitoring','resolved')),
                 opened_at TEXT DEFAULT (datetime('now')),
+                monitoring_at TEXT,
                 resolved_at TEXT,
                 notes TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
@@ -324,6 +325,11 @@ def init_db():
             conn.execute(
                 "ALTER TABLE events ADD COLUMN schedule_id INTEGER REFERENCES recurring_schedule(id) ON DELETE SET NULL"
             )
+
+        # Migration: add monitoring_at to issues if not present
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(issues)").fetchall()}
+        if "monitoring_at" not in cols:
+            conn.execute("ALTER TABLE issues ADD COLUMN monitoring_at TEXT")
 
         # Migration: move per-entity observation links (previously 4 nullable FK columns) into
         # the observation_links junction table so one observation can link to multiple entities

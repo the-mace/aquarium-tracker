@@ -57,6 +57,7 @@ async def update_issue(
     status: str = Form("open"),
     notes: Optional[str] = Form(None),
     comment: Optional[str] = Form(None),
+    monitoring_at: Optional[str] = Form(None),
     resolved_at: Optional[str] = Form(None),
 ):
     with get_db() as conn:
@@ -72,22 +73,22 @@ async def update_issue(
         if comment:
             final_notes = f"{final_notes}\n\n{comment}" if final_notes else comment
 
-        becoming_resolved = status == "resolved" and existing["status"] != "resolved"
-        if becoming_resolved:
-            resolved_value = (
-                f"{resolved_at} 12:00:00" if resolved_at
+        def _timestamp(date_str):
+            return (
+                f"{date_str} 12:00:00" if date_str
                 else datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             )
-            conn.execute(
-                """UPDATE issues SET title=?, description=?, status=?, notes=?,
-                   resolved_at=?, updated_at=datetime('now') WHERE id=?""",
-                (final_title, final_description, status, final_notes, resolved_value, issue_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE issues SET title=?, description=?, status=?, notes=?, updated_at=datetime('now') WHERE id=?",
-                (final_title, final_description, status, final_notes, issue_id),
-            )
+
+        becoming_monitoring = status == "monitoring" and existing["status"] != "monitoring"
+        becoming_resolved = status == "resolved" and existing["status"] != "resolved"
+        final_monitoring_at = _timestamp(monitoring_at) if becoming_monitoring else existing["monitoring_at"]
+        final_resolved_at = _timestamp(resolved_at) if becoming_resolved else existing["resolved_at"]
+
+        conn.execute(
+            """UPDATE issues SET title=?, description=?, status=?, notes=?,
+               monitoring_at=?, resolved_at=?, updated_at=datetime('now') WHERE id=?""",
+            (final_title, final_description, status, final_notes, final_monitoring_at, final_resolved_at, issue_id),
+        )
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
