@@ -239,8 +239,10 @@ New routes (in `import_data.py`):
 
 Template: `fathom/templates/tanks/quick_log.html`
 
-## Current state (as of 2026-07-02)
+## Current state (as of 2026-07-03)
 
+- **Fully deployed and in production.** The mini is running live and reachable both internally (LAN, `http://192.168.50.205:8000`) and externally via the VPN (see "External access" above, verified 2026-07-03). Real data has been loaded into the mini's production DB (Tank 2 "Fish Tank" import confirmed clean via `bin/mini-logs` monitoring — no errors/warnings — and spot-checked directly against the live DB: sensible row counts across all sections, correct inhabitant count history, no obvious data-quality issues). This closes out the initial deployment effort — the project is no longer dev-only.
+- **The detailed per-session changelog below (the "### Changes in ... session" entries) is retired as of this note.** It served its purpose while the app was under active, rapid, single-session development, but now that Fathom is live in production, ongoing changes should be tracked via normal git history/commit messages instead of hand-written session summaries here. This "Current state" section and the rest of the file (architecture, gotchas, deployment) should still be kept up to date going forward — just not the narrative changelog.
 - Tank manufacturer/model (e.g. "Seapora 40 gallon long") now triggers a real web-search-backed AI fetch to backfill missing volume/dimensions, instead of relying on unreliable training-knowledge guessing — see eleventh-session notes below. 263 tests passing
 - Chat ("Ask AI") now has a read-only `query_db` tool so it can answer history questions (e.g. "when was X added", "GH history") instead of claiming the data doesn't exist — see tenth-session notes below.
 - Fixed a batch of real data-quality issues in the "Fish Tank" (40g, tank_id=7) import: two food/supplement items (Cuttlebone, Calcium Bites) were miscategorized as Hardscape; Otocinclus, Kuhli Loach, and non-zebra Nerite Snail were each split into two duplicate inhabitant rows because a later "recount" passage used a slightly different species string for the same population; Red Rili/Red Cherry Shrimp (merged into one inhabitant record) never got zeroed out despite the whole batch dying off. See ninth-session notes below for the fix (both this tank's data and the import root cause).
