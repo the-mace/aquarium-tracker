@@ -141,17 +141,20 @@ Import robustness: strips markdown code fences, falls back to regex `{...}` extr
 
 ## Production deployment
 
-Mac mini at `192.168.50.205`, SSH via `ssh -A rob@192.168.50.205`. Repo at `/Users/rob/aquarium-tracker` (same layout as dev). Run as a launchd system service:
+Mac mini at `192.168.50.205`, SSH via `ssh -A rob@192.168.50.205`. Repo at `/Users/rob/Documents/Code/aquarium-tracker` (same path as local dev, not `/Users/rob/aquarium-tracker` as earlier notes said). Run as a launchd system service:
 
-- Plist: `/Library/LaunchDaemons/com.fathom.plist`
-- Uvicorn binary: `/Users/rob/aquarium-tracker/.venv/bin/uvicorn`
-- Working dir: `/Users/rob/aquarium-tracker/fathom`
-- Env: `DOTENV_PATH=/Users/rob/aquarium-tracker/.env`
+- Plist: `/Library/LaunchDaemons/com.fathom.plist` (has `UserName: rob` so it runs as `rob`, not root — a LaunchDaemon runs as root by default otherwise, which would leave the DB/venv files root-owned)
+- Uvicorn binary: `/Users/rob/Documents/Code/aquarium-tracker/.venv/bin/uvicorn`
+- Working dir: `/Users/rob/Documents/Code/aquarium-tracker/fathom`
+- Env: `DOTENV_PATH=/Users/rob/Documents/Code/aquarium-tracker/.env`
 - Logs: `/tmp/fathom.log` / `/tmp/fathom.err`
+- venv built with `~/.pyenv/versions/3.14.0/bin/python3` (matches local dev's pyenv version; the mini's system `/usr/bin/python3` is 3.9.6 and unsuitable)
+
+`sudo launchctl load`/`unload` need an interactive password — non-interactive `ssh host "sudo ..."` will fail with "a password is required". Use `ssh -A -t` for a single sudo command, or `ssh -A rob@192.168.50.205` to get a shell and run sudo commands one at a time there.
 
 Reload after deploy: `ssh -A rob@192.168.50.205 "sudo launchctl unload /Library/LaunchDaemons/com.fathom.plist && sudo launchctl load /Library/LaunchDaemons/com.fathom.plist"`
 
-S3 backup cron (3am daily): `0 3 * * * cd /Users/rob/aquarium-tracker && bash fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1`
+S3 backup cron (3am daily, **not yet set up** — see below): `0 3 * * * cd /Users/rob/Documents/Code/aquarium-tracker && bash fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1`
 
 ## Database schema (12 tables)
 
@@ -224,8 +227,8 @@ Template: `fathom/templates/tanks/quick_log.html`
 - Recurring schedule feature added; full app built and committed
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
-- **Not yet deployed to Mac mini** — commits pushed to `git@github.com:the-mace/aquarium-tracker.git` main, but the running service on the Mac mini hasn't pulled/restarted yet
-- Next step: pull latest on the Mac mini and restart launchd service (192.168.50.205)
+- **Deployed to Mac mini for the first time on 2026-07-03** — see twelfth-session notes below. Running live at `192.168.50.205:8000` as a fresh install (empty DB, no tanks yet). S3 backup cron intentionally **not** set up yet — `S3_BACKUP_BUCKET` in `.env` is still a placeholder; needs a real bucket name before `awscli` install + cron wiring.
+- Ongoing: after future commits, deploy by pulling on the mini and reloading the service — see "Reload after deploy" above.
 - **Prompt caching**: not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user
 
 ## Testing
@@ -239,6 +242,18 @@ Template: `fathom/templates/tanks/quick_log.html`
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`).
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-03 session (twelfth)
+
+- **First-ever deployment to the Mac mini.** The mini had literally never been touched for this project — no repo, no venv, no plist, no cron entry. Full first-time setup performed live over SSH (`ssh -A rob@192.168.50.205`):
+  - `git clone git@github.com:the-mace/aquarium-tracker.git` — initially cloned to `/Users/rob/aquarium-tracker` per the (aspirational, never-validated) path in this file's older "Production deployment" section, then **moved to `/Users/rob/Documents/Code/aquarium-tracker`** per Rob's correction, to match the local dev machine's layout. Updated "Production deployment" above accordingly — that section's paths were wrong until this session actually exercised them.
+  - venv built with `~/.pyenv/versions/3.14.0/bin/python3` (already installed on the mini, matches local dev's pyenv version) — the mini's system `/usr/bin/python3` is 3.9.6, too old and not what dev uses. `pip install -r requirements.txt` succeeded clean, no compiled-wheel issues despite Xcode CLT not being strictly needed (was present anyway).
+  - `.env` copied from local dev via `scp` (contains the real `ANTHROPIC_API_KEY`), `chmod 600` on the remote copy.
+  - `com.fathom.plist` installed as a system `LaunchDaemon` at `/Library/LaunchDaemons/com.fathom.plist` — added a `UserName: rob` key (not present in the README's example plist) so it runs as `rob` rather than root; a `LaunchDaemon` without `UserName` runs as root by default, which would've left the DB/venv files root-owned and broken future `git pull`/manual runs as `rob`.
+  - **`sudo launchctl load` needs an interactive password** — a plain `ssh host "sudo ..."` fails with "a password is required" since there's no TTY. Also tried `ssh -A -t host "cmd1 && cmd2 && ..."` as one chained line, which Rob reported failing with a `zsh: permission denied: /Library/LaunchDaemons/com.fathom.plist` error — looked like a quoting/paste issue splitting the chained command apart in his terminal rather than an actual permission problem (the final bare path got executed standalone). Fix: have Rob `ssh -A rob@192.168.50.205` to get a real interactive shell first, then run each `sudo mv`/`chown`/`chmod`/`launchctl load` command one at a time there — worked cleanly.
+  - Verified thoroughly post-deploy (not just "it started"): log tail showed clean `Application startup complete`; `curl localhost:8000/` returned the expected `307` (root redirect) and `curl -L .../` showed the real dashboard title; fresh `fathom.db` auto-created via `init_db()` on first request with all 13+ tables and 0 tank rows (confirmed by direct `sqlite3` query over SSH, to make sure a stray dev DB hadn't been copied over by accident); **killed the running uvicorn PID directly and confirmed launchd's `KeepAlive` respawned it within 3 seconds** and the service kept serving `200`s — this is the check that actually proves the LaunchDaemon (not just a manually-started process) is in control, since `ps aux` alone can't distinguish the two.
+  - **Deliberately did not set up the S3 backup cron this session** — `.env`'s `S3_BACKUP_BUCKET` is still the literal placeholder `your-bucket-name` from `.env.example`, never actually configured even in local dev. `awscli` is also not yet installed on the mini. Discussed S3 bucket naming with Rob (bucket names are globally unique across all AWS accounts, not just his — a generic name like `fathom-backups` is very likely already taken elsewhere) but didn't land on a final name before the session's context was consumed; revisit next session.
+  - No code changes this session — pure infrastructure/ops. Test suite untouched.
 
 ### Changes in 2026-07-02 session (eleventh)
 
