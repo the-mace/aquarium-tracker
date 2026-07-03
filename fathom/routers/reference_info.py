@@ -2,6 +2,7 @@ import os
 import json
 import re
 import time
+import threading
 import logging
 import urllib.request
 import urllib.parse
@@ -12,6 +13,28 @@ from database import get_db, get_ref_db, row_to_dict
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reference_info"])
+
+# Wikimedia asks for a descriptive User-Agent identifying the app + a contact method
+# (https://meta.wikimedia.org/wiki/User-Agent_policy) — generic/anonymous UAs are more
+# likely to land in a stricter shared rate-limit tier, which is the likely reason the
+# mini started getting 429s on image HEAD checks partway through a fetch batch.
+_WIKIMEDIA_USER_AGENT = "Fathom/1.0 (https://github.com/the-mace/aquarium-tracker; personal aquarium-tracking app)"
+
+# Minimum gap enforced between any request to *.wikimedia.org (search API + per-image
+# HEAD checks), across all entities/threads, to stay well under their rate limits during
+# a big batch (e.g. a fresh import queuing many entities' fetches back to back).
+_WIKIMEDIA_MIN_INTERVAL = 1.5
+_wikimedia_lock = threading.Lock()
+_last_wikimedia_request = 0.0
+
+
+def _wikimedia_throttle():
+    global _last_wikimedia_request
+    with _wikimedia_lock:
+        wait = _last_wikimedia_request + _WIKIMEDIA_MIN_INTERVAL - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_wikimedia_request = time.monotonic()
 
 # Wikimedia Commons API + DDG fallback produces better results than hand-curated URLs
 # for most entities, but reference_info is keyed at the species level, so all color
@@ -281,7 +304,8 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                         f"&generator=search&gsrsearch={wiki_query}&gsrnamespace=6&gsrlimit=8"
                         f"&prop=imageinfo|categories&iiprop=url&cllimit=50&format=json"
                     )
-                    wiki_req = urllib.request.Request(wiki_api, headers={"User-Agent": "Fathom/1.0"})
+                    wiki_req = urllib.request.Request(wiki_api, headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
+                    _wikimedia_throttle()
                     t1 = time.monotonic()
                     with urllib.request.urlopen(wiki_req, timeout=10) as wiki_resp:
                         wiki_data = json.loads(wiki_resp.read())
@@ -305,8 +329,10 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                 def _verify(candidate_list):
                     for candidate_url, candidate_source in candidate_list:
                         try:
+                            if "wikimedia.org" in candidate_url:
+                                _wikimedia_throttle()
                             req = urllib.request.Request(candidate_url, method="HEAD",
-                                                         headers={"User-Agent": "Fathom/1.0"})
+                                                         headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
                             with urllib.request.urlopen(req, timeout=8) as resp:
                                 content_type = resp.headers.get("Content-Type", "")
                                 if resp.status == 200 and content_type.startswith("image/"):
@@ -458,7 +484,9 @@ async def set_reference_image(request: Request):
         return JSONResponse({"error": "image_url required"}, status_code=400)
 
     try:
-        req = urllib.request.Request(image_url, method="HEAD", headers={"User-Agent": "Fathom/1.0"})
+        if "wikimedia.org" in image_url:
+            _wikimedia_throttle()
+        req = urllib.request.Request(image_url, method="HEAD", headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
         with urllib.request.urlopen(req, timeout=8) as resp:
             content_type = resp.headers.get("Content-Type", "")
             if resp.status != 200 or not content_type.startswith("image/"):
