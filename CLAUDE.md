@@ -148,6 +148,12 @@ Import robustness: strips markdown code fences, falls back to regex `{...}` extr
 - **venv location** — `.venv` is at repo root (`aquarium-tracker/.venv`), not inside `fathom/`. Activate with `source ../.venv/bin/activate` from the `fathom/` directory.
 - **Pre-commit hook** — scans staged files for `sk-ant-`, `AKIA`, GitHub tokens, etc. Will block commits with secrets. Hook is at `.git/hooks/pre-commit`.
 
+## External access
+
+The mini (and the LAN it's on) is reached from outside the house via a VPN, with DuckDNS used for the dynamic-DNS piece the VPN endpoint needs. Domain name and DuckDNS/VPN account details deliberately omitted from this file (public repo) — VPN setup/config was handled in a separate session and is not documented here beyond this note.
+
+**Remote VPN access configured and verified working as of 2026-07-03**: L2TP with IPsec via the home router's built-in Remote User Access VPN server, "Listen On" scoped to the WAN interface that actually carries a public IP (the other WAN uplink is CGNAT and unreachable from outside). iOS's native VPN client is used with "Send All Traffic" left off, so only traffic to the home LAN's subnet is tunneled — normal browsing/other apps on the phone are unaffected (split tunnel). Tested end-to-end from an iPhone on cellular data (Wi-Fi off — testing from inside the home Wi-Fi doesn't work due to NAT hairpin/loopback limitations): VPN connects, and `http://192.168.50.205:8000` (the mini) loads correctly over the tunnel by IP.
+
 ## Production deployment
 
 Mac mini at `192.168.50.205`, SSH via `ssh -A rob@192.168.50.205`. Repo at `/Users/rob/Documents/Code/aquarium-tracker` (same path as local dev, not `/Users/rob/aquarium-tracker` as earlier notes said). Run as a launchd system service:
