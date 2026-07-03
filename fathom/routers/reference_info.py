@@ -13,9 +13,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reference_info"])
 
-# Intentionally False — Wikimedia Commons API + DDG fallback produces better results
-# than hand-curated URLs. Flip to True only to pin specific images during debugging.
-USE_KNOWN_IMAGES = False
+# Wikimedia Commons API + DDG fallback produces better results than hand-curated URLs
+# for most entities, but reference_info is keyed at the species level, so all color
+# morphs of one species (e.g. Neocaridina davidi: Fire Red, Blue Dream, Yellow...) share
+# a single image. Curated entries override that when the generic search picks the wrong
+# variant. Harmless no-op for keys that don't match any current entity_name.
+USE_KNOWN_IMAGES = True
 
 # Curated image URLs — checked before web search. Add entries here to pin an image
 # permanently or provide a fallback. Keys: (entity_type, canonical_entity_name).
@@ -299,8 +302,31 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                 except Exception as wiki_err:
                     logger.debug("Wikimedia Commons search failed for %s/%s: %s", entity_type, entity_name, wiki_err)
 
-                # Phase 2: DDG fallback if Commons returned nothing
-                if not candidates:
+                def _verify(candidate_list):
+                    for candidate_url, candidate_source in candidate_list:
+                        try:
+                            req = urllib.request.Request(candidate_url, method="HEAD",
+                                                         headers={"User-Agent": "Fathom/1.0"})
+                            with urllib.request.urlopen(req, timeout=8) as resp:
+                                content_type = resp.headers.get("Content-Type", "")
+                                if resp.status == 200 and content_type.startswith("image/"):
+                                    logger.info("Reference info: image verified for %s/%s (%s): %s",
+                                                entity_type, entity_name, content_type, candidate_url)
+                                    return candidate_url, candidate_source
+                                else:
+                                    logger.debug("Reference info: skipping %s (HTTP %s, %s)",
+                                                 candidate_url, resp.status, content_type)
+                        except Exception as head_exc:
+                            logger.debug("Reference info: skipping %s (HEAD failed: %s)", candidate_url, head_exc)
+                    return None, None
+
+                # Try to verify a Commons candidate first
+                image_url, image_source = _verify(candidates)
+
+                # Phase 2: DDG fallback if Commons returned nothing, or none of its
+                # candidates verified (e.g. Wikimedia rate-limiting HEAD requests
+                # after a burst of prior fetches in the same batch)
+                if not image_url:
                     from ddgs import DDGS
                     if entity_type == "hardscape":
                         query = f"{search_name} aquarium"
@@ -311,6 +337,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                     results = list(DDGS().images(query, max_results=15))
                     logger.info("DDG image search done | %s/%s | %d results | elapsed=%.1fs",
                                 entity_type, entity_name, len(results), time.monotonic() - t1)
+                    ddg_candidates = []
                     for r in results:
                         url = r.get("image", "")
                         if url and url.startswith("https://") and re.search(
@@ -323,26 +350,9 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
                             if wiki_thumb:
                                 url = wiki_thumb.group(1) + wiki_thumb.group(2)
                             source = r.get("source") or (r.get("url", "").split("/")[2] if r.get("url") else None)
-                            candidates.append((url, source))
-
-                # Try each candidate until one passes a HEAD check
-                for candidate_url, candidate_source in candidates:
-                    try:
-                        req = urllib.request.Request(candidate_url, method="HEAD",
-                                                     headers={"User-Agent": "Fathom/1.0"})
-                        with urllib.request.urlopen(req, timeout=8) as resp:
-                            content_type = resp.headers.get("Content-Type", "")
-                            if resp.status == 200 and content_type.startswith("image/"):
-                                image_url = candidate_url
-                                image_source = candidate_source
-                                logger.info("Reference info: image verified for %s/%s (%s): %s",
-                                            entity_type, entity_name, content_type, image_url)
-                                break
-                            else:
-                                logger.debug("Reference info: skipping %s (HTTP %s, %s)",
-                                             candidate_url, resp.status, content_type)
-                    except Exception as head_exc:
-                        logger.debug("Reference info: skipping %s (HEAD failed: %s)", candidate_url, head_exc)
+                            ddg_candidates.append((url, source))
+                    candidates += ddg_candidates
+                    image_url, image_source = _verify(ddg_candidates)
 
                 if not image_url:
                     logger.warning("Reference info: no valid image found for %s/%s after %d candidates",
