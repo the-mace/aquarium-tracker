@@ -37,6 +37,7 @@
         {% if issue.status == 'open' %}
         <button class="btn btn-xs btn-ghost" type="button" data-issue-id="{{ issue.id }}" data-issue-title="{{ issue.title }}" onclick="openMonitorModal(this)">→ Monitoring</button>
         {% elif issue.status == 'monitoring' %}
+        <button class="btn btn-xs btn-ghost" type="button" data-issue-id="{{ issue.id }}" data-issue-title="{{ issue.title }}" data-issue-status="{{ issue.status }}" onclick="openAddNoteModal(this)">+ Note</button>
         <button class="btn btn-xs btn-ghost" type="button" data-issue-id="{{ issue.id }}" data-issue-title="{{ issue.title }}" onclick="openResolveModal(this)">→ Resolved</button>
         {% else %}
         <form method="post" action="/tanks/{{ tank.id }}/issues/{{ issue.id }}/update" style="display:inline">
@@ -107,6 +108,18 @@
     </form>
   </div>
 </div>
+
+<div id="modal-add-note-issue" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Note</h3><button class="modal-close" onclick="closeModal('modal-add-note-issue')">×</button></div>
+    <form id="add-note-issue-form" method="post" onsubmit="return prepareAddNoteSubmit(this)">
+      <input type="hidden" name="status" id="add-note-issue-status">
+      <input type="hidden" name="title" id="add-note-issue-title">
+      <div class="form-group"><label>Note</label><textarea name="comment" id="add-note-issue-text" rows="4" required placeholder="What's changed since the last check-in?"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-note-issue')">Cancel</button><button class="btn btn-primary" type="submit">Add Note</button></div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -114,16 +127,35 @@
 let activeStatus = 'all';
 let sortOldestFirst = false;
 
+function _todayLocalDateStr() {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 function _openIssueTransitionModal(modalId, formId, titleFieldId, dateFieldId, btn) {
   const issueId = btn.dataset.issueId;
   const form = document.getElementById(formId);
   form.action = `/tanks/{{ tank.id }}/issues/${issueId}/update`;
   document.getElementById(titleFieldId).value = btn.dataset.issueTitle;
   form.querySelector('textarea[name="comment"]').value = '';
-  const d = new Date();
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  document.getElementById(dateFieldId).value = local.toISOString().slice(0, 10);
+  document.getElementById(dateFieldId).value = _todayLocalDateStr();
   openModal(modalId);
+}
+
+function openAddNoteModal(btn) {
+  const form = document.getElementById('add-note-issue-form');
+  form.action = `/tanks/{{ tank.id }}/issues/${btn.dataset.issueId}/update`;
+  document.getElementById('add-note-issue-title').value = btn.dataset.issueTitle;
+  document.getElementById('add-note-issue-status').value = btn.dataset.issueStatus;
+  document.getElementById('add-note-issue-text').value = '';
+  openModal('modal-add-note-issue');
+}
+
+function prepareAddNoteSubmit(form) {
+  const textarea = form.querySelector('#add-note-issue-text');
+  textarea.value = `${_todayLocalDateStr()}: ${textarea.value}`;
+  return true;
 }
 
 function openResolveModal(btn) {
