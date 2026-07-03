@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Safely deploy the current `main` branch to the production Mac mini:
+#   1. Refuses to run if the mini's checkout has local modifications
+#   2. Backs up the live DB to S3 *before* touching anything
+#   3. git pulls (fast-forward only) and reinstalls dependencies
+#   4. Restarts the service by killing the uvicorn PID — it runs under a
+#      launchd LaunchDaemon with KeepAlive, so launchd respawns it as user
+#      `rob` with no sudo needed (sudo is only required for the one-time
+#      plist install, not routine restarts)
+#   5. Health-checks the restarted app; auto-rolls back to the previous
+#      commit if the health check fails
+set -euo pipefail
+
+MINI_HOST="rob@192.168.50.205"
+MINI_REPO="/Users/rob/Documents/Code/aquarium-tracker"
+HEALTH_PATH="/tanks"
+HEALTH_RETRIES=5
+HEALTH_RETRY_DELAY=2
+
+run() { ssh -A "$MINI_HOST" "$@"; }
+
+health_check() {
+    run "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8000${HEALTH_PATH}" 2>/dev/null || echo "000"
+}
+
+echo "==> Checking mini's working tree is clean..."
+DIRTY="$(run "cd $MINI_REPO && git status --porcelain")"
+if [ -n "$DIRTY" ]; then
+    echo "ERROR: mini's checkout has local changes — refusing to deploy over them:" >&2
+    echo "$DIRTY" >&2
+    exit 1
+fi
+
+PREV_SHA="$(run "cd $MINI_REPO && git rev-parse HEAD")"
+echo "==> Currently deployed: $PREV_SHA"
+
+echo "==> Backing up DB to S3 before deploying..."
+run "PATH=/opt/homebrew/bin:\$PATH bash $MINI_REPO/fathom/scripts/backup_db.sh"
+
+echo "==> Fetching and fast-forwarding main..."
+run "cd $MINI_REPO && git fetch origin && git checkout main && git pull --ff-only origin main"
+NEW_SHA="$(run "cd $MINI_REPO && git rev-parse HEAD")"
+
+if [ "$PREV_SHA" = "$NEW_SHA" ]; then
+    echo "==> Already up to date ($NEW_SHA). Nothing to deploy."
+    exit 0
+fi
+echo "==> New commit: $NEW_SHA"
+
+echo "==> Installing/updating dependencies..."
+run "$MINI_REPO/.venv/bin/pip install -r $MINI_REPO/requirements.txt -q"
+
+echo "==> Restarting service..."
+run "pgrep -f 'uvicorn main:app' | xargs -r kill"
+sleep 3
+
+echo "==> Health-checking..."
+for i in $(seq 1 "$HEALTH_RETRIES"); do
+    CODE="$(health_check)"
+    if [ "$CODE" = "200" ]; then
+        echo "==> Healthy (HTTP $CODE). Deployed $PREV_SHA -> $NEW_SHA"
+        exit 0
+    fi
+    echo "    attempt $i/$HEALTH_RETRIES: HTTP $CODE, retrying..."
+    sleep "$HEALTH_RETRY_DELAY"
+done
+
+echo "ERROR: health check failed after deploy (HTTP $CODE). Rolling back to $PREV_SHA..." >&2
+run "cd $MINI_REPO && git reset --hard $PREV_SHA"
+run "$MINI_REPO/.venv/bin/pip install -r $MINI_REPO/requirements.txt -q"
+run "pgrep -f 'uvicorn main:app' | xargs -r kill"
+sleep 3
+ROLLBACK_CODE="$(health_check)"
+echo "==> Rolled back to $PREV_SHA. Post-rollback health check: HTTP $ROLLBACK_CODE"
+exit 1

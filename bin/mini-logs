@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Fetch/tail Fathom's logs from the production Mac mini.
+# Usage:
+#   bin/mini-logs           # last 100 lines of app log
+#   bin/mini-logs -f        # follow app log live
+#   bin/mini-logs err       # last 100 lines of launchd stderr
+#   bin/mini-logs -n 500    # last 500 lines of app log
+set -euo pipefail
+
+MINI_HOST="rob@192.168.50.205"
+LOG_FILE="/tmp/fathom.log"
+LINES=100
+FOLLOW=false
+
+for arg in "$@"; do
+    case "$arg" in
+        -f) FOLLOW=true ;;
+        -n) : ;; # next arg is the count, handled below
+        err) LOG_FILE="/tmp/fathom.err" ;;
+        [0-9]*) LINES="$arg" ;;
+    esac
+done
+
+if [ "$FOLLOW" = true ]; then
+    exec ssh -A "$MINI_HOST" "tail -f $LOG_FILE"
+else
+    exec ssh -A "$MINI_HOST" "tail -n $LINES $LOG_FILE"
+fi

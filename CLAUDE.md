@@ -39,7 +39,16 @@ To check recent background task activity (reference info fetches, AI analysis er
 grep -E "reference_info|ai_analysis|ERROR|WARNING" /tmp/fathom.log | tail -50
 ```
 
-On the production Mac mini the launchd stderr goes to `/tmp/fathom.err`; app logs go to `/tmp/fathom.log` there too.
+On the production Mac mini the launchd stderr goes to `/tmp/fathom.err`; app logs go to `/tmp/fathom.log` there too. To check them remotely without a manual SSH one-liner, use `bin/mini-logs` (see "Deployment scripts" below) — e.g. `bin/mini-logs -n 200`, `bin/mini-logs -f`, `bin/mini-logs err`.
+
+## Production data — dev and prod DBs are separate and will diverge
+
+As of 2026-07-04 the Mac mini has its own live `fathom.db`, independent of local dev's `fathom/data/fathom.db`. Rob deliberately chose **not** to migrate dev's DB (which has richer history — 3 tanks, 50 test results, 99 observations) onto the mini; the mini started as a genuinely fresh install and Rob has already begun entering real data directly into it (2 tanks as of this note). **These two databases will never auto-sync and are expected to diverge over time** — dev is for development/testing, the mini is the real, user-facing instance. Do not assume dev's DB reflects what's actually in production, and do not copy either DB over the other without explicit confirmation — both may contain data the other doesn't.
+
+Because the mini now holds real data someone actually depends on:
+- Prefer testing risky/exploratory changes against the local dev DB, not by poking the mini directly.
+- `bin/deploy-mini` always takes an S3 backup (see "Production deployment" below) immediately before pulling new code, specifically so a bad deploy can't take live data down with it unrecovered.
+- If you ever do need to inspect/modify data live on the mini (as has happened with dev's DB in past sessions — see session history below), treat it with the same care: back up first, prefer the app's own routes/endpoints over raw SQL, and say clearly in any session notes that real user data was touched.
 
 ## Project structure
 
@@ -150,9 +159,21 @@ Mac mini at `192.168.50.205`, SSH via `ssh -A rob@192.168.50.205`. Repo at `/Use
 - Logs: `/tmp/fathom.log` / `/tmp/fathom.err`
 - venv built with `~/.pyenv/versions/3.14.0/bin/python3` (matches local dev's pyenv version; the mini's system `/usr/bin/python3` is 3.9.6 and unsuitable)
 
-`sudo launchctl load`/`unload` need an interactive password — non-interactive `ssh host "sudo ..."` will fail with "a password is required". Use `ssh -A -t` for a single sudo command, or `ssh -A rob@192.168.50.205` to get a shell and run sudo commands one at a time there.
+`sudo launchctl load`/`unload` need an interactive password — non-interactive `ssh host "sudo ..."` will fail with "a password is required". Use `ssh -A -t` for a single sudo command, or `ssh -A rob@192.168.50.205` to get a shell and run sudo commands one at a time there. This only matters for one-time plist install/removal — **routine restarts don't need sudo at all**: the plist's `UserName: rob` means the uvicorn process itself is owned by `rob`, so `rob` can `kill` it directly and launchd's `KeepAlive` respawns it (verified live during initial deploy — see twelfth-session notes). `bin/deploy-mini` relies on exactly this.
 
-Reload after deploy: `ssh -A rob@192.168.50.205 "sudo launchctl unload /Library/LaunchDaemons/com.fathom.plist && sudo launchctl load /Library/LaunchDaemons/com.fathom.plist"`
+**macOS Application Firewall blocks incoming connections by binary path**, and the allow-list only had `/usr/bin/python3` (system Python) — not the pyenv-built binary the venv actually uses (`~/.pyenv/versions/3.14.0/bin/python3`). Since uvicorn runs headless under launchd, macOS never shows the "Allow incoming connections?" GUI prompt, so it was silently dropping all LAN traffic to port 8000 until fixed with (needs sudo, one-time):
+```
+FWDIR=/usr/libexec/ApplicationFirewall
+sudo "$FWDIR/socketfilterfw" --add ~/.pyenv/versions/3.14.0/bin/python3
+sudo "$FWDIR/socketfilterfw" --unblockapp ~/.pyenv/versions/3.14.0/bin/python3
+```
+
+Reload after deploy (manual/emergency path — normally use `bin/deploy-mini` instead): `ssh -A rob@192.168.50.205 "sudo launchctl unload /Library/LaunchDaemons/com.fathom.plist && sudo launchctl load /Library/LaunchDaemons/com.fathom.plist"`
+
+### Deployment scripts (`bin/`)
+
+- `bin/deploy-mini` — the normal way to ship a change: refuses to run if the mini's checkout is dirty, takes an S3 DB backup, `git pull --ff-only` on `main`, reinstalls `requirements.txt`, restarts by killing the uvicorn PID (no sudo — see above), then health-checks `GET /tanks` and **automatically rolls back** (`git reset --hard` to the pre-deploy SHA + reinstall + restart) if the health check doesn't come back `200` within 5 retries.
+- `bin/mini-logs [-f] [-n N] [err]` — tail the mini's logs over SSH without hand-typing the SSH one-liner each time; `-f` follows, `err` switches to `/tmp/fathom.err`, `-n N` sets the line count (default 100).
 
 S3 backup cron (3am daily, **live as of 2026-07-03**): `0 3 * * * PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin bash /Users/rob/Documents/Code/aquarium-tracker/fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1` — note the explicit `PATH=` prefix; cron's default PATH doesn't include Homebrew's `/opt/homebrew/bin`, where `aws` lives.
 
@@ -229,8 +250,9 @@ Template: `fathom/templates/tanks/quick_log.html`
 - Recurring schedule feature added; full app built and committed
 - AI features active (ANTHROPIC_API_KEY configured in .env)
 - 5G Fish Tank data imported from Apple Notes markdown export
-- **Deployed to Mac mini for the first time on 2026-07-03** — see twelfth-session notes below. Running live at `192.168.50.205:8000` as a fresh install (empty DB, no tanks yet). S3 backup cron is now live too (see "Production deployment" above) — bucket `lpf-fathom-backups`, 30-day retention, dedicated least-privilege IAM user.
-- Ongoing: after future commits, deploy by pulling on the mini and reloading the service — see "Reload after deploy" above.
+- **Deployed to Mac mini for the first time on 2026-07-03** — see twelfth-session notes below. Running live at `192.168.50.205:8000`, reachable from the whole LAN (`http://192.168.50.205:8000`, or `http://mini:8000` if you've added a `/etc/hosts` alias on that particular machine). S3 backup cron is live — bucket `lpf-fathom-backups`, 30-day retention, dedicated least-privilege IAM user.
+- **The mini now holds real, independent production data** (as of 2026-07-04, Rob has already added tanks directly on the mini) — see "Production data" section above. It is *not* a mirror of local dev's DB and the two are expected to diverge permanently; do not assume one reflects the other.
+- Ongoing: deploy future commits with `bin/deploy-mini` (backs up, pulls, restarts, health-checks, auto-rolls-back on failure — see "Deployment scripts" above). Check mini logs with `bin/mini-logs`.
 - **Prompt caching**: not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user
 
 ## Testing
@@ -244,6 +266,14 @@ Template: `fathom/templates/tanks/quick_log.html`
 Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`).
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
+
+### Changes in 2026-07-04 session (thirteenth)
+
+- **LAN access was silently broken by macOS's Application Firewall.** The service binds `0.0.0.0:8000` and `curl localhost:8000` on the mini itself worked fine, but requests from other machines on the LAN timed out with no response at all (not even a connection-refused). Root cause: the firewall's per-binary allow-list only had `/usr/bin/python3` (Apple's system Python, auto-allowed as "built-in signed software") — not the actual binary the venv symlinks to, `~/.pyenv/versions/3.14.0/bin/python3`. Since uvicorn runs headless under launchd with no logged-in GUI session, macOS never got the chance to show its usual "Allow incoming connections?" prompt for the unrecognized binary, so it just dropped the traffic. Fixed with `socketfilterfw --add` + `--unblockapp` on the pyenv binary (needs sudo, one-time — see "Production deployment" above). Confirmed fixed via a real `curl` from the dev Mac after Rob ran the fix.
+- **Built `bin/deploy-mini`**, a safe end-to-end deploy script, since manual SSH-and-pray deploys aren't acceptable now that the mini holds real data someone depends on. Key design choices: (1) refuses to deploy if the mini's git checkout has any local modifications, to never silently discard an in-place hotfix; (2) always takes a fresh S3 backup *before* pulling new code — a deploy is exactly the moment a schema migration or bad commit could corrupt live data, so this is the last line of defense; (3) restarts by killing the uvicorn PID rather than `sudo launchctl unload/load` — this works with zero sudo prompts because the plist's `UserName: rob` means `rob` owns the process and launchd's `KeepAlive` respawns it automatically (this was actually already proven during the original deploy session's verification step, just not yet turned into tooling); (4) health-checks `GET /tanks` after restart with retries, and **automatically rolls back** (`git reset --hard` to the pre-deploy SHA, reinstall deps, restart again) if it doesn't come back healthy — chosen over "just alert and leave it broken" because a family member could be trying to log a water test while Rob is away from a computer.
+- **Built `bin/mini-logs`** as a thin wrapper around the SSH-tail-the-log pattern used throughout this file's session notes, so checking on a live bug report doesn't require re-deriving the SSH invocation each time.
+- **Discovered mini's DB has already diverged from dev's.** While testing `bin/mini-logs`, live traffic in the log revealed Rob had already created 2 tanks directly on the mini (same names as 2 of dev's 3 tanks, "Shrimp Tank"/"Fish Tank", but different ids and no history yet — confirmed by direct query, not assumption). Surfaced this explicitly rather than assuming a migration was wanted: asked whether to overwrite the mini's fresh/empty tanks with dev's fuller history, or leave the mini alone. Rob confirmed the mini tanks were intentional fresh test entries and explicitly chose **not** to migrate — dev and the mini are two independent, permanently-diverging databases now (dev for development, mini for real use). Documented this prominently (new "Production data" section above) specifically so a future session doesn't assume dev's DB is representative of what's actually live, or casually copy one DB over the other without asking again.
+- No pytest changes — this was infra/tooling/docs only; 263 tests still pass.
 
 ### Changes in 2026-07-03 session (twelfth)
 
