@@ -131,13 +131,13 @@
       <span class="spec-value">{{ tank.shape }}</span>
     </div>
     {% endif %}
-    {% if tank.notes %}
-    <div class="spec-item spec-item-wide">
-      <span class="spec-label">Notes</span>
-      <span class="spec-value">{{ tank.notes }}</span>
-    </div>
-    {% endif %}
   </div>
+  {% if tank.notes %}
+  <div class="spec-item" style="margin-top:.5rem">
+    <span class="spec-label">Notes</span>
+    <span class="spec-value">{{ tank.notes }}</span>
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 
