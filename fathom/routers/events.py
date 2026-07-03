@@ -1,10 +1,11 @@
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from fastapi import APIRouter, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from routers.schedules import compute_next_due
 
 router = APIRouter(prefix="/tanks/{tank_id}/events", tags=["events"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -50,9 +51,7 @@ async def add_event(
             ).fetchone())
             if sched:
                 event_date = timestamp[:10] if timestamp else date.today().isoformat()
-                next_due = None
-                if sched.get("interval_days"):
-                    next_due = (date.fromisoformat(event_date) + timedelta(days=sched["interval_days"])).isoformat()
+                next_due = compute_next_due(sched.get("day_of_week"), sched.get("interval_days"), date.fromisoformat(event_date))
                 conn.execute(
                     "UPDATE recurring_schedule SET last_done=?, next_due=?, updated_at=datetime('now') WHERE id=?",
                     (event_date, next_due, schedule_id),

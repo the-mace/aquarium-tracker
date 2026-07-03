@@ -292,3 +292,137 @@ def test_event_with_schedule_id_updates_next_due(client, tank_id):
         ).fetchone())
     assert sched["last_done"] == today
     assert sched["next_due"] == expected_next
+
+
+def test_event_with_schedule_id_snaps_to_day_of_week(client, tank_id):
+    dow_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    target_dow = dow_names[(date.today().weekday() - 1) % 7]
+
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "day_of_week": target_dow, "description": "Linked weekly", "interval_days": "7"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Linked weekly'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    client.post(
+        f"/tanks/{tank_id}/events",
+        data={"event_type": "maintenance", "notes": "did it", "schedule_id": str(sch_id)},
+        headers={"Accept": "application/json"},
+    )
+    expected_next = (date.today() + timedelta(days=6)).isoformat()
+    with _db.get_db() as conn:
+        sched = dict(conn.execute("SELECT next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert sched["next_due"] == expected_next
+
+
+def test_mark_done_snaps_to_day_of_week_not_flat_interval(client, tank_id):
+    # Regression: a task pinned to a weekday (e.g. Thursday) but marked done a day
+    # late/early (e.g. Friday) should come due on the *next* occurrence of that
+    # weekday, not exactly interval_days after whatever day it was actually done.
+    dow_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    target_dow = dow_names[(date.today().weekday() - 1) % 7]
+
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "day_of_week": target_dow, "description": "Weekly wipe", "interval_days": "7"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Weekly wipe'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    client.post(f"/tanks/{tank_id}/schedule/{sch_id}/mark-done", follow_redirects=False)
+
+    expected_next = (date.today() + timedelta(days=6)).isoformat()
+    with _db.get_db() as conn:
+        sched = dict(conn.execute("SELECT next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert sched["next_due"] == expected_next
+
+
+def test_edit_last_done_recomputes_next_due(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "description": "Filter change", "interval_days": "30"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Filter change'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    corrected_date = date.today() - timedelta(days=5)
+    expected_next = (corrected_date + timedelta(days=30)).isoformat()
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={
+            "category": "maintenance",
+            "description": "Filter change",
+            "interval_days": "30",
+            "is_active": "1",
+            "last_done": corrected_date.isoformat(),
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    with _db.get_db() as conn:
+        sched = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert sched["last_done"] == corrected_date.isoformat()
+    assert sched["next_due"] == expected_next
+
+
+def test_edit_without_last_done_preserves_existing(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "description": "Preserve me", "interval_days": "30"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Preserve me'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    client.post(f"/tanks/{tank_id}/schedule/{sch_id}/mark-done", follow_redirects=False)
+    with _db.get_db() as conn:
+        before = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={"category": "maintenance", "description": "Preserve me", "interval_days": "30", "is_active": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    with _db.get_db() as conn:
+        after = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert after == before
+
+
+def test_dashboard_not_yet_done_is_red(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "description": "Never done task", "interval_days": "14"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/tanks/{tank_id}")
+    assert "Never done task" in r.text
+    import re
+    assert re.search(r'maint-due maint-overdue">\s*not yet done', r.text)

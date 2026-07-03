@@ -164,6 +164,11 @@
           <input type="number" name="interval_days" id="edit-interval" min="1">
         </div>
       </div>
+      <div class="form-group" id="edit-last-done-group" style="display:none;margin-top:.75rem">
+        <label>Last done</label>
+        <input type="date" name="last_done" id="edit-last-done">
+        <span class="muted" style="font-size:.75rem">Fixes a mistaken "✓ Done" — changing this recomputes the due date too.</span>
+      </div>
       <div class="form-group" style="margin-top:.75rem">
         <label>Description *</label>
         <input type="text" name="description" id="edit-description" required>
@@ -195,8 +200,10 @@ function syncSchedForm(prefix) {
   const isMaint = cat === 'maintenance';
   const dowGroup = document.getElementById(prefix + '-dow-group');
   const intGroup = document.getElementById(prefix + '-interval-group');
+  const lastDoneGroup = document.getElementById(prefix + '-last-done-group');
   if (dowGroup) dowGroup.style.display = isMaint ? 'none' : '';
   if (intGroup) intGroup.style.display = isMaint ? '' : 'none';
+  if (lastDoneGroup) lastDoneGroup.style.display = isMaint ? '' : 'none';
 }
 
 function openEditSched(s) {
@@ -208,6 +215,7 @@ function openEditSched(s) {
   document.getElementById('edit-interval').value = s.interval_days || '';
   document.getElementById('edit-notes').value = s.notes || '';
   document.getElementById('edit-active').checked = !!s.is_active;
+  document.getElementById('edit-last-done').value = s.last_done || '';
   syncSchedForm('edit');
   openModal('modal-edit');
 }

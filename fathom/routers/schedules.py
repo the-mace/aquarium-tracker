@@ -20,6 +20,27 @@ def _next_weekday(d, weekday):
     return d + timedelta(days=days_ahead)
 
 
+_DOW_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+
+def compute_next_due(day_of_week, interval_days, from_date):
+    """Next due date after from_date (the day a task was just done).
+
+    When a task is pinned to a day_of_week, due dates always land on that weekday —
+    e.g. done Friday but tied to Thursday should come due the *next* Thursday (6 days
+    later), not 7 days after whatever day it actually got marked done. interval_days
+    is only used as a plain offset for tasks with no day_of_week.
+    """
+    if day_of_week and day_of_week in _DOW_INDEX:
+        days_ahead = _DOW_INDEX[day_of_week] - from_date.weekday()
+        if days_ahead <= 0:
+            days_ahead += 7
+        return (from_date + timedelta(days=days_ahead)).isoformat()
+    if interval_days:
+        return (from_date + timedelta(days=interval_days)).isoformat()
+    return None
+
+
 @router.get("", response_class=HTMLResponse)
 async def schedule_page(request: Request, tank_id: int):
     with get_db() as conn:
@@ -81,6 +102,7 @@ async def update_schedule(
     interval_days: Optional[int] = Form(None),
     is_active: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
+    last_done: Optional[str] = Form(None),
 ):
     tracking_mode = "logged" if category == "maintenance" else "reference_only"
     interval_type = "interval_days" if (category == "maintenance" and interval_days) else None
@@ -88,15 +110,27 @@ async def update_schedule(
     active = 1 if is_active else 0
 
     with get_db() as conn:
-        existing = conn.execute("SELECT id FROM recurring_schedule WHERE id=? AND tank_id=?", (sch_id, tank_id)).fetchone()
+        existing = row_to_dict(conn.execute("SELECT * FROM recurring_schedule WHERE id=? AND tank_id=?", (sch_id, tank_id)).fetchone())
         if not existing:
             raise HTTPException(status_code=404, detail="Schedule entry not found")
+
+        # Editing last_done (e.g. to fix a mistaken mark-done) recomputes next_due from
+        # that corrected date, same rules as mark-done itself. Leaving the field blank
+        # keeps whatever last_done/next_due were already stored.
+        last_done_val = existing["last_done"]
+        next_due_val = existing["next_due"]
+        if last_done is not None and last_done.strip():
+            last_done_val = last_done.strip()
+            next_due_val = compute_next_due(dow, interval_days, date.fromisoformat(last_done_val))
+
         conn.execute(
             """UPDATE recurring_schedule SET
                category=?, tracking_mode=?, day_of_week=?, description=?,
-               interval_type=?, interval_days=?, is_active=?, notes=?, updated_at=datetime('now')
+               interval_type=?, interval_days=?, is_active=?, notes=?,
+               last_done=?, next_due=?, updated_at=datetime('now')
                WHERE id=?""",
-            (category, tracking_mode, dow, description, interval_type, interval_days, active, notes, sch_id),
+            (category, tracking_mode, dow, description, interval_type, interval_days, active, notes,
+             last_done_val, next_due_val, sch_id),
         )
     return RedirectResponse(url=f"/tanks/{tank_id}/schedule", status_code=303)
 
@@ -122,9 +156,7 @@ async def mark_done(tank_id: int, sch_id: int, return_to: Optional[str] = Form(N
         # a moment in time and is stored as real UTC so it sorts correctly among
         # other UTC-stamped Timeline entries (e.g. AI Analysis observations).
         today = date.today().isoformat()
-        next_due = None
-        if sched.get("interval_days"):
-            next_due = (date.today() + timedelta(days=sched["interval_days"])).isoformat()
+        next_due = compute_next_due(sched.get("day_of_week"), sched.get("interval_days"), date.today())
 
         utc_now = datetime.now(timezone.utc)
         conn.execute(

@@ -183,7 +183,7 @@
           {% elif not m.interval_days %}
             <span class="maint-due muted">manual reminder</span>
           {% else %}
-            <span class="maint-due muted">not yet done</span>
+            <span class="maint-due maint-overdue">not yet done</span>
           {% endif %}
         </div>
         <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" style="display:inline">
