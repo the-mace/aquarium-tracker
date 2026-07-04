@@ -67,7 +67,14 @@
         <td class="muted">{{ inh.notes or '' }}</td>
         <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openPopEvent({{ inh.id }}, '{{ inh.common_name or inh.species }}')">Log Event</button>
-          <button class="btn btn-xs btn-ghost" onclick="openEditInh({{ inh.id }}, {{ inh.count if inh.count is not none else 'null' }}, {{ 'true' if inh.count is none else 'false' }}, '{{ inh.common_name or '' }}', '{{ inh.species or '' }}')">Edit</button>
+          <button class="btn btn-xs btn-ghost"
+                  data-id="{{ inh.id }}"
+                  data-count="{{ inh.count if inh.count is not none else '' }}"
+                  data-count-unknown="{{ 'true' if inh.count is none else 'false' }}"
+                  data-common-name="{{ inh.common_name or '' }}"
+                  data-species="{{ inh.species or '' }}"
+                  data-notes="{{ inh.notes or '' }}"
+                  onclick="openEditInhFrom(this)">Edit</button>
           <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=inhabitant&link_id={{ inh.id }}">💬 Observations</a>
           <form method="post" action="/tanks/{{ tank.id }}/inhabitants/{{ inh.id }}/delete" style="display:inline" onsubmit="return confirm('Remove {{ inh.common_name or inh.species }}?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>
@@ -343,15 +350,18 @@ function deletePopEvent(peId) {
   if (!confirm('Delete this population event? This cannot be undone.')) return;
   fetch(`/tanks/{{ tank.id }}/inhabitants/population-events/${peId}/delete`, {method: 'POST'}).then(() => location.reload());
 }
-function openEditInh(inhId, count, countUnknown, commonName, species) {
-  document.getElementById('edit-inh-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/update`;
-  document.getElementById('edit-inh-common').value = commonName;
-  document.getElementById('edit-inh-species').value = species;
+function openEditInhFrom(el) {
+  const d = el.dataset;
+  document.getElementById('edit-inh-form').action = `/tanks/{{ tank.id }}/inhabitants/${d.id}/update`;
+  document.getElementById('edit-inh-common').value = d.commonName;
+  document.getElementById('edit-inh-species').value = d.species;
+  document.getElementById('edit-inh-notes').value = d.notes || '';
   const unknownCb = document.getElementById('edit-inh-unknown');
   const countInput = document.getElementById('edit-inh-count');
+  const countUnknown = d.countUnknown === 'true';
   unknownCb.checked = countUnknown;
   countInput.disabled = countUnknown;
-  countInput.value = count !== null ? count : '';
+  countInput.value = d.count !== '' ? d.count : '';
   openModal('modal-edit-inh');
 }
 </script>
