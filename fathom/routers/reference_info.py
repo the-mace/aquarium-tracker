@@ -53,6 +53,12 @@ KNOWN_IMAGES: dict[tuple[str, str], str] = {
     ("plant", "littorella uniflora"): "https://upload.wikimedia.org/wikipedia/commons/5/57/Littorella_uniflora_kz01.jpg",
     ("plant", "monosolenium tenerum"): "https://upload.wikimedia.org/wikipedia/commons/8/86/Pellia_endiviifolia_(Clouange-12).JPG",
     ("plant", "taxiphyllum barbieri"): "https://upload.wikimedia.org/wikipedia/commons/a/a5/Javamoos.jpg",
+    # Old pick was a murky underwater shot of the roots, leaves barely visible. Both
+    # canonical keys pinned since imports have used both "Frogbit" and the scientific
+    # name as the species field over time.
+    ("plant", "limnobium laevigatum"): "https://upload.wikimedia.org/wikipedia/commons/1/1c/Limnobium_spongia_02.jpg",
+    ("plant", "frogbit"):              "https://upload.wikimedia.org/wikipedia/commons/1/1c/Limnobium_spongia_02.jpg",
+    ("plant", "helanthium tenellum"):  "https://www.aquariumcoop.com/cdn/shop/files/dwarf-chain-sword-1814832.jpg?v=1766095149&width=832",
     # species
     ("species", "copepoda spp."):    "https://upload.wikimedia.org/wikipedia/commons/2/28/Copepodkils.jpg",
     ("species", "neocaridina davidi"): "https://upload.wikimedia.org/wikipedia/commons/d/d9/Neocaridina-heteropoda-var-red.jpg",
