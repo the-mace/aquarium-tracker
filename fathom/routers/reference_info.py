@@ -48,6 +48,7 @@ USE_KNOWN_IMAGES = True
 KNOWN_IMAGES: dict[tuple[str, str], str] = {
     # hardscape
     ("hardscape", "spider wood"): "https://m.media-amazon.com/images/I/81quwi3NdoL._AC_SL1500_.jpg",
+    ("hardscape", "petrified wood accent"): "https://aquarockscolorado.com/cdn/shop/products/IMG_5807_29e8f183-ebe4-4a86-99cb-565cbb4dd82d.jpg?v=1620172777&width=1800",
     # plants
     ("plant", "hygrophila sp."):     "https://upload.wikimedia.org/wikipedia/commons/a/a8/Hygrophila_polysperma.JPG",
     ("plant", "littorella uniflora"): "https://upload.wikimedia.org/wikipedia/commons/5/57/Littorella_uniflora_kz01.jpg",
