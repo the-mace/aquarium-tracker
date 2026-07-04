@@ -1,3 +1,9 @@
+/* ── Today panel navigation ───────────────────────────────────────────── */
+function goToTank(event, tankId) {
+  if (event.target.closest('a, input, label, button, form')) return;
+  window.location.href = `/tanks/${tankId}`;
+}
+
 /* ── Modals ────────────────────────────────────────────────────────────── */
 function openModal(id) {
   const el = document.getElementById(id);

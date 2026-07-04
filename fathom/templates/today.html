@@ -13,7 +13,7 @@
 {% if tanks_with_items %}
 <div class="today-grid">
   {% for tank in tanks_with_items %}
-  <div class="panel today-tank-panel">
+  <div class="panel today-tank-panel" onclick="goToTank(event, {{ tank.id }})">
     <div class="panel-header">
       <h3><a href="/tanks/{{ tank.id }}">{{ tank.name }}</a></h3>
       <a href="/tanks/{{ tank.id }}/schedule" class="link-sm">Manage →</a>

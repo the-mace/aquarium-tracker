@@ -922,7 +922,8 @@ p { margin-bottom: .5rem; }
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1rem;
 }
-.today-tank-panel { display: flex; flex-direction: column; gap: .6rem; }
+.today-tank-panel { display: flex; flex-direction: column; gap: .6rem; cursor: pointer; transition: border-color .15s; }
+.today-tank-panel:hover { border-color: var(--primary); }
 .today-tank-panel .panel-header h3 { text-transform: none; letter-spacing: normal; font-size: 1rem; }
 .today-tank-panel .panel-header h3 a { color: var(--text); text-decoration: none; }
 .today-section { display: flex; flex-direction: column; gap: .4rem; }
