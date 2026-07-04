@@ -74,9 +74,10 @@ async def add_schedule(
     category: str = Form(...),
     day_of_week: Optional[str] = Form(None),
     description: str = Form(...),
-    interval_days: Optional[int] = Form(None),
+    interval_days: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
+    interval_days = int(interval_days) if interval_days and interval_days.strip() else None
     tracking_mode = "logged" if category == "maintenance" else "reference_only"
     interval_type = "interval_days" if (category == "maintenance" and interval_days) else None
     dow = day_of_week if day_of_week and day_of_week in ("mon","tue","wed","thu","fri","sat","sun") else None
@@ -99,11 +100,12 @@ async def update_schedule(
     category: str = Form(...),
     day_of_week: Optional[str] = Form(None),
     description: str = Form(...),
-    interval_days: Optional[int] = Form(None),
+    interval_days: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     last_done: Optional[str] = Form(None),
 ):
+    interval_days = int(interval_days) if interval_days and interval_days.strip() else None
     tracking_mode = "logged" if category == "maintenance" else "reference_only"
     interval_type = "interval_days" if (category == "maintenance" and interval_days) else None
     dow = day_of_week if day_of_week and day_of_week in ("mon","tue","wed","thu","fri","sat","sun") else None
