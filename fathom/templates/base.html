@@ -16,6 +16,9 @@
       </a>
     </div>
     <div class="sidebar-body">
+      <div class="sidebar-section">
+        <a href="/today" class="sidebar-link {% if active == 'today' %}active{% endif %}">Today</a>
+      </div>
       {% if tank is defined and tank %}
       <div class="sidebar-section">
         <span class="sidebar-label">This Tank</span>

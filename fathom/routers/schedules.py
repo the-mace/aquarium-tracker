@@ -167,5 +167,10 @@ async def mark_done(tank_id: int, sch_id: int, return_to: Optional[str] = Form(N
             "UPDATE recurring_schedule SET last_done=?, next_due=?, updated_at=datetime('now') WHERE id=?",
             (today, next_due, sch_id),
         )
-    dest = f"/tanks/{tank_id}/schedule" if return_to == "schedule" else f"/tanks/{tank_id}"
+    if return_to == "schedule":
+        dest = f"/tanks/{tank_id}/schedule"
+    elif return_to == "today":
+        dest = "/today"
+    else:
+        dest = f"/tanks/{tank_id}"
     return RedirectResponse(url=dest, status_code=303)

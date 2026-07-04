@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Today — Fathom{% endblock %}
+{% set active = "today" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Today</h1>
+    <p class="muted" style="font-size:.85rem;margin-top:.25rem">{{ today_dow_label }} — schedule and maintenance due across all tanks.</p>
+  </div>
+</div>
+
+{% if tanks_with_items %}
+<div class="today-grid">
+  {% for tank in tanks_with_items %}
+  <div class="panel today-tank-panel">
+    <div class="panel-header">
+      <h3><a href="/tanks/{{ tank.id }}">{{ tank.name }}</a></h3>
+      <a href="/tanks/{{ tank.id }}/schedule" class="link-sm">Manage →</a>
+    </div>
+
+    {% if tank.today_schedule %}
+    <div class="today-section">
+      {% for s in tank.today_schedule %}
+      <div class="today-item">
+        <span class="badge badge-cat">{{ s.category }}</span>
+        <span>{{ s.description }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if tank.maintenance_items %}
+    <div class="today-section maint-list">
+      {% for m in tank.maintenance_items %}
+      <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" class="maint-row today-maint-row">
+        <input type="hidden" name="return_to" value="today">
+        <label class="today-check">
+          <input type="checkbox" onchange="this.form.requestSubmit()">
+          <span class="maint-desc">{{ m.description }}</span>
+        </label>
+        {% if m.next_due and m.next_due < today_date %}
+          <span class="maint-due maint-overdue">overdue {{ m.next_due }}</span>
+        {% elif m.next_due %}
+          <span class="maint-due maint-due-today">due today</span>
+        {% else %}
+          <span class="maint-due maint-overdue">not yet done</span>
+        {% endif %}
+      </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">⬡</div>
+  <p>Nothing due today. All caught up across your tanks.</p>
+</div>
+{% endif %}
+{% endblock %}
