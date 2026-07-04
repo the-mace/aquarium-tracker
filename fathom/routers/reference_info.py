@@ -72,19 +72,31 @@ _in_flight: set[tuple[str, str]] = set()
 # scans, range maps) that rank highly for scientific-name searches but are
 # line drawings/diagrams, not photos. Filtered out of image candidates by
 # filename/title so we prefer actual photographs (e.g. iNaturalist uploads).
+# `\bmap\b` (bare word, not just "range/distribution map") was added after a
+# literal "Kuhli Loach Map.png" range-map file slipped through and got picked
+# as the species image. `\(\d+ of \d+\)` catches multi-page composite plates
+# from taxonomic checklist papers (e.g. "Fish fauna from Rio Pilcomayo
+# National Park (5 of 7)") that depict a dozen unrelated species side by side,
+# not a photo of the one species being searched for.
 _ILLUSTRATION_PATTERN = re.compile(
     r"(?i)(illustration|drawing|engrav|lithograph|clip[- ]?art|line[-_ ]art|"
-    r"herbarium|specimen|woodcut|sketch|diagram|distribution[-_ ]?map|"
-    r"range[-_ ]?map|\bnymap\b|\bBB-\d{4}\b|\bNA-\d{4}\b)"
+    r"herbarium|specimen|woodcut|sketch|diagram|\bmap\b|"
+    r"\bnymap\b|\bBB-\d{4}\b|\bNA-\d{4}\b|\bFMIB\b|\(\d+ of \d+\))"
 )
 
 # Filename patterns rarely say "illustration" (e.g. Commons' bulk-uploaded
 # "FMIB_12345_..." scans from 1920s field guides). Commons attaches a category
 # like "X - botanical illustrations" to nearly all of these regardless of
 # filename, so checking categories catches what the filename regex misses.
+# "Internet Archive Book Images" / "Biodiversity Heritage Library" flag old
+# scanned-book plates specifically (added after an 1906 journal scan showing
+# skeletal/fin-ray diagrams — not a photo — was picked for Otocinclus vittatus,
+# despite a filename that gave no hint it was a scan).
 _ILLUSTRATION_CATEGORY_PATTERN = re.compile(
     r"(?i)(illustration|engraving|lithograph|woodcut|clip ?art|line art|"
-    r"herbarium|diagram|drawing|sketch|distribution map|range map)"
+    r"herbarium|diagram|drawing|sketch|distribution map|range map|"
+    r"internet archive book images|biodiversity heritage library|"
+    r"freshwater and marine image bank)"
 )
 
 
