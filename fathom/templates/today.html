@@ -24,7 +24,12 @@
       {% for s in tank.today_schedule %}
       <div class="today-item">
         <span class="badge badge-cat">{{ s.category }}</span>
-        <span>{{ s.description }}</span>
+        <div class="today-item-text">
+          <span>{{ s.description }}</span>
+          {% if s.notes %}
+          <div class="muted today-item-notes">{{ s.notes }}</div>
+          {% endif %}
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -33,19 +38,26 @@
     {% if tank.maintenance_items %}
     <div class="today-section maint-list">
       {% for m in tank.maintenance_items %}
-      <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" class="maint-row today-maint-row">
+      <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" class="today-maint-row">
         <input type="hidden" name="return_to" value="today">
-        <label class="today-check">
-          <input type="checkbox" onchange="this.form.requestSubmit()">
-          <span class="maint-desc">{{ m.description }}</span>
-        </label>
-        {% if m.next_due and m.next_due < today_date %}
-          <span class="maint-due maint-overdue">overdue {{ m.next_due }}</span>
-        {% elif m.next_due %}
-          <span class="maint-due maint-due-today">due today</span>
-        {% else %}
-          <span class="maint-due maint-overdue">not yet done</span>
-        {% endif %}
+        <div class="maint-row">
+          <label class="today-check">
+            <input type="checkbox" onchange="this.form.requestSubmit()">
+            <div class="today-item-text">
+              <span class="maint-desc">{{ m.description }}</span>
+              {% if m.notes %}
+              <div class="muted today-item-notes">{{ m.notes }}</div>
+              {% endif %}
+            </div>
+          </label>
+          {% if m.next_due and m.next_due < today_date %}
+            <span class="maint-due maint-overdue">overdue {{ m.next_due }}</span>
+          {% elif m.next_due %}
+            <span class="maint-due maint-due-today">due today</span>
+          {% else %}
+            <span class="maint-due maint-overdue">not yet done</span>
+          {% endif %}
+        </div>
       </form>
       {% endfor %}
     </div>
