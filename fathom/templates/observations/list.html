@@ -94,6 +94,7 @@
     </div>
     <div class="obs-body">{{ obs.text }}</div>
     <div class="obs-actions">
+      <button class="btn btn-xs btn-ghost" onclick='openEditObs({{ obs.id }}, {{ obs.text | tojson }})'>✎ Edit</button>
       <button class="btn btn-xs btn-ghost" onclick='openEditLink({{ obs.id }}, {{ obs.link_refs | tojson }})'>🔗 {% if obs.links %}Change links{% else %}Add link{% endif %}</button>
       <button class="btn btn-xs btn-ghost" onclick="deleteObs({{ obs.id }}, this)">✕ Remove</button>
       {% for link in obs.links %}<a class="obs-link-pill" href="/tanks/{{ tank.id }}/observations?link_ref={{ link.type }}:{{ link.id }}">{{ link.label }}</a>{% endfor %}
@@ -118,6 +119,7 @@
   <div class="modal-box">
     <div class="modal-header"><h3>Add Observation</h3><button class="modal-close" onclick="closeModal('modal-add-obs')">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/observations">
+      <input type="hidden" name="return_to" value="observations">
       <div class="form-group"><label>Observation</label><textarea name="text" rows="6" placeholder="What did you notice?"></textarea></div>
       <div class="form-group">
         <label>Relates to (optional — ctrl/cmd-click to select multiple)</label>
@@ -127,6 +129,16 @@
         </select>
       </div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-edit-obs" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit Observation</h3><button class="modal-close" onclick="closeModal('modal-edit-obs')">×</button></div>
+    <form id="edit-obs-form">
+      <div class="form-group"><label>Observation</label><textarea id="edit-obs-text" name="text" rows="6"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
 </div>
@@ -154,6 +166,23 @@ function deleteObs(id, btn) {
   fetch(`/tanks/{{ tank.id }}/observations/${id}/delete`, {method:'POST'})
     .then(() => location.reload());
 }
+
+function openEditObs(obsId, currentText) {
+  document.getElementById('edit-obs-text').value = currentText;
+  document.getElementById('edit-obs-form').dataset.obsId = obsId;
+  openModal('modal-edit-obs');
+}
+
+document.getElementById('edit-obs-form').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const obsId = this.dataset.obsId;
+  const text = document.getElementById('edit-obs-text').value;
+  fetch(`/tanks/{{ tank.id }}/observations/${obsId}/update`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'text=' + encodeURIComponent(text),
+  }).then(() => location.reload());
+});
 
 function openEditLink(obsId, currentRefs) {
   const select = document.getElementById('edit-link-select');

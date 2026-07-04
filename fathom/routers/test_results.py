@@ -54,6 +54,7 @@ async def add_test_result(
     tds: Optional[str] = Form(None),
     temp: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
+    return_to: Optional[str] = Form(None),
 ):
     ts = timestamp or None
     ph, gh, kh, ammonia, nitrite, nitrate, tds, temp = (
@@ -82,7 +83,8 @@ async def add_test_result(
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return JSONResponse({"id": result_id, "status": "created"}, status_code=201)
-    return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+    dest = f"/tanks/{tank_id}/tests" if return_to == "tests" else f"/tanks/{tank_id}"
+    return RedirectResponse(url=dest, status_code=303)
 
 
 @router.delete("/{result_id}")

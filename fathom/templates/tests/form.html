@@ -9,6 +9,7 @@
 </div>
 
 <form method="post" action="/tanks/{{ tank.id }}/tests" class="form-card" onsubmit="return prepareLocalTimestamps(this)">
+  <input type="hidden" name="return_to" value="tests">
   <div class="form-section">
     <div class="form-group">
       <label>Date &amp; Time</label>

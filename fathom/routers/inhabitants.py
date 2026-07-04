@@ -110,7 +110,7 @@ async def add_inhabitant(
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return JSONResponse({"id": inh_id, "status": "created"}, status_code=201)
-    return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+    return RedirectResponse(url=f"/tanks/{tank_id}/inhabitants", status_code=303)
 
 
 @router.post("/{inh_id}/update")

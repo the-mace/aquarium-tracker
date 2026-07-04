@@ -223,6 +223,7 @@ async def add_observation(
     related_event_id: Optional[int] = Form(None),
     related_test_id: Optional[int] = Form(None),
     link_ref: List[str] = Form([]),
+    return_to: Optional[str] = Form(None),
 ):
     with get_db() as conn:
         cur = conn.execute(
@@ -236,7 +237,21 @@ async def add_observation(
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return JSONResponse({"id": obs_id, "status": "created"}, status_code=201)
-    return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+    dest = f"/tanks/{tank_id}/observations" if return_to == "observations" else f"/tanks/{tank_id}"
+    return RedirectResponse(url=dest, status_code=303)
+
+
+@router.post("/{obs_id}/update")
+async def update_observation(tank_id: int, obs_id: int, text: str = Form(...)):
+    with get_db() as conn:
+        obs_row = conn.execute("SELECT id FROM observations WHERE id=? AND tank_id=?", (obs_id, tank_id)).fetchone()
+        if not obs_row:
+            raise HTTPException(status_code=404, detail="Observation not found")
+        conn.execute(
+            "UPDATE observations SET text=?, updated_at=datetime('now') WHERE id=?",
+            (text, obs_id),
+        )
+    return JSONResponse({"status": "updated"})
 
 
 @router.post("/{obs_id}/link")
