@@ -77,7 +77,7 @@ KNOWN_IMAGES: dict[tuple[str, str], str] = {
     ("species", "oligochaeta spp."): "https://upload.wikimedia.org/wikipedia/commons/4/4e/Naididae.jpg",
     ("species", "ostracoda spp."):   "https://upload.wikimedia.org/wikipedia/commons/9/93/Ostracod.JPG",
     ("species", "physidae sp."):     "https://upload.wikimedia.org/wikipedia/commons/5/53/Physa_acuta_001.JPG",
-    ("species", "planorbidae sp."):  "https://upload.wikimedia.org/wikipedia/commons/1/15/Ramshorn_Snail_(Planorbidae)_-_Guelph,_Ontario.jpg",
+    ("species", "planorbidae sp."):  "https://www.aquariumcarebasics.com/images/ramshorn-snail.jpg",
     # The Commons search's top verified candidate for "Tanichthys albonubes" was a real but
     # useless photo — a tiny, unidentifiable fry adrift in a wall of green algae/plants, no
     # detail visible. Pinned to a proper full-frame adult shot instead.
