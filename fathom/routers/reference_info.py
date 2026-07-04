@@ -61,6 +61,12 @@ KNOWN_IMAGES: dict[tuple[str, str], str] = {
     # "Neritina natalensis" — the zebra nerite's own scientific name — which then pulls the
     # zebra-patterned photo for the "non-zebra" entry too. Pin a genuinely non-striped species.
     ("species", "neritina sp."): "https://upload.wikimedia.org/wikipedia/commons/b/b5/Neritina_reclivata.jpg",
+    # Otocinclus and Kuhli Loach searches now avoid the old book-scan/map candidates thanks to
+    # the broadened illustration filter above, but pinned anyway for certainty rather than
+    # relying solely on that heuristic holding up against future Commons uploads.
+    ("species", "otocinclus vittatus"): "https://upload.wikimedia.org/wikipedia/commons/0/0a/Otocinclus3.jpg",
+    ("species", "otocinclus sp."):      "https://upload.wikimedia.org/wikipedia/commons/0/0a/Otocinclus3.jpg",
+    ("species", "pangio kuhlii"):       "https://upload.wikimedia.org/wikipedia/commons/c/cc/Kuhli_loach.JPG",
     ("species", "oligochaeta spp."): "https://upload.wikimedia.org/wikipedia/commons/4/4e/Naididae.jpg",
     ("species", "ostracoda spp."):   "https://upload.wikimedia.org/wikipedia/commons/9/93/Ostracod.JPG",
     ("species", "physidae sp."):     "https://upload.wikimedia.org/wikipedia/commons/5/53/Physa_acuta_001.JPG",
