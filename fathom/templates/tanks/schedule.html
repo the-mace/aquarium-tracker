@@ -198,10 +198,8 @@
 function syncSchedForm(prefix) {
   const cat = document.getElementById(prefix + '-category').value;
   const isMaint = cat === 'maintenance';
-  const dowGroup = document.getElementById(prefix + '-dow-group');
   const intGroup = document.getElementById(prefix + '-interval-group');
   const lastDoneGroup = document.getElementById(prefix + '-last-done-group');
-  if (dowGroup) dowGroup.style.display = isMaint ? 'none' : '';
   if (intGroup) intGroup.style.display = isMaint ? '' : 'none';
   if (lastDoneGroup) lastDoneGroup.style.display = isMaint ? '' : 'none';
 }
