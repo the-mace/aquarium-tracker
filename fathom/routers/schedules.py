@@ -26,12 +26,21 @@ _DOW_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun":
 def compute_next_due(day_of_week, interval_days, from_date):
     """Next due date after from_date (the day a task was just done).
 
-    When a task is pinned to a day_of_week, due dates always land on that weekday —
-    e.g. done Friday but tied to Thursday should come due the *next* Thursday (6 days
-    later), not 7 days after whatever day it actually got marked done. interval_days
-    is only used as a plain offset for tasks with no day_of_week.
+    For weekly-cadence tasks (interval_days of 7 or less, or no interval at all)
+    pinned to a day_of_week, due dates always land on that weekday — e.g. done
+    Friday but tied to Thursday should come due the *next* Thursday (6 days
+    later), not 7 days after whatever day it actually got marked done.
+
+    For longer intervals (e.g. a 30-day task that's also pinned to a weekday),
+    the day_of_week is a landing-day preference rather than the cadence itself:
+    the due date is computed as from_date + interval_days, then advanced to the
+    next occurrence of that weekday on/after that mark — otherwise a 30-day
+    interval task would incorrectly come due only 7 days later.
     """
     if day_of_week and day_of_week in _DOW_INDEX:
+        if interval_days and interval_days > 7:
+            target = from_date + timedelta(days=interval_days)
+            return _next_weekday(target, _DOW_INDEX[day_of_week]).isoformat()
         days_ahead = _DOW_INDEX[day_of_week] - from_date.weekday()
         if days_ahead <= 0:
             days_ahead += 7

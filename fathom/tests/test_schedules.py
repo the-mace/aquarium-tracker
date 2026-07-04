@@ -350,6 +350,46 @@ def test_mark_done_snaps_to_day_of_week_not_flat_interval(client, tank_id):
     assert sched["next_due"] == expected_next
 
 
+def test_mark_done_long_interval_with_day_of_week_aligns_after_interval(client, tank_id):
+    # Regression: a task pinned to a weekday AND a long interval (e.g. "clean
+    # pre-filter every 30 days, on a Thursday") must come due at the *next*
+    # occurrence of that weekday on/after last_done + interval_days, not just
+    # the next occurrence of the weekday from last_done (which collapses a
+    # 30-day interval down to a 7-day one whenever last_done itself already
+    # fell on the target weekday).
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "day_of_week": "thu", "description": "Clean pre-filter", "interval_days": "30"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Clean pre-filter'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={
+            "category": "maintenance",
+            "day_of_week": "thu",
+            "description": "Clean pre-filter",
+            "interval_days": "30",
+            "is_active": "1",
+            "last_done": "2026-06-11",  # a Thursday
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    with _db.get_db() as conn:
+        sched = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert sched["last_done"] == "2026-06-11"
+    assert sched["next_due"] == "2026-07-16"
+
+
 def test_edit_last_done_recomputes_next_due(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/schedule",
