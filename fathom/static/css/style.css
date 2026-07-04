@@ -514,6 +514,11 @@ p { margin-bottom: .5rem; }
   vertical-align: top;
 }
 .data-table tr:hover td { background: rgba(30,41,59,.5); }
+.data-table th.sortable { cursor: pointer; user-select: none; }
+.data-table th.sortable:hover { color: var(--text); }
+.data-table th.sortable::after { content: '↕'; margin-left: .35em; opacity: .35; font-size: .85em; }
+.data-table th.sortable.sort-asc::after { content: '↑'; opacity: 1; }
+.data-table th.sortable.sort-desc::after { content: '↓'; opacity: 1; }
 .cell-danger { color: #f87171; font-weight: 600; }
 .cell-warn   { color: var(--warning); font-weight: 600; }
 .nowrap { white-space: nowrap; }

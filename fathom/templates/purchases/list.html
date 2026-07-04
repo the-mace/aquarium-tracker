@@ -16,18 +16,19 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>Date</th>
+        <th class="sortable" data-sort-key="date" onclick="headerSortClick('date')">Date</th>
         <th>Item</th>
-        <th>Category</th>
-        <th>Vendor</th>
-        <th>Cost</th>
+        <th class="sortable" data-sort-key="category" onclick="headerSortClick('category')">Category</th>
+        <th class="sortable" data-sort-key="vendor" onclick="headerSortClick('vendor')">Vendor</th>
+        <th class="sortable" data-sort-key="cost" onclick="headerSortClick('cost')">Cost</th>
         <th>Notes</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for p in purchases %}
-      <tr>
+      <tr data-date="{{ p.purchase_date or '' }}" data-category="{{ (p.category or '')|lower }}"
+          data-vendor="{{ (p.vendor or '')|lower }}" data-cost="{{ p.cost if p.cost is not none else '' }}">
         <td class="nowrap">{{ p.purchase_date or '—' }}</td>
         <td>{{ p.item }}</td>
         <td><span class="badge badge-cat">{{ p.category }}</span></td>
@@ -125,5 +126,35 @@ function openEditPurchase(btn) {
   document.getElementById('edit-purchase-notes').value = d.notes;
   openModal('modal-edit-purchase');
 }
+
+let currentSort = { key: 'date', dir: 'desc' };
+
+function applySort(key, dir) {
+  currentSort = { key, dir };
+  const tbody = document.querySelector('.data-table tbody');
+  if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    let cmp;
+    if (key === 'cost') {
+      cmp = (parseFloat(a.dataset.cost) || 0) - (parseFloat(b.dataset.cost) || 0);
+    } else {
+      cmp = (a.dataset[key] || '').localeCompare(b.dataset[key] || '');
+    }
+    return dir === 'asc' ? cmp : -cmp;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sortKey === key) th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+}
+
+function headerSortClick(key) {
+  const dir = (currentSort.key === key && currentSort.dir === 'asc') ? 'desc' : 'asc';
+  applySort(key, dir);
+}
+
+document.addEventListener('DOMContentLoaded', () => applySort('date', 'desc'));
 </script>
 {% endblock %}
