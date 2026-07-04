@@ -318,6 +318,16 @@ function prepareLocalTimestamps(form) {
   return true;
 }
 
+// Parse a stored "YYYY-MM-DD HH:MM:SS" UTC string into a value suitable for
+// a <input type="datetime-local"> (i.e. the inverse of localDatetimeToUTCString).
+function utcToLocalInputValue(utcString) {
+  if (!utcString) return '';
+  const iso = utcString.includes('T') ? utcString : utcString.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}T${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
+}
+
 // Parse a stored "YYYY-MM-DD HH:MM:SS" UTC string and format it for display
 // in the browser's local timezone.
 function formatLocalTimestamp(utcString) {

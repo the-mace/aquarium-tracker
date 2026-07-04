@@ -177,6 +177,92 @@ def test_delete_population_event(client, tank_id):
     assert count == 0
 
 
+def test_update_population_event_adjusts_inhabitant_count(client, tank_id):
+    inh_id = _add(client, tank_id, name="Guppy", count=5)
+    r = client.post(
+        f"/tanks/{tank_id}/inhabitants/{inh_id}/event",
+        data={"event_type": "died", "count": "2"},
+        headers={"Accept": "application/json"},
+    )
+    assert r.json()["new_count"] == 3
+    conn = sqlite3.connect(_db.DB_PATH)
+    pe_id = conn.execute(
+        "SELECT id FROM population_events WHERE inhabitant_id=? ORDER BY id DESC LIMIT 1", (inh_id,)
+    ).fetchone()[0]
+    conn.close()
+
+    # Correct the logged count from 2 died down to 1 died — inhabitant count should go from 3 back up to 4.
+    r = client.post(
+        f"/tanks/{tank_id}/inhabitants/population-events/{pe_id}/update",
+        data={"event_type": "died", "count": "1", "notes": "corrected"},
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 200
+    conn = sqlite3.connect(_db.DB_PATH)
+    inh_count = conn.execute("SELECT count FROM inhabitants WHERE id=?", (inh_id,)).fetchone()[0]
+    ev = conn.execute(
+        "SELECT event_type, count, notes FROM population_events WHERE id=?", (pe_id,)
+    ).fetchone()
+    conn.close()
+    assert inh_count == 4
+    assert ev == ("died", 1, "corrected")
+
+
+def test_update_population_event_changing_type_adjusts_count(client, tank_id):
+    inh_id = _add(client, tank_id, name="Shrimp", count=10)
+    conn = sqlite3.connect(_db.DB_PATH)
+    pe_id = conn.execute(
+        "SELECT id FROM population_events WHERE inhabitant_id=? ORDER BY id DESC LIMIT 1", (inh_id,)
+    ).fetchone()[0]
+    conn.close()
+
+    # Original event was "added" 10. Flip it to "died" 10 — count should drop from 10 to 0 (was 10 -> 10-10-10).
+    r = client.post(
+        f"/tanks/{tank_id}/inhabitants/population-events/{pe_id}/update",
+        data={"event_type": "died", "count": "10"},
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 200
+    conn = sqlite3.connect(_db.DB_PATH)
+    inh_count = conn.execute("SELECT count FROM inhabitants WHERE id=?", (inh_id,)).fetchone()[0]
+    conn.close()
+    assert inh_count == 0
+
+
+def test_update_population_event_unknown_count_inhabitant_untouched(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/inhabitants",
+        data={"common_name": "MTS Snail", "count_unknown": "on"},
+        headers={"Accept": "application/json"},
+    )
+    inh_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    pe_id = conn.execute(
+        "SELECT id FROM population_events WHERE inhabitant_id=? ORDER BY id DESC LIMIT 1", (inh_id,)
+    ).fetchone()[0]
+    conn.close()
+
+    r = client.post(
+        f"/tanks/{tank_id}/inhabitants/population-events/{pe_id}/update",
+        data={"event_type": "died", "count": "3"},
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 200
+    conn = sqlite3.connect(_db.DB_PATH)
+    inh_count = conn.execute("SELECT count FROM inhabitants WHERE id=?", (inh_id,)).fetchone()[0]
+    conn.close()
+    assert inh_count is None
+
+
+def test_update_population_event_nonexistent_404(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/inhabitants/population-events/9999/update",
+        data={"event_type": "died", "count": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 404
+
+
 def test_population_event_nonexistent_inhabitant_404(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/inhabitants/9999/event",

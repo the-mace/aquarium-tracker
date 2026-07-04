@@ -194,6 +194,64 @@ async def delete_inhabitant(tank_id: int, inh_id: int):
     return RedirectResponse(url=f"/tanks/{tank_id}/inhabitants", status_code=303)
 
 
+def _pop_event_delta(event_type: str, count: Optional[int]) -> int:
+    count = count or 0
+    if event_type in ("died", "removed"):
+        return -count
+    if event_type in ("added", "born"):
+        return count
+    return 0
+
+
+@router.post("/population-events/{pe_id}/update")
+async def update_population_event(
+    request: Request,
+    tank_id: int,
+    pe_id: int,
+    event_type: str = Form(...),
+    count: int = Form(1),
+    notes: Optional[str] = Form(None),
+    timestamp: Optional[str] = Form(None),
+):
+    with get_db() as conn:
+        old = row_to_dict(conn.execute(
+            "SELECT * FROM population_events WHERE id = ? AND tank_id = ?", (pe_id, tank_id),
+        ).fetchone())
+        if not old:
+            raise HTTPException(status_code=404, detail="Population event not found")
+
+        if timestamp:
+            conn.execute(
+                "UPDATE population_events SET event_type=?, count=?, notes=?, timestamp=?, updated_at=datetime('now')"
+                " WHERE id=? AND tank_id=?",
+                (event_type, count, notes, timestamp, pe_id, tank_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE population_events SET event_type=?, count=?, notes=?, updated_at=datetime('now')"
+                " WHERE id=? AND tank_id=?",
+                (event_type, count, notes, pe_id, tank_id),
+            )
+
+        if old["inhabitant_id"] is not None:
+            inh = row_to_dict(conn.execute(
+                "SELECT count FROM inhabitants WHERE id = ?", (old["inhabitant_id"],),
+            ).fetchone())
+            if inh and inh["count"] is not None:
+                adjustment = _pop_event_delta(event_type, count) - _pop_event_delta(old["event_type"], old["count"])
+                if adjustment != 0:
+                    new_count = max(0, inh["count"] + adjustment)
+                    conn.execute(
+                        "UPDATE inhabitants SET count=?, updated_at=datetime('now') WHERE id=?",
+                        (new_count, old["inhabitant_id"]),
+                    )
+
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse({"status": "ok"})
+    return RedirectResponse(url=f"/tanks/{tank_id}/inhabitants", status_code=303)
+
+
 @router.post("/population-events/{pe_id}/delete")
 async def delete_population_event(tank_id: int, pe_id: int):
     with get_db() as conn:

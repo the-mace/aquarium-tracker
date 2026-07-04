@@ -90,7 +90,7 @@
   <div class="panel-header"><h3>Population Event Log</h3></div>
   <div class="table-wrapper">
     <table class="data-table">
-      <thead><tr><th>Time</th><th>Species</th><th>Event</th><th>Count</th><th>Notes</th></tr></thead>
+      <thead><tr><th>Time</th><th>Species</th><th>Event</th><th>Count</th><th>Notes</th><th>Actions</th></tr></thead>
       <tbody>
         {% for ev in pop_events %}
         <tr>
@@ -99,6 +99,17 @@
           <td><span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span></td>
           <td>{% if ev.count %}{{ ev.count }}{% else %}—{% endif %}</td>
           <td class="muted">{{ ev.notes or '' }}</td>
+          <td class="actions-cell">
+            <button class="btn btn-xs btn-ghost pop-event-edit-trigger"
+                    data-id="{{ ev.id }}"
+                    data-event-type="{{ ev.event_type }}"
+                    data-count="{{ ev.count or 0 }}"
+                    data-notes="{{ ev.notes or '' }}"
+                    data-timestamp="{{ ev.timestamp }}"
+                    data-name="{{ ev.common_name or ev.species or '' }}"
+                    onclick="openEditPopEventFrom(this)">Edit</button>
+            <button class="btn btn-xs btn-danger" onclick="deletePopEvent({{ ev.id }})">✕</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -209,6 +220,34 @@
     </form>
   </div>
 </div>
+
+<!-- Edit Population Event Modal -->
+<div id="modal-edit-pop-event" class="modal" style="display:none">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header"><h3>Edit Population Event</h3><button class="modal-close" onclick="closeModal('modal-edit-pop-event')">×</button></div>
+    <form id="edit-pop-event-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
+      <p id="edit-pop-event-subject" class="muted"></p>
+      <div class="form-grid">
+        <div class="form-group"><label>Event</label>
+          <select name="event_type" id="edit-pop-event-type">
+            <option value="added">Added</option>
+            <option value="died">Died</option>
+            <option value="removed">Removed</option>
+            <option value="born">Born</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Count</label><input type="number" name="count" id="edit-pop-event-count" min="0"></div>
+        <div class="form-group">
+          <label>Time</label>
+          <input type="datetime-local" class="dt-local" id="edit-pop-event-timestamp">
+          <input type="hidden" name="timestamp" class="dt-utc">
+        </div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-pop-event-notes"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-pop-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -289,6 +328,20 @@ function openPopEvent(inhId, name) {
   document.getElementById('pop-event-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/event`;
   document.getElementById('pop-event-subject').textContent = name;
   openModal('modal-pop-event');
+}
+function openEditPopEventFrom(el) {
+  const d = el.dataset;
+  document.getElementById('edit-pop-event-form').action = `/tanks/{{ tank.id }}/inhabitants/population-events/${d.id}/update`;
+  document.getElementById('edit-pop-event-subject').textContent = d.name;
+  document.getElementById('edit-pop-event-type').value = d.eventType;
+  document.getElementById('edit-pop-event-count').value = d.count;
+  document.getElementById('edit-pop-event-notes').value = d.notes || '';
+  document.getElementById('edit-pop-event-timestamp').value = utcToLocalInputValue(d.timestamp);
+  openModal('modal-edit-pop-event');
+}
+function deletePopEvent(peId) {
+  if (!confirm('Delete this population event? This cannot be undone.')) return;
+  fetch(`/tanks/{{ tank.id }}/inhabitants/population-events/${peId}/delete`, {method: 'POST'}).then(() => location.reload());
 }
 function openEditInh(inhId, count, countUnknown, commonName, species) {
   document.getElementById('edit-inh-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/update`;
