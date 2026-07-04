@@ -28,8 +28,15 @@
         {% else %}
         <span class="sched-day sched-day-float">—</span>
         {% endif %}
-        <span class="sched-desc">{{ s.description }}</span>
-        {% if not s.is_active %}<span class="badge badge-inactive">inactive</span>{% endif %}
+        <div class="sched-desc-col">
+          <div class="sched-desc-line">
+            <span class="sched-desc">{{ s.description }}</span>
+            {% if not s.is_active %}<span class="badge badge-inactive">inactive</span>{% endif %}
+          </div>
+          {% if s.notes %}
+          <div class="muted sched-notes">{{ s.notes }}</div>
+          {% endif %}
+        </div>
       </div>
       <div class="sched-row-right">
         {% if cat_key == 'maintenance' %}
