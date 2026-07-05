@@ -87,4 +87,4 @@ async def startup():
 @app.get("/")
 async def root():
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/tanks")
+    return RedirectResponse(url="/today")

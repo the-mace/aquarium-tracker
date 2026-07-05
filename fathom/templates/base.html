@@ -8,12 +8,22 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <nav class="sidebar">
+  <div class="mobile-topbar">
+    <button type="button" class="hamburger-btn" onclick="openSidebar()" aria-label="Open menu">☰</button>
+    <a href="/tanks" class="brand">
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">Fathom</span>
+    </a>
+  </div>
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <nav class="sidebar" onclick="if (event.target.closest('a')) closeSidebar()">
     <div class="sidebar-header">
       <a href="/tanks" class="brand">
         <span class="brand-icon">⬡</span>
         <span class="brand-name">Fathom</span>
       </a>
+      <button type="button" class="sidebar-close-btn" onclick="closeSidebar()" aria-label="Close menu">✕</button>
     </div>
     <div class="sidebar-body">
       <div class="sidebar-section">

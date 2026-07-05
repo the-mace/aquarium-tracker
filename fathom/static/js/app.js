@@ -4,6 +4,16 @@ function goToTank(event, tankId) {
   window.location.href = `/tanks/${tankId}`;
 }
 
+/* ── Mobile nav drawer ─────────────────────────────────────────────────── */
+function openSidebar() {
+  document.querySelector('.sidebar')?.classList.add('open');
+  document.querySelector('.sidebar-overlay')?.classList.add('open');
+}
+function closeSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('open');
+  document.querySelector('.sidebar-overlay')?.classList.remove('open');
+}
+
 /* ── Modals ────────────────────────────────────────────────────────────── */
 function openModal(id) {
   const el = document.getElementById(id);
