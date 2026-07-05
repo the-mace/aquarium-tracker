@@ -209,7 +209,7 @@
 <div id="modal-pop-event" class="modal" style="display:none">
   <div class="modal-box modal-box-sm">
     <div class="modal-header"><h3>Log Population Event</h3><button class="modal-close" onclick="closeModal('modal-pop-event')">×</button></div>
-    <form id="pop-event-form" method="post" action="">
+    <form id="pop-event-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
       <p id="pop-event-subject" class="muted"></p>
       <div class="form-grid">
         <div class="form-group"><label>Event</label>
@@ -221,6 +221,11 @@
           </select>
         </div>
         <div class="form-group"><label>Count</label><input type="number" name="count" value="1" min="1"></div>
+        <div class="form-group">
+          <label>Time</label>
+          <input type="datetime-local" class="dt-local" id="pop-event-timestamp">
+          <input type="hidden" name="timestamp" class="dt-utc">
+        </div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-pop-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
@@ -334,6 +339,7 @@ function openRefInfo(entityType, entityName, displayName, description, careNotes
 function openPopEvent(inhId, name) {
   document.getElementById('pop-event-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/event`;
   document.getElementById('pop-event-subject').textContent = name;
+  document.getElementById('pop-event-timestamp').value = localNowInputValue();
   openModal('modal-pop-event');
 }
 function openEditPopEventFrom(el) {

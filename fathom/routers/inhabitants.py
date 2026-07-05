@@ -156,6 +156,7 @@ async def record_population_event(
     event_type: str = Form(...),
     count: int = Form(1),
     notes: Optional[str] = Form(None),
+    timestamp: Optional[str] = Form(None),
 ):
     with get_db() as conn:
         inh = row_to_dict(conn.execute(
@@ -164,10 +165,16 @@ async def record_population_event(
         if not inh:
             raise HTTPException(status_code=404, detail="Inhabitant not found")
 
-        conn.execute(
-            "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes) VALUES (?,?,?,?,?)",
-            (tank_id, inh_id, event_type, count, notes),
-        )
+        if timestamp:
+            conn.execute(
+                "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes, timestamp) VALUES (?,?,?,?,?,?)",
+                (tank_id, inh_id, event_type, count, notes, timestamp),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes) VALUES (?,?,?,?,?)",
+                (tank_id, inh_id, event_type, count, notes),
+            )
 
         if event_type in ("died", "removed"):
             new_count = max(0, (inh["count"] or 0) - count)
