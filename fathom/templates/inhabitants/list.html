@@ -9,7 +9,7 @@
 </div>
 
 {% if inhabitants %}
-<div class="table-wrapper">
+<div class="table-wrapper responsive-cards">
   <table class="data-table">
     <thead>
       <tr>
@@ -53,18 +53,18 @@
           <span class="ref-thumb-pending" title="Info loading…">⏳</span>
           {% endif %}
         </td>
-        <td>
+        <td data-label="Count">
           {% if inh.count is none %}
           <span class="many-badge">many</span>
           {% else %}
           <span class="count-badge">{{ inh.count }}</span>
           {% endif %}
         </td>
-        <td><strong>{{ inh.common_name or '—' }}</strong></td>
-        <td class="muted italic">{{ inh.species or '—' }}</td>
-        <td class="nowrap">{{ inh.added_date or '—' }}</td>
-        <td>{{ inh.source or '—' }}</td>
-        <td class="muted">{{ inh.notes or '' }}</td>
+        <td data-label="Common Name"><strong>{{ inh.common_name or '—' }}</strong></td>
+        <td class="muted italic" data-label="Species">{{ inh.species or '—' }}</td>
+        <td class="nowrap" data-label="Added">{{ inh.added_date or '—' }}</td>
+        <td data-label="Source">{{ inh.source or '—' }}</td>
+        <td class="muted" data-label="Notes">{{ inh.notes or '' }}</td>
         <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openPopEvent({{ inh.id }}, '{{ inh.common_name or inh.species }}')">Log Event</button>
           <button class="btn btn-xs btn-ghost"
@@ -95,17 +95,17 @@
 {% if pop_events %}
 <div class="panel" style="margin-top:2rem">
   <div class="panel-header"><h3>Population Event Log</h3></div>
-  <div class="table-wrapper">
+  <div class="table-wrapper responsive-cards">
     <table class="data-table">
       <thead><tr><th>Time</th><th>Species</th><th>Event</th><th>Count</th><th>Notes</th><th>Actions</th></tr></thead>
       <tbody>
         {% for ev in pop_events %}
         <tr>
-          <td class="nowrap ts-local" data-utc="{{ ev.timestamp }}">{{ ev.timestamp }}</td>
-          <td>{{ ev.common_name or ev.species or '—' }}</td>
-          <td><span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span></td>
-          <td>{% if ev.count %}{{ ev.count }}{% else %}—{% endif %}</td>
-          <td class="muted">{{ ev.notes or '' }}</td>
+          <td class="nowrap ts-local" data-utc="{{ ev.timestamp }}" data-label="Time">{{ ev.timestamp }}</td>
+          <td data-label="Species">{{ ev.common_name or ev.species or '—' }}</td>
+          <td data-label="Event"><span class="badge badge-{{ ev.event_type }}">{{ ev.event_type }}</span></td>
+          <td data-label="Count">{% if ev.count %}{{ ev.count }}{% else %}—{% endif %}</td>
+          <td class="muted" data-label="Notes">{{ ev.notes or '' }}</td>
           <td class="actions-cell">
             <button class="btn btn-xs btn-ghost pop-event-edit-trigger"
                     data-id="{{ ev.id }}"

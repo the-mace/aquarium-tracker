@@ -12,7 +12,7 @@
 </div>
 
 {% if purchases %}
-<div class="table-wrapper">
+<div class="table-wrapper responsive-cards">
   <table class="data-table">
     <thead>
       <tr>
@@ -29,12 +29,12 @@
       {% for p in purchases %}
       <tr data-date="{{ p.purchase_date or '' }}" data-category="{{ (p.category or '')|lower }}"
           data-vendor="{{ (p.vendor or '')|lower }}" data-cost="{{ p.cost if p.cost is not none else '' }}">
-        <td class="nowrap">{{ p.purchase_date or '—' }}</td>
-        <td>{{ p.item }}</td>
-        <td><span class="badge badge-cat">{{ p.category }}</span></td>
-        <td>{{ p.vendor or '—' }}</td>
-        <td class="nowrap">${{ "%.2f"|format(p.cost) if p.cost is not none else '—' }}</td>
-        <td class="muted">{{ p.notes or '' }}</td>
+        <td class="nowrap" data-label="Date">{{ p.purchase_date or '—' }}</td>
+        <td data-label="Item">{{ p.item }}</td>
+        <td data-label="Category"><span class="badge badge-cat">{{ p.category }}</span></td>
+        <td data-label="Vendor">{{ p.vendor or '—' }}</td>
+        <td class="nowrap" data-label="Cost">${{ "%.2f"|format(p.cost) if p.cost is not none else '—' }}</td>
+        <td class="muted" data-label="Notes">{{ p.notes or '' }}</td>
         <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openEditPurchase(this)"
                   data-id="{{ p.id }}" data-item="{{ (p.item or '')|e }}" data-category="{{ p.category or '' }}"

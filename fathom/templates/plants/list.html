@@ -14,7 +14,7 @@
 {% if plants %}
 <div class="panel" style="margin-bottom:1.25rem">
   <div class="panel-header"><h3>Plants</h3><span class="muted">{{ plants|length }} active</span></div>
-  <div class="table-wrapper">
+  <div class="table-wrapper responsive-cards">
     <table class="data-table">
       <thead>
         <tr>
@@ -57,13 +57,13 @@
             <span class="ref-thumb-pending" title="Info loading…">⏳</span>
             {% endif %}
           </td>
-          <td>{{ pl.common_name or '—' }}</td>
-          <td><em class="muted">{{ pl.species or pl.ref_scientific_name or '—' }}</em></td>
-          <td>{{ pl.added_date or '—' }}</td>
-          <td>{{ pl.source or '—' }}</td>
-          <td>{{ pl.notes or '' }}</td>
-          <td>
-            <div style="display:flex;gap:.35rem;align-items:center">
+          <td data-label="Common Name">{{ pl.common_name or '—' }}</td>
+          <td data-label="Species"><em class="muted">{{ pl.species or pl.ref_scientific_name or '—' }}</em></td>
+          <td data-label="Added">{{ pl.added_date or '—' }}</td>
+          <td data-label="Source">{{ pl.source or '—' }}</td>
+          <td data-label="Notes">{{ pl.notes or '' }}</td>
+          <td class="actions-cell">
+            <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
               <button class="btn btn-xs btn-ghost" type="button"
                 data-id="{{ pl.id }}"
                 data-common-name="{{ pl.common_name|e or '' }}"
@@ -94,17 +94,17 @@
 {% if removed_plants %}
 <details style="margin-bottom:1.25rem">
   <summary style="cursor:pointer;color:var(--muted);font-size:.85rem;padding:.35rem 0">Removed plants ({{ removed_plants|length }})</summary>
-  <div class="table-wrapper" style="margin-top:.5rem">
+  <div class="table-wrapper responsive-cards" style="margin-top:.5rem">
     <table class="data-table">
       <thead><tr><th>Common Name</th><th>Species</th><th>Added</th><th>Notes</th><th></th></tr></thead>
       <tbody>
         {% for pl in removed_plants %}
         <tr style="opacity:.6">
-          <td>{{ pl.common_name or '—' }}</td>
-          <td><em class="muted">{{ pl.species or '—' }}</em></td>
-          <td>{{ pl.added_date or '—' }}</td>
-          <td>{{ pl.notes or '' }}</td>
-          <td>
+          <td data-label="Common Name">{{ pl.common_name or '—' }}</td>
+          <td data-label="Species"><em class="muted">{{ pl.species or '—' }}</em></td>
+          <td data-label="Added">{{ pl.added_date or '—' }}</td>
+          <td data-label="Notes">{{ pl.notes or '' }}</td>
+          <td class="actions-cell">
             <form method="post" action="/tanks/{{ tank.id }}/plants/{{ pl.id }}/delete" style="display:inline" onsubmit="return confirm('Delete?')">
               <button class="btn btn-xs btn-danger" type="submit">✕</button>
             </form>
@@ -120,7 +120,7 @@
 {% if hardscape %}
 <div class="panel">
   <div class="panel-header"><h3>Hardscape</h3><span class="muted">{{ hardscape|length }} items</span></div>
-  <div class="table-wrapper">
+  <div class="table-wrapper responsive-cards">
     <table class="data-table">
       <thead>
         <tr>
@@ -163,14 +163,14 @@
             <span class="ref-thumb-pending" title="Info loading…">⏳</span>
             {% endif %}
           </td>
-          <td>{{ hs.item }}</td>
-          <td>{{ hs.quantity or 1 }}</td>
-          <td>{{ hs.source or '—' }}</td>
-          <td>{% if hs.cost %}${{ "%.2f"|format(hs.cost) }}{% else %}—{% endif %}</td>
-          <td>{{ hs.added_date or '—' }}</td>
-          <td>{{ hs.notes or '' }}</td>
-          <td>
-            <div style="display:flex;gap:.35rem;align-items:center">
+          <td data-label="Item">{{ hs.item }}</td>
+          <td data-label="Qty">{{ hs.quantity or 1 }}</td>
+          <td data-label="Source">{{ hs.source or '—' }}</td>
+          <td data-label="Cost">{% if hs.cost %}${{ "%.2f"|format(hs.cost) }}{% else %}—{% endif %}</td>
+          <td data-label="Added">{{ hs.added_date or '—' }}</td>
+          <td data-label="Notes">{{ hs.notes or '' }}</td>
+          <td class="actions-cell">
+            <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
               <button class="btn btn-xs btn-ghost" type="button"
                 data-id="{{ hs.id }}"
                 data-item="{{ hs.item|e or '' }}"

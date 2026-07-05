@@ -9,7 +9,7 @@
 </div>
 
 {% if equipment %}
-<div class="table-wrapper">
+<div class="table-wrapper responsive-cards">
   <table class="data-table">
     <thead>
       <tr>
@@ -25,12 +25,12 @@
     <tbody>
       {% for eq in equipment %}
       <tr>
-        <td><span class="badge badge-cat">{{ eq.category }}</span></td>
-        <td>{{ eq.brand or '—' }}</td>
-        <td>{{ eq.model or '—' }}</td>
-        <td>{{ eq.installed_date or '—' }}</td>
-        <td><span class="badge {% if eq.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ 'active' if eq.is_active else 'inactive' }}</span></td>
-        <td class="muted">{{ eq.notes or '' }}</td>
+        <td data-label="Category"><span class="badge badge-cat">{{ eq.category }}</span></td>
+        <td data-label="Brand">{{ eq.brand or '—' }}</td>
+        <td data-label="Model">{{ eq.model or '—' }}</td>
+        <td data-label="Installed">{{ eq.installed_date or '—' }}</td>
+        <td data-label="Status"><span class="badge {% if eq.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ 'active' if eq.is_active else 'inactive' }}</span></td>
+        <td class="muted" data-label="Notes">{{ eq.notes or '' }}</td>
         <td class="actions-cell">
           <button class="btn btn-xs btn-ghost" onclick="openEditEq(this)"
                   data-id="{{ eq.id }}" data-category="{{ eq.category or '' }}"
