@@ -1006,12 +1006,15 @@ p { margin-bottom: .5rem; }
     display: flex;
     align-items: center;
     gap: .75rem;
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
     z-index: 100;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
-    padding: .75rem 1rem;
+    padding: 0 1rem;
   }
   .hamburger-btn {
     background: none;
@@ -1055,6 +1058,6 @@ p { margin-bottom: .5rem; }
     z-index: 250;
   }
 
-  .main { padding: 1rem; }
+  .main { padding: 1rem; padding-top: calc(52px + 1rem); }
   .charts-row, .two-col-row { grid-template-columns: 1fr; }
 }
