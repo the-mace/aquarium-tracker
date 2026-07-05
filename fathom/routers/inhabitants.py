@@ -24,7 +24,7 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
         pop_events = rows_to_list(conn.execute(
             "SELECT pe.*, i.common_name, i.species FROM population_events pe"
             " INNER JOIN inhabitants i ON i.id = pe.inhabitant_id"
-            " WHERE pe.tank_id = ? ORDER BY pe.timestamp DESC LIMIT 20",
+            " WHERE pe.tank_id = ? ORDER BY pe.timestamp DESC",
             (tank_id,),
         ).fetchall())
 

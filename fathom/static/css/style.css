@@ -497,6 +497,8 @@ p { margin-bottom: .5rem; }
 
 /* ── Tables ─────────────────────────────────────────────────────────────── */
 .table-wrapper { overflow-x: auto; }
+.pop-event-log-scroll { max-height: 420px; overflow-y: auto; }
+.pop-event-log-scroll thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
 .data-table {
   width: 100%;
   border-collapse: collapse;
