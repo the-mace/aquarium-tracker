@@ -241,6 +241,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Current state (as of 2026-07-03)
 
+- **Add Test Result flow fixed (2026-07-09).** The standalone "Add Test Result" page (`/tanks/{id}/tests/new`) had regressed to redirecting back to the plain test list instead of the dashboard where the AI Summary panel lives — a side effect of an earlier "stay on the same page" change that shouldn't have applied here. Now redirects to the dashboard with `?saved=test`, which shows a dismissible toast confirming the save happened immediately (before AI analysis, which still runs as a background task). Test results are now also editable in place (`POST /tanks/{id}/tests/{result_id}/update` + edit modal on the test list page), matching the equipment/purchases pattern. Also loosened the analysis/recommendation prompt wording so a value outside a narrow "ideal" sub-range (e.g. a temp a couple degrees above a species' breeding-optimal window) isn't flagged as a concern unless it's actually nearing the real safe-tolerance boundary — prompted by the AI repeatedly over-flagging 75°F for a Neocaridina shrimp tank whose notes still had a stale 68-72°F target (fixed via the mini's own `/tanks/{id}/edit`, the same tank-notes-override mechanism used for the earlier KH false-positive).
 - **Fully deployed and in production.** The mini is running live and reachable both internally (LAN, `http://192.168.50.205:8000`) and externally via the VPN (see "External access" above, verified 2026-07-03). Real data has been loaded into the mini's production DB (Tank 2 "Fish Tank" import confirmed clean via `bin/mini-logs` monitoring — no errors/warnings — and spot-checked directly against the live DB: sensible row counts across all sections, correct inhabitant count history, no obvious data-quality issues). This closes out the initial deployment effort — the project is no longer dev-only.
 - **The detailed per-session changelog below (the "### Changes in ... session" entries) is retired as of this note.** It served its purpose while the app was under active, rapid, single-session development, but now that Fathom is live in production, ongoing changes should be tracked via normal git history/commit messages instead of hand-written session summaries here. This "Current state" section and the rest of the file (architecture, gotchas, deployment) should still be kept up to date going forward — just not the narrative changelog.
 - Tank manufacturer/model (e.g. "Seapora 40 gallon long") now triggers a real web-search-backed AI fetch to backfill missing volume/dimensions, instead of relying on unreliable training-knowledge guessing — see eleventh-session notes below. 263 tests passing
@@ -265,7 +266,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-257 pytest integration tests in `fathom/tests/`. Run with:
+284 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
