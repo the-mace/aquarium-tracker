@@ -222,6 +222,10 @@ async function loadPopChart(tankId) {
           return currentByLabel[label];
         }
         running += (deltaByDate[date] && deltaByDate[date][label]) || 0;
+        // A running total should never go below zero — a population can't be
+        // negative. Data-entry mismatches (e.g. a "removed" event count exceeding
+        // what was actually on hand) can otherwise push the sum negative.
+        if (running < 0) running = 0;
         return running;
       });
       return {
