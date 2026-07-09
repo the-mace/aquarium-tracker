@@ -9,6 +9,12 @@ def _dow(d=None):
 def test_today_page_empty(client):
     r = client.get("/today")
     assert r.status_code == 200
+    assert "No active tanks" in r.text
+
+
+def test_today_shows_tank_card_with_nothing_due(client, tank_id):
+    r = client.get("/today")
+    assert r.status_code == 200
     assert "Nothing due today" in r.text
 
 
@@ -45,7 +51,7 @@ def test_today_shows_overdue_maintenance(client, tank_id):
     assert "not yet done" in r.text
 
 
-def test_today_mark_done_removes_item_and_redirects_to_today(client, tank_id):
+def test_today_mark_done_keeps_card_and_shows_checkmark(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/schedule",
         data={"category": "maintenance", "description": "Water change", "interval_days": "7"},
@@ -65,7 +71,9 @@ def test_today_mark_done_removes_item_and_redirects_to_today(client, tank_id):
     assert r.headers["location"] == "/today"
 
     r = client.get("/today")
-    assert "Water change" not in r.text
+    # Card stays, item stays, but now shown as completed rather than disappearing.
+    assert "Water change" in r.text
+    assert "done today" in r.text
 
 
 def test_today_ignores_inactive_tanks(client, tank_id):

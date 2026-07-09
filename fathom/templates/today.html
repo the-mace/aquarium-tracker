@@ -10,9 +10,9 @@
   </div>
 </div>
 
-{% if tanks_with_items %}
+{% if tanks %}
 <div class="today-grid">
-  {% for tank in tanks_with_items %}
+  {% for tank in tanks %}
   <div class="panel today-tank-panel" onclick="goToTank(event, {{ tank.id }})">
     <div class="panel-header">
       <h3><a href="/tanks/{{ tank.id }}">{{ tank.name }}</a></h3>
@@ -38,6 +38,22 @@
     {% if tank.maintenance_items %}
     <div class="today-section maint-list">
       {% for m in tank.maintenance_items %}
+      {% if m.last_done == today_date %}
+      <div class="today-maint-row">
+        <div class="maint-row">
+          <label class="today-check today-check-done">
+            <input type="checkbox" checked disabled>
+            <div class="today-item-text">
+              <span class="maint-desc maint-desc-done">{{ m.description }}</span>
+              {% if m.notes %}
+              <div class="muted today-item-notes">{{ m.notes }}</div>
+              {% endif %}
+            </div>
+          </label>
+          <span class="maint-due maint-done">✓ done today</span>
+        </div>
+      </div>
+      {% else %}
       <form method="post" action="/tanks/{{ tank.id }}/schedule/{{ m.id }}/mark-done" class="today-maint-row">
         <input type="hidden" name="return_to" value="today">
         <div class="maint-row">
@@ -59,8 +75,13 @@
           {% endif %}
         </div>
       </form>
+      {% endif %}
       {% endfor %}
     </div>
+    {% endif %}
+
+    {% if not tank.today_schedule and not tank.maintenance_items %}
+    <p class="muted today-item-notes">Nothing due today.</p>
     {% endif %}
   </div>
   {% endfor %}
@@ -68,7 +89,7 @@
 {% else %}
 <div class="empty-state">
   <div class="empty-icon">⬡</div>
-  <p>Nothing due today. All caught up across your tanks.</p>
+  <p>No active tanks.</p>
 </div>
 {% endif %}
 {% endblock %}

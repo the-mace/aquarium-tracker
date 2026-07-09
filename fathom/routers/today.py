@@ -32,22 +32,25 @@ async def today_page(request: Request):
             # task that's never been done yet (next_due NULL but interval_days set). Plain
             # manual-reminder items (no next_due, no interval) have no due-date concept and
             # are excluded here on purpose, to keep this page scoped to what needs attention.
+            # Also include anything already completed today (last_done=today) even though
+            # its next_due has since rolled forward, so a finished item stays visible with
+            # a checkmark instead of vanishing the moment it's marked done.
             tank["maintenance_items"] = rows_to_list(conn.execute(
                 """SELECT * FROM recurring_schedule
                    WHERE tank_id=? AND is_active=1 AND tracking_mode='logged'
                      AND (
                        (next_due IS NOT NULL AND next_due <= ?)
                        OR (next_due IS NULL AND interval_days IS NOT NULL)
+                       OR last_done=?
                      )
-                   ORDER BY CASE WHEN next_due IS NULL THEN 1 ELSE 0 END, next_due""",
-                (tank["id"], today_date),
+                   ORDER BY CASE WHEN last_done=? THEN 1 ELSE 0 END,
+                     CASE WHEN next_due IS NULL THEN 1 ELSE 0 END, next_due""",
+                (tank["id"], today_date, today_date, today_date),
             ).fetchall())
-
-    tanks_with_items = [t for t in tanks if t["today_schedule"] or t["maintenance_items"]]
 
     return templates.TemplateResponse("today.html", {
         "request": request,
-        "tanks_with_items": tanks_with_items,
+        "tanks": tanks,
         "today_date": today_date,
         "today_dow_label": date.today().strftime("%A"),
     })
