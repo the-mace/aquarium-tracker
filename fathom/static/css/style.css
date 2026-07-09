@@ -1107,3 +1107,27 @@ p { margin-bottom: .5rem; }
   }
   .responsive-cards .data-table td.actions-cell > * + * { margin-left: 0; }
 }
+
+/* ── Toast banner ───────────────────────────────────────────────────────── */
+.toast-banner {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: var(--card);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  padding: .65rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: .9rem;
+}
+.toast-banner .toast-icon { color: var(--primary); }
+.toast-banner .toast-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.toast-banner .toast-close:hover { color: var(--text); }

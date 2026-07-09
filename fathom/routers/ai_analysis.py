@@ -130,7 +130,7 @@ Water test just recorded (newest) plus recent tests for trend comparison:
 
 Now write the actual response. Cover only what's relevant, briefly:
 1. Open issues — one short line (e.g. "No open issues at this time."). Skip if genuinely nothing to say.
-2. Any water parameter values or trends worth flagging vs. the recent tests above (e.g. a drop/rise since the last test, or a value outside the safe/preferred range for the inhabitants) — only mention parameters that are actually notable, skip the rest.
+2. Any water parameter values or trends worth flagging vs. the recent tests above (e.g. a drop/rise since the last test, or a value outside the *safe tolerance* range for the inhabitants). Use precise, species-specific tolerance ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary. Only mention parameters that are actually notable, skip the rest.
 3. The action to take now. Usually this is simply "Proceed with the standard water change" per the schedule above — do not restate the schedule's gallons/dose/interval details, the keeper already has those. Only describe something different if this test's results or recent history genuinely call for a different action.
 
 2-4 sentences total, plain text, no markdown, no headers, no preamble like "Recommendation:" or "Analysis:" — this text is appended directly to the test result's own notes field."""
@@ -161,7 +161,7 @@ Recent Events (last 30 days):
 
 Please provide:
 1. A brief analysis of the water chemistry trends
-2. Any flags or concerns about parameters outside safe ranges for this tank type
+2. Any flags or concerns about parameters outside the *safe tolerance* range for this tank's inhabitants — use precise, species-specific ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary.
 3. Specific actionable recommendations
 4. For each open issue, suggest whether it should remain open, move to monitoring, or be resolved
 

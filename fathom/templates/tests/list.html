@@ -9,7 +9,7 @@
 </div>
 
 {% if tests %}
-<div class="table-wrapper">
+<div class="table-wrapper responsive-cards">
   <table class="data-table">
     <thead>
       <tr>
@@ -29,17 +29,24 @@
     <tbody>
       {% for t in tests %}
       <tr>
-        <td class="nowrap ts-local" data-utc="{{ t.timestamp }}">{{ t.timestamp }}</td>
-        <td>{{ t.ph if t.ph is not none else '—' }}</td>
-        <td>{{ t.gh if t.gh is not none else '—' }}</td>
-        <td>{{ t.kh if t.kh is not none else '—' }}</td>
-        <td class="{% if t.ammonia is not none and t.ammonia > 0.25 %}cell-danger{% elif t.ammonia is not none and t.ammonia > 0 %}cell-warn{% endif %}">{{ t.ammonia if t.ammonia is not none else '—' }}</td>
-        <td class="{% if t.nitrite is not none and t.nitrite > 0.1 %}cell-danger{% endif %}">{{ t.nitrite if t.nitrite is not none else '—' }}</td>
-        <td class="{% if t.nitrate is not none and t.nitrate > 40 %}cell-warn{% endif %}">{{ t.nitrate if t.nitrate is not none else '—' }}</td>
-        <td>{{ t.tds if t.tds is not none else '—' }}</td>
-        <td>{{ t.temp if t.temp is not none else '—' }}</td>
-        <td class="muted">{{ t.notes or '' }}</td>
-        <td>
+        <td class="nowrap ts-local" data-utc="{{ t.timestamp }}" data-label="Timestamp">{{ t.timestamp }}</td>
+        <td data-label="pH">{{ t.ph if t.ph is not none else '—' }}</td>
+        <td data-label="GH">{{ t.gh if t.gh is not none else '—' }}</td>
+        <td data-label="KH">{{ t.kh if t.kh is not none else '—' }}</td>
+        <td data-label="NH₃" class="{% if t.ammonia is not none and t.ammonia > 0.25 %}cell-danger{% elif t.ammonia is not none and t.ammonia > 0 %}cell-warn{% endif %}">{{ t.ammonia if t.ammonia is not none else '—' }}</td>
+        <td data-label="NO₂" class="{% if t.nitrite is not none and t.nitrite > 0.1 %}cell-danger{% endif %}">{{ t.nitrite if t.nitrite is not none else '—' }}</td>
+        <td data-label="NO₃" class="{% if t.nitrate is not none and t.nitrate > 40 %}cell-warn{% endif %}">{{ t.nitrate if t.nitrate is not none else '—' }}</td>
+        <td data-label="TDS">{{ t.tds if t.tds is not none else '—' }}</td>
+        <td data-label="Temp">{{ t.temp if t.temp is not none else '—' }}</td>
+        <td class="muted" data-label="Notes">{{ t.notes or '' }}</td>
+        <td class="actions-cell">
+          <button class="btn btn-xs btn-ghost" onclick="openEditTest(this)"
+                  data-id="{{ t.id }}" data-timestamp="{{ t.timestamp }}"
+                  data-ph="{{ t.ph if t.ph is not none else '' }}" data-gh="{{ t.gh if t.gh is not none else '' }}"
+                  data-kh="{{ t.kh if t.kh is not none else '' }}" data-ammonia="{{ t.ammonia if t.ammonia is not none else '' }}"
+                  data-nitrite="{{ t.nitrite if t.nitrite is not none else '' }}" data-nitrate="{{ t.nitrate if t.nitrate is not none else '' }}"
+                  data-tds="{{ t.tds if t.tds is not none else '' }}" data-temp="{{ t.temp if t.temp is not none else '' }}"
+                  data-notes="{{ (t.notes or '')|e }}">✎ Edit</button>
           <button class="btn btn-xs btn-ghost" onclick="deleteTest({{ t.id }})">✕</button>
         </td>
       </tr>
@@ -53,6 +60,30 @@
   <a href="/tanks/{{ tank.id }}/tests/new" class="btn btn-primary">Add First Test</a>
 </div>
 {% endif %}
+
+<div id="modal-edit-test" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit Test Result</h3><button class="modal-close" onclick="closeModal('modal-edit-test')">×</button></div>
+    <form id="edit-test-form">
+      <div class="form-group">
+        <label>Date &amp; Time</label>
+        <input type="datetime-local" class="dt-local" id="edit-test-timestamp">
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>pH</label><input type="number" step="0.01" id="edit-test-ph"></div>
+        <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" id="edit-test-gh"></div>
+        <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" id="edit-test-kh"></div>
+        <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" id="edit-test-ammonia"></div>
+        <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" id="edit-test-nitrite"></div>
+        <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" id="edit-test-nitrate"></div>
+        <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" id="edit-test-tds"></div>
+        <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" id="edit-test-temp"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><textarea id="edit-test-notes" rows="3"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-test')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -62,5 +93,44 @@ function deleteTest(id) {
   fetch(`/tanks/{{ tank.id }}/tests/${id}`, {method:'DELETE'})
     .then(() => location.reload());
 }
+
+function openEditTest(btn) {
+  const d = btn.dataset;
+  document.getElementById('edit-test-form').dataset.testId = d.id;
+  document.getElementById('edit-test-timestamp').value = utcToLocalInputValue(d.timestamp);
+  document.getElementById('edit-test-ph').value = d.ph;
+  document.getElementById('edit-test-gh').value = d.gh;
+  document.getElementById('edit-test-kh').value = d.kh;
+  document.getElementById('edit-test-ammonia').value = d.ammonia;
+  document.getElementById('edit-test-nitrite').value = d.nitrite;
+  document.getElementById('edit-test-nitrate').value = d.nitrate;
+  document.getElementById('edit-test-tds').value = d.tds;
+  document.getElementById('edit-test-temp').value = d.temp;
+  document.getElementById('edit-test-notes').value = d.notes;
+  openModal('modal-edit-test');
+}
+
+document.getElementById('edit-test-form').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const testId = this.dataset.testId;
+  const localTs = document.getElementById('edit-test-timestamp').value;
+  const body = new URLSearchParams({
+    timestamp: localTs ? localDatetimeToUTCString(localTs) : '',
+    ph: document.getElementById('edit-test-ph').value,
+    gh: document.getElementById('edit-test-gh').value,
+    kh: document.getElementById('edit-test-kh').value,
+    ammonia: document.getElementById('edit-test-ammonia').value,
+    nitrite: document.getElementById('edit-test-nitrite').value,
+    nitrate: document.getElementById('edit-test-nitrate').value,
+    tds: document.getElementById('edit-test-tds').value,
+    temp: document.getElementById('edit-test-temp').value,
+    notes: document.getElementById('edit-test-notes').value,
+  });
+  fetch(`/tanks/{{ tank.id }}/tests/${testId}/update`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body.toString(),
+  }).then(() => location.reload());
+});
 </script>
 {% endblock %}

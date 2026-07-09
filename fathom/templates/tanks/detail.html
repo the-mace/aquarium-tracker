@@ -3,6 +3,8 @@
 {% set active = "dashboard" %}
 
 {% block content %}
+<div id="toast-container"></div>
+
 <div class="page-header">
   <div>
     <h1>{{ tank.name }}</h1>
@@ -508,6 +510,24 @@
 <script>
 const TANK_ID = {{ tank.id }};
 initDashboard(TANK_ID);
+
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const saved = params.get('saved');
+  if (!saved) return;
+  const messages = { test: '✓ Test result saved — generating AI analysis in the background…' };
+  const text = messages[saved];
+  if (text) {
+    const el = document.createElement('div');
+    el.className = 'toast-banner';
+    el.innerHTML = `<span class="toast-icon">✓</span><span>${text}</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>`;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 8000);
+  }
+  params.delete('saved');
+  const qs = params.toString();
+  history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
+})();
 
 function checkConfirm(form, expected, errId) {
   const val = form.querySelector('[name="confirmation"]').value;

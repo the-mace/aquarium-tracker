@@ -83,8 +83,51 @@ async def add_test_result(
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return JSONResponse({"id": result_id, "status": "created"}, status_code=201)
-    dest = f"/tanks/{tank_id}/tests" if return_to == "tests" else f"/tanks/{tank_id}"
+    if return_to == "tests":
+        dest = f"/tanks/{tank_id}/tests"
+    else:
+        dest = f"/tanks/{tank_id}?saved=test"
     return RedirectResponse(url=dest, status_code=303)
+
+
+@router.post("/{result_id}/update")
+async def update_test_result(
+    tank_id: int,
+    result_id: int,
+    timestamp: Optional[str] = Form(None),
+    ph: Optional[str] = Form(None),
+    gh: Optional[str] = Form(None),
+    kh: Optional[str] = Form(None),
+    ammonia: Optional[str] = Form(None),
+    nitrite: Optional[str] = Form(None),
+    nitrate: Optional[str] = Form(None),
+    tds: Optional[str] = Form(None),
+    temp: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    ph, gh, kh, ammonia, nitrite, nitrate, tds, temp = (
+        _parse_float(ph), _parse_float(gh), _parse_float(kh), _parse_float(ammonia),
+        _parse_float(nitrite), _parse_float(nitrate), _parse_float(tds), _parse_float(temp),
+    )
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM test_results WHERE id = ? AND tank_id = ?", (result_id, tank_id)
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Test result not found")
+        if timestamp:
+            conn.execute(
+                """UPDATE test_results SET timestamp=?, ph=?, gh=?, kh=?, ammonia=?, nitrite=?,
+                   nitrate=?, tds=?, temp=?, notes=?, updated_at=datetime('now') WHERE id=?""",
+                (timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes, result_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE test_results SET ph=?, gh=?, kh=?, ammonia=?, nitrite=?,
+                   nitrate=?, tds=?, temp=?, notes=?, updated_at=datetime('now') WHERE id=?""",
+                (ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes, result_id),
+            )
+    return JSONResponse({"status": "updated"})
 
 
 @router.delete("/{result_id}")
