@@ -33,6 +33,40 @@ def test_add_test_result_with_empty_string_fields(client, tank_id):
     assert row[2] is None
 
 
+def test_add_test_result_with_notes_creates_manual_observation(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"ph": "7.2", "notes": "Dropped in 2 bladder snails."},
+        headers={"Accept": "application/json"},
+    )
+    result_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute(
+        "SELECT source, text, related_test_id FROM observations WHERE tank_id=? AND related_test_id=?",
+        (tank_id, result_id),
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "manual"
+    assert row[1] == "Dropped in 2 bladder snails."
+    assert row[2] == result_id
+
+
+def test_add_test_result_without_notes_creates_no_observation(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"ph": "7.2"},
+        headers={"Accept": "application/json"},
+    )
+    result_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute(
+        "SELECT id FROM observations WHERE tank_id=? AND related_test_id=?", (tank_id, result_id)
+    ).fetchone()
+    conn.close()
+    assert row is None
+
+
 def test_add_test_result_persisted_to_db(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/tests",
@@ -65,10 +99,49 @@ def test_add_test_result_redirects_without_json_accept(client, tank_id):
     assert r.status_code == 303
 
 
-def test_add_test_result_redirects_to_dashboard_with_saved_flag(client, tank_id):
+def test_add_test_result_redirects_to_saved_wait_page(client, tank_id):
+    import re
+
     r = client.post(f"/tanks/{tank_id}/tests", data={"ph": "7.0"}, follow_redirects=False)
     assert r.status_code == 303
-    assert r.headers["location"] == f"/tanks/{tank_id}?saved=test"
+    location = r.headers["location"]
+    assert re.fullmatch(rf"/tanks/{tank_id}/tests/\d+/saved\?since=.+", location), location
+
+
+def test_saved_wait_page_renders(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/tests", data={"ph": "7.0"}, headers={"Accept": "application/json"}
+    )
+    result_id = r.json()["id"]
+    page = client.get(f"/tanks/{tank_id}/tests/{result_id}/saved?since=2026-01-01+00:00:00")
+    assert page.status_code == 200
+    assert "Test result saved" in page.text
+
+
+def test_saved_wait_page_404s_for_unknown_test(client, tank_id):
+    r = client.get(f"/tanks/{tank_id}/tests/999999/saved")
+    assert r.status_code == 404
+
+
+def test_summary_status_not_ready_when_no_summary_exists(client, tank_id):
+    r = client.get(f"/tanks/{tank_id}/tests/summary-status?since=2026-01-01+00:00:00")
+    assert r.status_code == 200
+    assert r.json() == {"ready": False}
+
+
+def test_summary_status_ready_when_summary_generated_after_since(client, tank_id):
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.execute(
+        "INSERT INTO tank_state_summary (tank_id, summary_text, generated_at) VALUES (?, 'x', '2026-06-01 00:00:00')",
+        (tank_id,),
+    )
+    conn.commit()
+    conn.close()
+    r = client.get(f"/tanks/{tank_id}/tests/summary-status?since=2026-01-01+00:00:00")
+    assert r.json() == {"ready": True}
+
+    r2 = client.get(f"/tanks/{tank_id}/tests/summary-status?since=2026-12-01+00:00:00")
+    assert r2.json() == {"ready": False}
 
 
 def test_add_test_result_return_to_tests_still_honored(client, tank_id):

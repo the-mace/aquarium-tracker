@@ -149,11 +149,20 @@ async def tank_timeline(
             " FROM test_results WHERE tank_id = ?",
             (tank_id,),
         ).fetchall())
+        linked_test_ids = {
+            r[0] for r in conn.execute(
+                "SELECT DISTINCT related_test_id FROM observations WHERE tank_id = ? AND related_test_id IS NOT NULL",
+                (tank_id,),
+            ).fetchall()
+        }
 
     for t in test_results:
+        # If this test's notes were already mirrored into a manual observation (see
+        # test_results.add_test_result), skip showing them again inline here.
+        detail = None if t["id"] in linked_test_ids else t.get("notes")
         rows.append({
             "kind": "test", "ts": t["timestamp"], "subtype": None,
-            "label": None, "detail": t.get("notes"), "amount": None,
+            "label": None, "detail": detail, "amount": None,
             "item_id": t["id"], "params": _test_params(t),
         })
     rows.sort(key=lambda r: r.get("kind") or "")

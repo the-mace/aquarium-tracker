@@ -1,4 +1,6 @@
 from pathlib import Path
+from datetime import datetime, timezone
+from urllib.parse import quote
 from fastapi import APIRouter, Request, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -76,6 +78,13 @@ async def add_test_result(
             )
         result_id = cur.lastrowid
 
+        if notes and notes.strip():
+            conn.execute(
+                """INSERT INTO observations (tank_id, related_test_id, source, text)
+                   VALUES (?, ?, 'manual', ?)""",
+                (tank_id, result_id, notes.strip()),
+            )
+
     from routers.ai_analysis import run_ai_analysis, run_test_recommendation
     background_tasks.add_task(run_ai_analysis, tank_id, "test", result_id)
     background_tasks.add_task(run_test_recommendation, tank_id, result_id)
@@ -86,8 +95,38 @@ async def add_test_result(
     if return_to == "tests":
         dest = f"/tanks/{tank_id}/tests"
     else:
-        dest = f"/tanks/{tank_id}?saved=test"
+        since = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        dest = f"/tanks/{tank_id}/tests/{result_id}/saved?since={quote(since)}"
     return RedirectResponse(url=dest, status_code=303)
+
+
+@router.get("/summary-status")
+async def summary_status(tank_id: int, since: Optional[str] = None):
+    """Polled by tests/saved.html to detect when the background AI summary
+    generated after `since` has landed, so it can redirect to the dashboard
+    as soon as it's ready instead of on a blind fixed delay."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT generated_at FROM tank_state_summary WHERE tank_id = ?", (tank_id,)
+        ).fetchone()
+    ready = bool(row and row[0] and since and row[0] > since)
+    return JSONResponse({"ready": ready})
+
+
+@router.get("/{result_id}/saved", response_class=HTMLResponse)
+async def test_saved_wait(request: Request, tank_id: int, result_id: int, since: Optional[str] = None):
+    with get_db() as conn:
+        tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+        if not tank:
+            raise HTTPException(status_code=404, detail="Tank not found")
+        test_result = row_to_dict(conn.execute(
+            "SELECT id FROM test_results WHERE id = ? AND tank_id = ?", (result_id, tank_id)
+        ).fetchone())
+        if not test_result:
+            raise HTTPException(status_code=404, detail="Test result not found")
+    return templates.TemplateResponse(
+        "tests/saved.html", {"request": request, "tank": tank, "since": since or ""}
+    )
 
 
 @router.post("/{result_id}/update")

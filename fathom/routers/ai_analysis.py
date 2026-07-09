@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from database import get_db, rows_to_list, row_to_dict
@@ -164,6 +165,7 @@ Please provide:
 2. Any flags or concerns about parameters outside the *safe tolerance* range for this tank's inhabitants — use precise, species-specific ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary.
 3. Specific actionable recommendations
 4. For each open issue, suggest whether it should remain open, move to monitoring, or be resolved
+5. If the latest test's own notes mention something new (an inhabitant added/removed, an action taken, a change noticed) that isn't already reflected in the Current Inhabitants/Plants/Hardscape lists above, acknowledge it explicitly — don't let it get crowded out by the water-chemistry discussion.
 
 Keep your response concise and practical. Use plain text, no markdown formatting."""
 
@@ -191,7 +193,7 @@ Open Issues:
 Latest Analysis:
 {latest_analysis}
 
-Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, and any active concerns."""
+Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
 
 
 def build_issue_review_prompt(tank, issues, test_results):
@@ -289,12 +291,15 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         analysis_prompt = build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape)
         logger.info("Claude call: analysis | tank=%d", tank_id)
         t0 = time.monotonic()
-        msg = client.messages.create(
+        msg = await asyncio.to_thread(
+            client.messages.create,
             model="claude-sonnet-4-6",
-            max_tokens=1024,
+            max_tokens=1536,
             messages=[{"role": "user", "content": analysis_prompt}],
             timeout=60.0,
         )
+        if msg.stop_reason == "max_tokens":
+            logger.warning("Claude analysis hit max_tokens for tank %d — response may be truncated", tank_id)
         logger.info("Claude done: analysis | tank=%d | in=%d out=%d elapsed=%.1fs",
                     tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
         analysis_text = msg.content[0].text
@@ -304,9 +309,10 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             issue_review_prompt = build_issue_review_prompt(tank, issues, test_results)
             logger.info("Claude call: issue_review | tank=%d", tank_id)
             t_ir = time.monotonic()
-            issue_msg = client.messages.create(
+            issue_msg = await asyncio.to_thread(
+                client.messages.create,
                 model="claude-sonnet-4-6",
-                max_tokens=512,
+                max_tokens=768,
                 messages=[{"role": "user", "content": issue_review_prompt}],
                 timeout=60.0,
             )
@@ -353,12 +359,15 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         summary_prompt = build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, analysis_text)
         logger.info("Claude call: summary | tank=%d", tank_id)
         t1 = time.monotonic()
-        sum_msg = client.messages.create(
+        sum_msg = await asyncio.to_thread(
+            client.messages.create,
             model="claude-sonnet-4-6",
-            max_tokens=512,
+            max_tokens=1024,
             messages=[{"role": "user", "content": summary_prompt}],
             timeout=60.0,
         )
+        if sum_msg.stop_reason == "max_tokens":
+            logger.warning("Claude summary hit max_tokens for tank %d — response may be truncated", tank_id)
         logger.info("Claude done: summary | tank=%d | in=%d out=%d elapsed=%.1fs",
                     tank_id, sum_msg.usage.input_tokens, sum_msg.usage.output_tokens, time.monotonic() - t1)
         summary_text = sum_msg.content[0].text
@@ -428,9 +437,10 @@ async def run_test_recommendation(tank_id: int, result_id: int):
         prompt = build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows)
         logger.info("Claude call: test_recommendation | tank=%d test=%d", tank_id, result_id)
         t0 = time.monotonic()
-        msg = client.messages.create(
+        msg = await asyncio.to_thread(
+            client.messages.create,
             model="claude-sonnet-4-6",
-            max_tokens=300,
+            max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
             timeout=60.0,
         )

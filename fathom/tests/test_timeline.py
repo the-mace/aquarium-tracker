@@ -113,6 +113,36 @@ def test_timeline_shows_water_test(client, tank_id):
     assert "2026-04-01" in r.text
 
 
+def test_timeline_shows_test_notes_once_when_mirrored_to_observation(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"timestamp": "2026-04-01 08:00:00", "ph": "7.2", "notes": "Looking good"},
+        headers={"Accept": "application/json"},
+    )
+    r = client.get(f"/tanks/{tank_id}/timeline")
+    assert r.status_code == 200
+    # The note is now a manual observation, linked back to the test — should not
+    # also be repeated as the water-test entry's own detail text.
+    assert r.text.count("Looking good") == 1
+    assert "manual note" in r.text.lower()
+
+
+def test_timeline_still_shows_notes_inline_for_test_without_linked_observation(client, tank_id):
+    import sqlite3
+    import database as _db
+
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.execute(
+        "INSERT INTO test_results (tank_id, timestamp, ph, notes) VALUES (?,?,?,?)",
+        (tank_id, "2026-04-01 08:00:00", 7.2, "Legacy note, no observation row"),
+    )
+    conn.commit()
+    conn.close()
+    r = client.get(f"/tanks/{tank_id}/timeline")
+    assert r.status_code == 200
+    assert "Legacy note, no observation row" in r.text
+
+
 def test_timeline_flags_out_of_range_test_params(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/tests",
