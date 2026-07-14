@@ -62,6 +62,57 @@ def test_delete_schedule(client, tank_id):
     assert "To delete" not in r.text
 
 
+def test_add_schedule_logs_timeline_event(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "tue", "description": "Shrimp Cuisine"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    r = client.get(f"/tanks/{tank_id}/events", headers={"Accept": "application/json"})
+    events = r.json()["events"]
+    other = [e for e in events if e["event_type"] == "other"]
+    assert len(other) == 1
+    assert "Schedule added" in other[0]["notes"]
+    assert "Shrimp Cuisine" in other[0]["notes"]
+    assert "Tuesday" in other[0]["notes"]
+
+    r = client.get(f"/tanks/{tank_id}/timeline")
+    assert "Shrimp Cuisine" in r.text
+
+
+def test_delete_schedule_logs_timeline_event(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "tue", "description": "PM feeding"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='PM feeding'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    r = client.post(f"/tanks/{tank_id}/schedule/{sch_id}/delete", follow_redirects=False)
+    assert r.status_code == 303
+
+    r = client.get(f"/tanks/{tank_id}/events", headers={"Accept": "application/json"})
+    events = r.json()["events"]
+    other = [e for e in events if e["event_type"] == "other"]
+    assert len(other) == 2  # the initial "Schedule added" plus this "Schedule removed"
+    removed = [e for e in other if "removed" in e["notes"]]
+    assert len(removed) == 1
+    assert "PM feeding" in removed[0]["notes"]
+    assert "Tuesday" in removed[0]["notes"]
+    assert removed[0]["schedule_id"] is None  # ON DELETE SET NULL once the schedule row is gone
+
+    r = client.get(f"/tanks/{tank_id}/timeline")
+    assert "PM feeding" in r.text
+
+
 def test_update_schedule(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/schedule",
@@ -85,6 +136,70 @@ def test_update_schedule(client, tank_id):
     r = client.get(f"/tanks/{tank_id}/schedule")
     assert "Updated" in r.text
     assert "Original" not in r.text
+
+
+def test_update_schedule_logs_timeline_event(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "mon", "description": "Flakes"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Flakes'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={"category": "feeding", "day_of_week": "tue", "description": "Pellets", "is_active": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    r = client.get(f"/tanks/{tank_id}/events", headers={"Accept": "application/json"})
+    events = r.json()["events"]
+    other = [e for e in events if e["event_type"] == "other"]
+    assert len(other) == 2  # the initial "Schedule added" plus this update
+    updated = [e for e in other if "updated" in e["notes"]]
+    assert len(updated) == 1
+    assert "Flakes" in updated[0]["notes"] or "Pellets" in updated[0]["notes"]
+    assert "Monday" in updated[0]["notes"] and "Tuesday" in updated[0]["notes"]
+    assert updated[0]["schedule_id"] == sch_id
+
+    r = client.get(f"/tanks/{tank_id}/timeline")
+    assert "Pellets" in r.text
+    assert "Monday" in r.text and "Tuesday" in r.text
+
+
+def test_update_schedule_no_change_skips_timeline_event(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "mon", "description": "Flakes"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Flakes'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={"category": "feeding", "day_of_week": "mon", "description": "Flakes", "is_active": "1"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    r = client.get(f"/tanks/{tank_id}/events", headers={"Accept": "application/json"})
+    events = r.json()["events"]
+    other = [e for e in events if e["event_type"] == "other"]
+    assert len(other) == 1  # only the initial "Schedule added" — the no-op edit logs nothing
+    assert "added" in other[0]["notes"]
 
 
 def test_mark_done_updates_schedule(client, tank_id):
@@ -199,7 +314,10 @@ def test_dashboard_today_schedule_excludes_floating_day(client, tank_id):
     )
     r = client.get(f"/tanks/{tank_id}")
     assert r.status_code == 200
-    assert "Floating Food" not in r.text
+    # "Floating Food" now legitimately appears elsewhere on the dashboard (the
+    # recent-events panel picks up the "Schedule added" event) — check specifically
+    # that it's absent from the Today's Schedule widget's own item markup.
+    assert '<div class="sched-today-item">Floating Food</div>' not in r.text
 
 
 def test_dashboard_maintenance_widget(client, tank_id):

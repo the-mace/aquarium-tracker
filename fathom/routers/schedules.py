@@ -22,6 +22,42 @@ def _next_weekday(d, weekday):
 
 _DOW_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
+# Fields whose edits are worth a timeline entry. last_done/next_due are excluded —
+# those are corrections to history (already covered by mark-done's own event) rather
+# than changes to the schedule's configuration.
+_DIFF_FIELDS = [
+    ("category", "category"),
+    ("day_of_week", "day"),
+    ("description", "description"),
+    ("interval_days", "interval (days)"),
+    ("is_active", "active"),
+    ("notes", "notes"),
+]
+
+
+def _fmt_diff_val(field, value):
+    if field == "day_of_week":
+        return DOW_LABELS.get(value, "none") if value else "none"
+    if field == "is_active":
+        return "yes" if value else "no"
+    if value is None or value == "":
+        return "none"
+    return str(value)
+
+
+def _describe_schedule_changes(old, new):
+    """Return a human-readable summary of changed fields, or None if nothing changed."""
+    changes = []
+    for field, label in _DIFF_FIELDS:
+        old_val, new_val = old.get(field), new.get(field)
+        if field == "is_active":
+            old_val, new_val = bool(old_val), bool(new_val)
+        if old_val != new_val:
+            changes.append(f"{label}: {_fmt_diff_val(field, old_val)} → {_fmt_diff_val(field, new_val)}")
+    if not changes:
+        return None
+    return f"Schedule updated ({new.get('description')}): " + "; ".join(changes)
+
 
 def compute_next_due(day_of_week, interval_days, from_date):
     """Next due date after from_date (the day a task was just done).
@@ -92,12 +128,20 @@ async def add_schedule(
     dow = day_of_week if day_of_week and day_of_week in ("mon","tue","wed","thu","fri","sat","sun") else None
 
     with get_db() as conn:
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO recurring_schedule
                (tank_id, category, tracking_mode, day_of_week, description,
                 interval_type, interval_days, is_active, notes)
                VALUES (?,?,?,?,?,?,?,1,?)""",
             (tank_id, category, tracking_mode, dow, description, interval_type, interval_days, notes),
+        )
+        dow_label = DOW_LABELS.get(dow, "")
+        detail = f" ({dow_label})" if dow_label else ""
+        utc_now = datetime.now(timezone.utc)
+        conn.execute(
+            "INSERT INTO events (tank_id, event_type, notes, schedule_id, timestamp) VALUES (?,?,?,?,?)",
+            (tank_id, "other", f"Schedule added: {description}{detail}", cur.lastrowid,
+             utc_now.strftime("%Y-%m-%d %H:%M:%S")),
         )
     return RedirectResponse(url=f"/tanks/{tank_id}/schedule", status_code=303)
 
@@ -134,6 +178,11 @@ async def update_schedule(
             last_done_val = last_done.strip()
             next_due_val = compute_next_due(dow, interval_days, date.fromisoformat(last_done_val))
 
+        summary = _describe_schedule_changes(existing, {
+            "category": category, "day_of_week": dow, "description": description,
+            "interval_days": interval_days, "is_active": active, "notes": notes,
+        })
+
         conn.execute(
             """UPDATE recurring_schedule SET
                category=?, tracking_mode=?, day_of_week=?, description=?,
@@ -143,12 +192,31 @@ async def update_schedule(
             (category, tracking_mode, dow, description, interval_type, interval_days, active, notes,
              last_done_val, next_due_val, sch_id),
         )
+
+        if summary:
+            utc_now = datetime.now(timezone.utc)
+            conn.execute(
+                "INSERT INTO events (tank_id, event_type, notes, schedule_id, timestamp) VALUES (?,?,?,?,?)",
+                (tank_id, "other", summary, sch_id, utc_now.strftime("%Y-%m-%d %H:%M:%S")),
+            )
     return RedirectResponse(url=f"/tanks/{tank_id}/schedule", status_code=303)
 
 
 @router.post("/{sch_id}/delete")
 async def delete_schedule(tank_id: int, sch_id: int):
     with get_db() as conn:
+        existing = row_to_dict(conn.execute(
+            "SELECT * FROM recurring_schedule WHERE id=? AND tank_id=?", (sch_id, tank_id)
+        ).fetchone())
+        if existing:
+            utc_now = datetime.now(timezone.utc)
+            dow_label = DOW_LABELS.get(existing.get("day_of_week"), "")
+            detail = f" ({dow_label})" if dow_label else ""
+            conn.execute(
+                "INSERT INTO events (tank_id, event_type, notes, schedule_id, timestamp) VALUES (?,?,?,?,?)",
+                (tank_id, "other", f"Schedule removed: {existing['description']}{detail}", sch_id,
+                 utc_now.strftime("%Y-%m-%d %H:%M:%S")),
+            )
         conn.execute("DELETE FROM recurring_schedule WHERE id=? AND tank_id=?", (sch_id, tank_id))
     return RedirectResponse(url=f"/tanks/{tank_id}/schedule", status_code=303)
 
