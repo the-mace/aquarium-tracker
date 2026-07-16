@@ -253,6 +253,34 @@ def test_new_test_form_no_prior_tests(client, tank_id):
     assert 'name="ph"' in r.text
 
 
+def test_new_test_form_shows_open_issues(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/issues",
+        data={"title": "Elevated nitrates", "description": "Holding at 40 ppm", "status": "open"},
+    )
+    client.post(
+        f"/tanks/{tank_id}/issues",
+        data={"title": "Algae patch", "status": "monitoring"},
+    )
+    client.post(
+        f"/tanks/{tank_id}/issues",
+        data={"title": "Old ammonia spike", "status": "resolved"},
+    )
+    r = client.get(f"/tanks/{tank_id}/tests/new")
+    assert r.status_code == 200
+    assert "Elevated nitrates" in r.text
+    assert "Holding at 40 ppm" in r.text
+    assert "Algae patch" in r.text
+    assert "Old ammonia spike" not in r.text
+    assert "Open Issues" in r.text
+
+
+def test_new_test_form_no_open_issues_hides_panel(client, tank_id):
+    r = client.get(f"/tanks/{tank_id}/tests/new")
+    assert r.status_code == 200
+    assert "Open Issues" not in r.text
+
+
 def test_new_test_form_prefills_from_latest(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/tests",

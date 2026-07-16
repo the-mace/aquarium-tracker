@@ -29,8 +29,30 @@
       <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp" value="{{ latest.temp if latest and latest.temp is not none else '' }}"></div>
     </div>
   </div>
+  {% if open_issues %}
   <div class="form-section">
-    <div class="form-group"><label>Notes</label><textarea name="notes" rows="3"></textarea></div>
+    <h3>Open Issues <span class="badge badge-warning">{{ open_issues|length }}</span></h3>
+    <p class="muted" style="font-size:.85rem;margin-top:-.35rem;margin-bottom:.75rem">
+      For reference when writing notes below.
+      <a href="/tanks/{{ tank.id }}/issues" class="link-sm">Manage →</a>
+    </p>
+    <div class="issue-list">
+      {% for issue in open_issues %}
+      <div class="issue-row" style="flex-direction:column;align-items:flex-start;gap:.25rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          <span class="issue-status-dot status-{{ issue.status }}"></span>
+          <span class="issue-title">{{ issue.title }}</span>
+          <span class="badge badge-issue-{{ issue.status }}">{{ issue.status }}</span>
+        </div>
+        {% if issue.description %}<p class="muted" style="font-size:.85rem;margin:0;padding-left:1.1rem">{{ issue.description }}</p>{% endif %}
+        {% if issue.notes %}<p class="muted" style="font-size:.8rem;margin:0;padding-left:1.1rem">Notes: {{ issue.notes }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div class="form-section">
+    <div class="form-group"><label>Notes</label><textarea name="notes" rows="3" placeholder="e.g. nitrates still elevated — issue still open"></textarea></div>
   </div>
   <div class="form-actions">
     <a href="/tanks/{{ tank.id }}" class="btn btn-ghost">Cancel</a>

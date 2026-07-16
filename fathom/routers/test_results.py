@@ -38,7 +38,19 @@ async def new_test_form(request: Request, tank_id: int):
             "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1",
             (tank_id,),
         ).fetchone())
-    return templates.TemplateResponse("tests/form.html", {"request": request, "tank": tank, "latest": latest})
+        # Unresolved issues (open + monitoring) — shown on the form so notes can
+        # reference current issue status without leaving the page.
+        open_issues = rows_to_list(conn.execute(
+            """SELECT id, title, description, status, notes, opened_at
+               FROM issues
+               WHERE tank_id = ? AND status != 'resolved'
+               ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'monitoring' THEN 1 ELSE 2 END,
+                        opened_at DESC""",
+            (tank_id,),
+        ).fetchall())
+    return templates.TemplateResponse("tests/form.html", {
+        "request": request, "tank": tank, "latest": latest, "open_issues": open_issues,
+    })
 
 
 @router.post("")
