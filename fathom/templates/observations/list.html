@@ -116,11 +116,11 @@
 {% endif %}
 
 <div id="modal-add-obs" class="modal" style="display:none">
-  <div class="modal-box">
+  <div class="modal-box modal-box-lg">
     <div class="modal-header"><h3>Add Observation</h3><button class="modal-close" onclick="closeModal('modal-add-obs')">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/observations">
       <input type="hidden" name="return_to" value="observations">
-      <div class="form-group"><label>Observation</label><textarea name="text" rows="6" placeholder="What did you notice?"></textarea></div>
+      <div class="form-group"><label>Observation</label><textarea name="text" rows="14" class="obs-text-large" placeholder="What did you notice?"></textarea></div>
       <div class="form-group">
         <label>Relates to (optional — ctrl/cmd-click to select multiple)</label>
         {% set add_selected_refs = [(active_filter.type ~ ':' ~ active_filter.id)] if active_filter and active_filter.type not in ('any', 'none') else [] %}
@@ -134,10 +134,10 @@
 </div>
 
 <div id="modal-edit-obs" class="modal" style="display:none">
-  <div class="modal-box">
+  <div class="modal-box modal-box-lg">
     <div class="modal-header"><h3>Edit Observation</h3><button class="modal-close" onclick="closeModal('modal-edit-obs')">×</button></div>
     <form id="edit-obs-form">
-      <div class="form-group"><label>Observation</label><textarea id="edit-obs-text" name="text" rows="6"></textarea></div>
+      <div class="form-group"><label>Observation</label><textarea id="edit-obs-text" name="text" rows="18" class="obs-text-large"></textarea></div>
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-obs')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>

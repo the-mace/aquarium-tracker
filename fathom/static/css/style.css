@@ -551,6 +551,19 @@ p { margin-bottom: .5rem; }
   overflow-y: auto;
 }
 .modal-box-sm { max-width: 400px; }
+.modal-box-lg {
+  max-width: min(820px, 96vw);
+  max-height: 92vh;
+}
+/* Long AI observations / multi-paragraph notes */
+.modal-box-lg textarea.obs-text-large {
+  min-height: min(55vh, 28rem);
+  height: min(55vh, 28rem);
+  resize: vertical;
+  font-size: .9rem;
+  line-height: 1.5;
+  font-family: inherit;
+}
 .modal-header {
   display: flex;
   align-items: center;
