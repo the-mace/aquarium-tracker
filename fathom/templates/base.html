@@ -31,7 +31,7 @@
       </div>
       {% if tank is defined and tank %}
       <div class="sidebar-section">
-        <span class="sidebar-label">This Tank</span>
+        <span class="sidebar-label">{{ tank.name }}</span>
         <a href="/tanks/{{ tank.id }}" class="sidebar-link {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
         <a href="/tanks/{{ tank.id }}/tests/new" class="sidebar-link {% if active == 'tests' %}active{% endif %}">Add Test</a>
         <a href="/tanks/{{ tank.id }}/inhabitants" class="sidebar-link {% if active == 'inhabitants' %}active{% endif %}">Inhabitants</a>
