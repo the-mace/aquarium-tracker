@@ -20,6 +20,7 @@ TANK_TABLES = [
     "test_results", "events", "inhabitants", "population_events",
     "purchases", "observations", "issues", "tank_state_summary",
     "plants", "hardscape", "tank_equipment", "recurring_schedule",
+    "tank_notes_proposals",
 ]
 
 
@@ -153,6 +154,13 @@ async def tank_detail(request: Request, tank_id: int):
             (tank_id,),
         ).fetchall())
 
+        notes_proposal = row_to_dict(conn.execute(
+            """SELECT * FROM tank_notes_proposals
+               WHERE tank_id = ? AND status = 'pending'
+               ORDER BY created_at DESC LIMIT 1""",
+            (tank_id,),
+        ).fetchone())
+
     today_dow_label = date.today().strftime('%A')
 
     return templates.TemplateResponse("tanks/detail.html", {
@@ -172,6 +180,7 @@ async def tank_detail(request: Request, tank_id: int):
         "maintenance_items": maintenance_items,
         "today_dow_label": today_dow_label,
         "today_date": today_date,
+        "notes_proposal": notes_proposal,
     })
 
 
@@ -215,7 +224,62 @@ async def update_tank(
              shape, manufacturer, model, substrate_type, substrate_brand, _float(substrate_depth_inches),
              setup_date, status, notes, tank_id),
         )
+        # Manual notes edit supersedes any pending AI proposal
+        conn.execute(
+            """UPDATE tank_notes_proposals SET status='dismissed', resolved_at=datetime('now')
+               WHERE tank_id=? AND status='pending'""",
+            (tank_id,),
+        )
     maybe_fetch_tank_dimensions(background_tasks, tank_id)
+    return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+
+
+@router.post("/{tank_id}/notes-proposal/{proposal_id}/accept")
+async def accept_notes_proposal(
+    tank_id: int,
+    proposal_id: int,
+    notes: Optional[str] = Form(None),
+):
+    """Apply a pending AI tank-notes proposal (optionally after the user edits it)."""
+    with get_db() as conn:
+        proposal = row_to_dict(conn.execute(
+            """SELECT * FROM tank_notes_proposals
+               WHERE id = ? AND tank_id = ? AND status = 'pending'""",
+            (proposal_id, tank_id),
+        ).fetchone())
+        if not proposal:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        new_notes = (notes if notes is not None else proposal["proposed_notes"] or "").strip()
+        conn.execute(
+            "UPDATE tanks SET notes=?, updated_at=datetime('now') WHERE id=?",
+            (new_notes or None, tank_id),
+        )
+        conn.execute(
+            """UPDATE tank_notes_proposals
+               SET status='accepted', proposed_notes=?, resolved_at=datetime('now')
+               WHERE id=?""",
+            (new_notes, proposal_id),
+        )
+    return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
+
+
+@router.post("/{tank_id}/notes-proposal/{proposal_id}/dismiss")
+async def dismiss_notes_proposal(tank_id: int, proposal_id: int):
+    """Reject a pending AI tank-notes proposal without changing notes."""
+    with get_db() as conn:
+        proposal = row_to_dict(conn.execute(
+            """SELECT * FROM tank_notes_proposals
+               WHERE id = ? AND tank_id = ? AND status = 'pending'""",
+            (proposal_id, tank_id),
+        ).fetchone())
+        if not proposal:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        conn.execute(
+            """UPDATE tank_notes_proposals
+               SET status='dismissed', resolved_at=datetime('now')
+               WHERE id=?""",
+            (proposal_id,),
+        )
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
 
 

@@ -317,6 +317,22 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_reference_info_lookup ON reference_info(entity_type, entity_name);
             CREATE INDEX IF NOT EXISTS idx_observation_links_obs ON observation_links(observation_id);
             CREATE INDEX IF NOT EXISTS idx_observation_links_entity ON observation_links(entity_type, entity_id);
+
+            -- Pending AI-proposed tank notes updates (user must accept before notes change)
+            CREATE TABLE IF NOT EXISTS tank_notes_proposals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                proposed_notes TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                prior_notes TEXT,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','accepted','dismissed')),
+                created_at TEXT DEFAULT (datetime('now')),
+                resolved_at TEXT,
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_notes_proposals_tank_status
+                ON tank_notes_proposals(tank_id, status);
         """)
 
         # Migration: add schedule_id to events if not present

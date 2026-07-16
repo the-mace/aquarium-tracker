@@ -19,6 +19,35 @@
   </div>
 </div>
 
+{% if notes_proposal %}
+<div class="notes-proposal-card">
+  <div class="notes-proposal-header">
+    <span class="notes-proposal-icon">📝</span>
+    <span>Update tank notes?</span>
+  </div>
+  <p class="notes-proposal-reason">{{ notes_proposal.reason }}</p>
+  <p class="notes-proposal-hint muted">Recent schedule/events look different from tank notes. Review the proposed notes below — nothing is saved until you accept.</p>
+  <form method="post" action="/tanks/{{ tank.id }}/notes-proposal/{{ notes_proposal.id }}/accept" class="notes-proposal-form">
+    <label class="form-label" for="proposed-notes-{{ notes_proposal.id }}">Proposed notes (editable)</label>
+    <textarea id="proposed-notes-{{ notes_proposal.id }}" name="notes" rows="8" class="notes-proposal-textarea">{{ notes_proposal.proposed_notes }}</textarea>
+    {% if notes_proposal.prior_notes %}
+    <details class="notes-proposal-prior">
+      <summary>Show current notes</summary>
+      <pre class="notes-proposal-prior-text">{{ notes_proposal.prior_notes }}</pre>
+    </details>
+    {% else %}
+    <p class="muted" style="margin:.5rem 0 0">Current notes are empty.</p>
+    {% endif %}
+    <div class="notes-proposal-actions">
+      <button type="submit" class="btn btn-primary">Accept &amp; update notes</button>
+      <button type="submit" class="btn btn-ghost"
+              formaction="/tanks/{{ tank.id }}/notes-proposal/{{ notes_proposal.id }}/dismiss"
+              formmethod="post">Dismiss</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <!-- Summary Banner -->
 {% if summary and summary.summary_text %}
 <div class="summary-card">

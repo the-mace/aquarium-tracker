@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from database import get_db, get_db_readonly, get_schema_text, rows_to_list, row_to_dict
-from routers.ai_analysis import _fmt_tank_notes, _fmt_inhabitants
+from routers.ai_analysis import _fmt_tank_notes, _fmt_inhabitants, _fmt_schedule, _CURRENT_PRACTICES_RULE
 
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -54,7 +54,9 @@ def _run_query_db(sql: str) -> dict:
         return {"error": str(e)}
 
 
-def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs):
+def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary,
+                         recent_obs, schedule_rows=None):
+    schedule_rows = schedule_rows or []
     parts = [
         "You are an expert aquarium keeper assistant with detailed knowledge of the following tank.",
         f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}",
@@ -107,6 +109,11 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         lines = [f"  [{i['status'].upper()}] {i['title']}: {i.get('description','')}" for i in open_issues]
         parts.append("\nOpen Issues:\n" + "\n".join(lines))
 
+    parts.append(
+        "\nRecurring schedule (current planned feeding/dosing/maintenance — authoritative for "
+        "what the keeper currently does):\n" + _fmt_schedule(schedule_rows)
+    )
+
     if summary and summary.get("summary_text"):
         parts.append(f"\nRecent AI Summary:\n{summary['summary_text']}")
 
@@ -116,6 +123,7 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
             ts = (obs.get("created_at") or "")[:10]
             parts.append(f"  [{obs['source']}] {ts}: {obs['text'][:200]}")
 
+    parts.append("\n" + _CURRENT_PRACTICES_RULE)
     parts.append(
         "\nThe context above is a snapshot (current inhabitants, latest test, recent items only). "
         "Use the query_db tool whenever a question needs history or data beyond this snapshot — "
@@ -171,8 +179,14 @@ async def chat(tank_id: int, body: ChatMessage):
             (tank_id,),
         ).fetchall())
 
+        schedule_rows = rows_to_list(conn.execute(
+            "SELECT * FROM recurring_schedule WHERE tank_id = ? AND is_active = 1",
+            (tank_id,),
+        ).fetchall())
+
     system_prompt = _build_system_prompt(
-        tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs
+        tank, latest_test, inhabitants, plants, hardscape, open_issues, summary, recent_obs,
+        schedule_rows,
     )
     logger.info("Chat system prompt for tank %d: %d chars", tank_id, len(system_prompt))
 

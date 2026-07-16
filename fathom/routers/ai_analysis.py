@@ -14,7 +14,27 @@ def _fmt_tank_notes(tank):
     notes = (tank.get("notes") or "").strip()
     if not notes:
         return ""
-    return f"\nTank notes (may include this tank's own accepted parameter targets/baselines — defer to these over generic species norms): {notes}"
+    return (
+        "\nTank notes (setup hardware, accepted parameter targets/baselines, and other keeper "
+        "context. Prefer this tank's accepted parameter targets over generic species norms. "
+        "Notes may include historical setup details that are no longer current — for water source, "
+        "dosing products, and maintenance practices, prefer the recurring schedule and recent events "
+        f"when those contradict the notes): {notes}"
+    )
+
+
+# Shared instruction so analysis/summary don't re-assert discontinued water/dosing practices
+# just because tank notes still mention them (common after import or early setup notes).
+_CURRENT_PRACTICES_RULE = (
+    "Describe CURRENT practices only. If tank notes mention a water source or dosing product "
+    "(e.g. spring water, Seachem Equilibrium) but the recurring schedule and/or recent events "
+    "show a different practice (e.g. tap/well water, Flourish only), treat the schedule and recent "
+    "events as authoritative for what the keeper does now and treat the contradicting notes as "
+    "historical setup context only. State what is done now (e.g. 'tap/well water, Flourish with "
+    "water changes') — do not present discontinued practices as current, and do not name those "
+    "discontinued products/sources at all in the summary unless needed to explain a live parameter "
+    "anomaly. Never write lines like 'no longer uses spring water/Equilibrium'."
+)
 
 
 def _fmt_test_results(rows):
@@ -137,7 +157,9 @@ Now write the actual response. Cover only what's relevant, briefly:
 2-4 sentences total, plain text, no markdown, no headers, no preamble like "Recommendation:" or "Analysis:" — this text is appended directly to the test result's own notes field."""
 
 
-def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape):
+def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape,
+                          schedule_rows=None):
+    schedule_rows = schedule_rows or []
     return f"""You are an expert aquarium keeper analyzing water chemistry and tank health data.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
@@ -157,8 +179,13 @@ Recent Test Results (newest first):
 Open Issues:
 {_fmt_issues(issues)}
 
-Recent Events (last 30 days):
+Recurring schedule (current planned feeding/dosing/maintenance — authoritative for what the keeper currently does):
+{_fmt_schedule(schedule_rows)}
+
+Recent Events (last 30 days — evidence of actual practices, including water source and dosing):
 {_fmt_events(events)}
+
+{_CURRENT_PRACTICES_RULE}
 
 Please provide:
 1. A brief analysis of the water chemistry trends
@@ -170,7 +197,10 @@ Please provide:
 Keep your response concise and practical. Use plain text, no markdown formatting."""
 
 
-def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis):
+def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis,
+                         schedule_rows=None, events=None):
+    schedule_rows = schedule_rows or []
+    events = events or []
     return f"""You are an expert aquarium keeper. Write a concise 2-3 paragraph summary of this tank's current state for use as context in future questions.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
@@ -190,10 +220,88 @@ Latest Water Parameters:
 Open Issues:
 {_fmt_issues([i for i in issues if i.get('status') != 'resolved'])}
 
+Recurring schedule (current planned feeding/dosing/maintenance — authoritative for what the keeper currently does):
+{_fmt_schedule(schedule_rows)}
+
+Recent Events (last 30 days — evidence of actual practices, including water source and dosing):
+{_fmt_events(events)}
+
 Latest Analysis:
 {latest_analysis}
 
-Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
+{_CURRENT_PRACTICES_RULE}
+
+Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events, not obsolete notes), and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
+
+
+def build_notes_proposal_prompt(tank, schedule_rows, events, test_results):
+    """Ask Claude whether tank notes should be refreshed from schedule/events."""
+    current = (tank.get("notes") or "").strip() or "(empty — no notes set)"
+    return f"""You review whether a tank's free-text notes field is out of date versus current practice.
+
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
+
+Current tank notes:
+{current}
+
+Active recurring schedule (authoritative for planned maintenance/dosing/feeding):
+{_fmt_schedule(schedule_rows)}
+
+Recent events (last 30 days — evidence of actual water source and dosing):
+{_fmt_events(events)}
+
+Recent test results with notes (newest first; may record accepted parameter baselines):
+{_fmt_test_results(test_results[:6])}
+
+Decide if the notes need updating so future AI summaries stop using stale practice info.
+Focus only on durable standing facts that notes should capture:
+- water source (spring water vs home tap/well, RO, aging/preconditioning, softener/neutralizer mix)
+- regular dosing products (Equilibrium, Flourish, Prime, Potassium, Iron, etc.)
+- accepted parameter targets/baselines the keeper has explicitly accepted (e.g. KH ~10 is permanent)
+- regular water-change practice when it differs from what notes claim
+
+Do NOT propose an update for:
+- trivial wording or style differences
+- feeding details (those live on the schedule)
+- one-off events, temporary issues, or inhabitant count changes
+- inventing facts not supported by schedule, events, or test notes
+
+Preserve accurate hardware/setup text that is still true (dimensions, filter media, location, etc.).
+If notes are empty but schedule/events establish clear standing practices, you may propose a concise notes block.
+
+Return ONLY a JSON object (no markdown fences, no commentary):
+{{"update_needed": true|false, "reason": "1-2 sentences citing the contradiction", "proposed_notes": "full replacement notes text if update_needed, else empty string"}}
+
+When update_needed is true, proposed_notes must be the complete new notes field (not a diff),
+similar length/style to the current notes when possible, and must state CURRENT practice only."""
+
+
+def _parse_notes_proposal(raw_text, current_notes):
+    """Parse notes-proposal JSON; return dict or None if no update should be stored."""
+    text = re.sub(r"```json\s*", "", raw_text or "")
+    text = re.sub(r"```\s*", "", text).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            return None
+        try:
+            parsed = json.loads(match.group())
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(parsed, dict):
+        return None
+    if not parsed.get("update_needed"):
+        return None
+    proposed = (parsed.get("proposed_notes") or "").strip()
+    reason = (parsed.get("reason") or "").strip()
+    if not proposed or not reason:
+        return None
+    current = (current_notes or "").strip()
+    if proposed == current:
+        return None
+    return {"proposed_notes": proposed, "reason": reason, "prior_notes": current or None}
 
 
 def build_issue_review_prompt(tank, issues, test_results):
@@ -286,9 +394,16 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 (tank_id,),
             ).fetchall())
 
+            schedule_rows = rows_to_list(conn.execute(
+                "SELECT * FROM recurring_schedule WHERE tank_id = ? AND is_active = 1",
+                (tank_id,),
+            ).fetchall())
+
         client = anthropic.Anthropic(api_key=api_key)
 
-        analysis_prompt = build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape)
+        analysis_prompt = build_analysis_prompt(
+            tank, test_results, issues, events, inhabitants, plants, hardscape, schedule_rows,
+        )
         logger.info("Claude call: analysis | tank=%d", tank_id)
         t0 = time.monotonic()
         msg = await asyncio.to_thread(
@@ -356,7 +471,10 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 logger.info("Issue %d %s for tank %d: %s", upd["issue_id"], verb, tank_id, upd["reason"])
                 issue["status"] = upd["status"]
 
-        summary_prompt = build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, analysis_text)
+        summary_prompt = build_summary_prompt(
+            tank, test_results, issues, inhabitants, plants, hardscape, analysis_text,
+            schedule_rows, events,
+        )
         logger.info("Claude call: summary | tank=%d", tank_id)
         t1 = time.monotonic()
         sum_msg = await asyncio.to_thread(
@@ -383,10 +501,76 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 (tank_id, summary_text),
             )
 
+        # After summary: if schedule/events contradict tank notes, propose a notes refresh
+        # for the user to accept/dismiss on the dashboard (never auto-write notes).
+        await _maybe_propose_tank_notes_update(
+            client, tank_id, tank, schedule_rows, events, test_results,
+        )
+
         logger.info("AI analysis complete for tank %d", tank_id)
 
     except Exception as e:
         logger.error("AI analysis failed for tank %d: %s", tank_id, e)
+
+
+async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows, events, test_results):
+    """If notes look stale vs schedule/events, store a pending proposal for user confirmation."""
+    with get_db() as conn:
+        pending = conn.execute(
+            """SELECT id FROM tank_notes_proposals
+               WHERE tank_id = ? AND status = 'pending' LIMIT 1""",
+            (tank_id,),
+        ).fetchone()
+        if pending:
+            logger.info("Notes proposal already pending for tank %d — skipping", tank_id)
+            return
+
+    # Skip when there's nothing operational to compare against
+    if not schedule_rows and not events:
+        return
+
+    prompt = build_notes_proposal_prompt(tank, schedule_rows, events, test_results)
+    logger.info("Claude call: notes_proposal | tank=%d", tank_id)
+    t0 = time.monotonic()
+    try:
+        msg = await asyncio.to_thread(
+            client.messages.create,
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=60.0,
+        )
+    except Exception as e:
+        logger.error("Notes proposal Claude call failed for tank %d: %s", tank_id, e)
+        return
+    logger.info(
+        "Claude done: notes_proposal | tank=%d | in=%d out=%d elapsed=%.1fs",
+        tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0,
+    )
+    proposal = _parse_notes_proposal(msg.content[0].text, tank.get("notes"))
+    if not proposal:
+        logger.info("No tank notes update needed for tank %d", tank_id)
+        return
+
+    with get_db() as conn:
+        # Don't re-offer the exact same proposal the user already dismissed
+        last_dismissed = conn.execute(
+            """SELECT proposed_notes FROM tank_notes_proposals
+               WHERE tank_id = ? AND status = 'dismissed'
+               ORDER BY resolved_at DESC LIMIT 1""",
+            (tank_id,),
+        ).fetchone()
+        if last_dismissed and (last_dismissed[0] or "").strip() == proposal["proposed_notes"]:
+            logger.info("Identical notes proposal already dismissed for tank %d — skipping", tank_id)
+            return
+
+        conn.execute(
+            """INSERT INTO tank_notes_proposals
+               (tank_id, proposed_notes, reason, prior_notes, status)
+               VALUES (?, ?, ?, ?, 'pending')""",
+            (tank_id, proposal["proposed_notes"], proposal["reason"], proposal["prior_notes"]),
+        )
+    logger.info("Stored pending tank notes proposal for tank %d: %s", tank_id, proposal["reason"])
 
 
 async def run_test_recommendation(tank_id: int, result_id: int):

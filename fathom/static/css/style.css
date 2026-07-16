@@ -154,6 +154,81 @@ p { margin-bottom: .5rem; }
 .badge-removed { background: rgba(148,163,184,.15); color: var(--muted); }
 .badge-born   { background: rgba(56,189,248,.15); color: var(--accent); }
 
+/* ── Tank notes proposal (AI, needs confirm) ────────────────────────────── */
+.notes-proposal-card {
+  background: linear-gradient(135deg, rgba(245,158,11,.1), rgba(245,158,11,.04));
+  border: 1px solid rgba(245,158,11,.35);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.notes-proposal-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--warning);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: .4rem;
+}
+.notes-proposal-icon { font-size: 1rem; }
+.notes-proposal-reason {
+  font-size: .95rem;
+  color: var(--text);
+  margin: 0 0 .35rem;
+}
+.notes-proposal-hint { font-size: .85rem; margin: 0 0 .75rem; }
+.notes-proposal-form .form-label {
+  display: block;
+  font-size: .8rem;
+  color: var(--muted);
+  margin-bottom: .35rem;
+}
+.notes-proposal-textarea {
+  width: 100%;
+  min-height: 8rem;
+  resize: vertical;
+  font-family: inherit;
+  font-size: .9rem;
+  line-height: 1.45;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .65rem .75rem;
+}
+.notes-proposal-prior {
+  margin-top: .65rem;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.notes-proposal-prior summary {
+  cursor: pointer;
+  color: var(--accent);
+  user-select: none;
+}
+.notes-proposal-prior-text {
+  margin: .4rem 0 0;
+  padding: .6rem .75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: .85rem;
+  color: var(--muted);
+  max-height: 12rem;
+  overflow: auto;
+}
+.notes-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: .85rem;
+}
+
 /* ── Summary Card ───────────────────────────────────────────────────────── */
 .summary-card {
   background: linear-gradient(135deg, rgba(0,196,160,.08), rgba(56,189,248,.05));

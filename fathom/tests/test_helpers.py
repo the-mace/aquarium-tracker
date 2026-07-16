@@ -1,4 +1,5 @@
 """Unit tests for pure utility functions in database.py and ai_analysis.py."""
+import json
 import pytest
 import database as _db
 from database import row_to_dict, rows_to_list, init_db, get_db
@@ -7,6 +8,7 @@ from routers.ai_analysis import (
     _fmt_issues, _fmt_issues_with_id, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
     build_recommendation_prompt, build_analysis_prompt, build_summary_prompt,
     build_issue_review_prompt, _parse_issue_updates,
+    build_notes_proposal_prompt, _parse_notes_proposal,
 )
 
 
@@ -185,6 +187,8 @@ def test_fmt_tank_notes_present():
     result = _fmt_tank_notes({"notes": "Targets: GH 7-8, KH 2-10, pH 7.0-7.5."})
     assert "Targets: GH 7-8, KH 2-10" in result
     assert "accepted parameter targets" in result
+    # Prefer schedule/events over stale operational notes
+    assert "prefer the recurring schedule and recent events" in result
 
 
 def test_build_recommendation_prompt_includes_tank_notes():
@@ -209,6 +213,85 @@ def test_build_summary_prompt_includes_tank_notes():
             "notes": "Targets: GH 7-8, KH 2-10."}
     prompt = build_summary_prompt(tank, [], [], [], [], [], "latest analysis text")
     assert "KH 2-10" in prompt
+
+
+def test_build_notes_proposal_prompt_includes_current_and_schedule():
+    tank = {
+        "name": "Shrimp Tank", "water_type": "fresh", "volume_gallons": 5,
+        "notes": "Water source: spring water + Equilibrium",
+    }
+    schedule = [{
+        "category": "maintenance",
+        "description": "20% water change with room temp tap water; dose 5ml Flourish",
+        "tracking_mode": "logged", "interval_days": 7,
+        "last_done": "2026-07-09", "next_due": "2026-07-16",
+    }]
+    events = [{"timestamp": "2026-07-09", "event_type": "water_change",
+               "notes": "tap water + Flourish"}]
+    prompt = build_notes_proposal_prompt(tank, schedule, events, [])
+    assert "spring water + Equilibrium" in prompt
+    assert "room temp tap water" in prompt
+    assert "update_needed" in prompt
+    assert "proposed_notes" in prompt
+
+
+def test_parse_notes_proposal_accepts_valid_update():
+    raw = json.dumps({
+        "update_needed": True,
+        "reason": "Notes still say spring water; schedule uses tap + Flourish.",
+        "proposed_notes": "Water source: home tap water. Dose Flourish weekly.",
+    })
+    result = _parse_notes_proposal(raw, "Water source: spring water + Equilibrium")
+    assert result is not None
+    assert "tap water" in result["proposed_notes"]
+    assert "spring" not in result["proposed_notes"]
+    assert result["prior_notes"] == "Water source: spring water + Equilibrium"
+
+
+def test_parse_notes_proposal_rejects_no_update_and_identical():
+    assert _parse_notes_proposal('{"update_needed": false, "reason": "ok", "proposed_notes": ""}', "x") is None
+    same = "Water source: tap water"
+    assert _parse_notes_proposal(json.dumps({
+        "update_needed": True, "reason": "same", "proposed_notes": same,
+    }), same) is None
+    assert _parse_notes_proposal("not json", "notes") is None
+    assert _parse_notes_proposal(json.dumps({
+        "update_needed": True, "reason": "", "proposed_notes": "new notes",
+    }), "old") is None
+
+
+def test_analysis_and_summary_prefer_current_practices_over_stale_notes():
+    """Stale tank notes may still say spring water + Equilibrium after a switch to tap;
+    schedule/events and the current-practices rule must be in the prompt so Claude prefers them."""
+    tank = {
+        "name": "Shrimp Tank", "water_type": "fresh", "volume_gallons": 5,
+        "notes": (
+            "Water source: purchased spring water + Seachem Equilibrium "
+            "(well water softener NOT used for this tank). Targets: GH 7-8, KH 2-4."
+        ),
+    }
+    schedule = [{
+        "category": "maintenance",
+        "description": "20% water change with room temp tap water from prior week; dose 5ml Flourish",
+        "tracking_mode": "logged", "interval_days": 7,
+        "last_done": "2026-07-09", "next_due": "2026-07-16",
+    }]
+    events = [{
+        "timestamp": "2026-07-09 16:30:30", "event_type": "maintenance",
+        "notes": "20% water change with room temp tap water from prior week; dose 5ml Flourish",
+    }]
+    analysis = build_analysis_prompt(tank, [], [], events, [], [], [], schedule)
+    summary = build_summary_prompt(
+        tank, [], [], [], [], [], "stable parameters", schedule, events,
+    )
+    for prompt in (analysis, summary):
+        assert "spring water" in prompt  # notes still present for history
+        assert "room temp tap water" in prompt
+        assert "5ml Flourish" in prompt
+        assert "Describe CURRENT practices only" in prompt
+        assert "do not name those discontinued products" in prompt
+        assert "Recurring schedule" in prompt
+        assert "Recent Events" in prompt
 
 
 def test_fmt_schedule_empty():

@@ -187,3 +187,107 @@ def test_chart_costs_aggregates_by_category(client, tank_id):
     cats = {r["category"]: r["total"] for r in rows}
     assert abs(cats["equipment"] - 65.0) < 0.001
     assert abs(cats["food"] - 10.0) < 0.001
+
+
+def _insert_pending_proposal(tank_id, proposed, reason="stale notes", prior="old notes"):
+    conn = sqlite3.connect(_db.DB_PATH)
+    cur = conn.execute(
+        """INSERT INTO tank_notes_proposals
+           (tank_id, proposed_notes, reason, prior_notes, status)
+           VALUES (?, ?, ?, ?, 'pending')""",
+        (tank_id, proposed, reason, prior),
+    )
+    conn.commit()
+    pid = cur.lastrowid
+    conn.close()
+    return pid
+
+
+def test_dashboard_shows_pending_notes_proposal(client, tank_id):
+    _insert_pending_proposal(tank_id, "New notes with tap water", "Events use tap water")
+    r = client.get(f"/tanks/{tank_id}")
+    assert r.status_code == 200
+    assert b"Update tank notes?" in r.content
+    assert b"New notes with tap water" in r.content
+    assert b"Events use tap water" in r.content
+
+
+def test_accept_notes_proposal_updates_tank_notes(client, tank_id):
+    pid = _insert_pending_proposal(tank_id, "Water source: home tap. Flourish weekly.")
+    r = client.post(
+        f"/tanks/{tank_id}/notes-proposal/{pid}/accept",
+        data={},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    conn = sqlite3.connect(_db.DB_PATH)
+    notes = conn.execute("SELECT notes FROM tanks WHERE id=?", (tank_id,)).fetchone()[0]
+    status = conn.execute(
+        "SELECT status FROM tank_notes_proposals WHERE id=?", (pid,)
+    ).fetchone()[0]
+    conn.close()
+    assert notes == "Water source: home tap. Flourish weekly."
+    assert status == "accepted"
+    # Proposal banner gone
+    assert b"Update tank notes?" not in client.get(f"/tanks/{tank_id}").content
+
+
+def test_accept_notes_proposal_allows_user_edit(client, tank_id):
+    pid = _insert_pending_proposal(tank_id, "AI draft notes")
+    r = client.post(
+        f"/tanks/{tank_id}/notes-proposal/{pid}/accept",
+        data={"notes": "User-edited final notes"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    conn = sqlite3.connect(_db.DB_PATH)
+    notes = conn.execute("SELECT notes FROM tanks WHERE id=?", (tank_id,)).fetchone()[0]
+    conn.close()
+    assert notes == "User-edited final notes"
+
+
+def test_dismiss_notes_proposal_leaves_notes_unchanged(client, tank_id):
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.execute("UPDATE tanks SET notes=? WHERE id=?", ("Keep these notes", tank_id))
+    conn.commit()
+    conn.close()
+    pid = _insert_pending_proposal(tank_id, "Would overwrite", prior="Keep these notes")
+    r = client.post(
+        f"/tanks/{tank_id}/notes-proposal/{pid}/dismiss",
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    conn = sqlite3.connect(_db.DB_PATH)
+    notes = conn.execute("SELECT notes FROM tanks WHERE id=?", (tank_id,)).fetchone()[0]
+    status = conn.execute(
+        "SELECT status FROM tank_notes_proposals WHERE id=?", (pid,)
+    ).fetchone()[0]
+    conn.close()
+    assert notes == "Keep these notes"
+    assert status == "dismissed"
+
+
+def test_manual_edit_dismisses_pending_notes_proposal(client, tank_id):
+    pid = _insert_pending_proposal(tank_id, "AI wants this")
+    client.post(
+        f"/tanks/{tank_id}/edit",
+        data={
+            "name": "Test Tank",
+            "water_type": "fresh",
+            "status": "active",
+            "notes": "Manually set notes",
+        },
+        follow_redirects=False,
+    )
+    conn = sqlite3.connect(_db.DB_PATH)
+    notes = conn.execute("SELECT notes FROM tanks WHERE id=?", (tank_id,)).fetchone()[0]
+    status = conn.execute(
+        "SELECT status FROM tank_notes_proposals WHERE id=?", (pid,)
+    ).fetchone()[0]
+    conn.close()
+    assert notes == "Manually set notes"
+    assert status == "dismissed"
+
+
+def test_accept_missing_notes_proposal_404(client, tank_id):
+    assert client.post(f"/tanks/{tank_id}/notes-proposal/9999/accept").status_code == 404
