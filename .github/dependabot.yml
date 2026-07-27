@@ -1,0 +1,28 @@
+# Dependabot version updates for pip + GitHub Actions.
+# Auto-merge for Dependabot PRs is handled by .github/workflows/dependabot-automerge.yml.
+# Outside-contributor PRs still require an approving review (repo ruleset on main).
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "dependabot"
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "dependabot"
+    commit-message:
+      prefix: "ci"

@@ -1,0 +1,38 @@
+# Auto-approve + enable auto-merge only for Dependabot / GitHub-bot dependency PRs.
+# Outside contributors (and any human PR) are not touched — the main-branch ruleset
+# still requires at least one approving review before those can merge.
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    # Only GitHub-initiated bot PRs — never human / fork contributors.
+    if: >
+      github.event.pull_request.draft == false &&
+      (
+        github.event.pull_request.user.login == 'dependabot[bot]' ||
+        (
+          github.actor == 'dependabot[bot]' &&
+          startsWith(github.head_ref, 'dependabot/')
+        )
+      )
+    steps:
+      - name: Approve Dependabot PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr review --approve "$PR_URL"
+
+      - name: Enable auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
