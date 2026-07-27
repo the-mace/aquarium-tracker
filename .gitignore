@@ -32,9 +32,10 @@ env/
 .Spotlight-V100
 .Trashes
 
-# IDE
+# IDE / local agent config
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 
