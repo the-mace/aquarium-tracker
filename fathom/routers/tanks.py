@@ -164,6 +164,14 @@ async def tank_detail(request: Request, tank_id: int):
 
         latest_home_water = latest_wc_source_test(conn)
 
+        from ai_config import ANALYSIS_FAILURE_PREFIX
+        analysis_failure_obs = next(
+            (o for o in recent_observations
+             if o.get("source") == "auto"
+             and (o.get("text") or "").startswith(ANALYSIS_FAILURE_PREFIX)),
+            None,
+        )
+
     today_dow_label = date.today().strftime('%A')
 
     return templates.TemplateResponse(request, "tanks/detail.html", {
@@ -184,6 +192,7 @@ async def tank_detail(request: Request, tank_id: int):
         "today_dow_label": today_dow_label,
         "today_date": today_date,
         "notes_proposal": notes_proposal,
+        "analysis_failure_obs": analysis_failure_obs,
     })
 
 

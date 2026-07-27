@@ -126,7 +126,7 @@ def test_saved_wait_page_404s_for_unknown_test(client, tank_id):
 def test_summary_status_not_ready_when_no_summary_exists(client, tank_id):
     r = client.get(f"/tanks/{tank_id}/tests/summary-status?since=2026-01-01+00:00:00")
     assert r.status_code == 200
-    assert r.json() == {"ready": False}
+    assert r.json() == {"ready": False, "error": False}
 
 
 def test_summary_status_ready_when_summary_generated_after_since(client, tank_id):
@@ -138,10 +138,66 @@ def test_summary_status_ready_when_summary_generated_after_since(client, tank_id
     conn.commit()
     conn.close()
     r = client.get(f"/tanks/{tank_id}/tests/summary-status?since=2026-01-01+00:00:00")
-    assert r.json() == {"ready": True}
+    assert r.json() == {"ready": True, "error": False}
 
     r2 = client.get(f"/tanks/{tank_id}/tests/summary-status?since=2026-12-01+00:00:00")
-    assert r2.json() == {"ready": False}
+    assert r2.json() == {"ready": False, "error": False}
+
+
+def test_summary_status_ready_error_when_failure_observation_exists(client, tank_id):
+    from ai_config import ANALYSIS_FAILURE_PREFIX
+
+    r = client.post(
+        f"/tanks/{tank_id}/tests", data={"ph": "7.0"}, headers={"Accept": "application/json"}
+    )
+    result_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.execute(
+        """INSERT INTO observations (tank_id, related_test_id, source, text, created_at)
+           VALUES (?, ?, 'auto', ?, '2026-07-27 18:00:00')""",
+        (tank_id, result_id, f"{ANALYSIS_FAILURE_PREFIX} boom"),
+    )
+    conn.commit()
+    conn.close()
+    status = client.get(
+        f"/tanks/{tank_id}/tests/summary-status?since=2026-07-27+17:00:00&result_id={result_id}"
+    )
+    assert status.json() == {"ready": True, "error": True}
+
+
+def test_saved_wait_page_polls_summary_status_for_this_tank(client, tank_id):
+    """Wait page must wire TANK_ID + since + result_id into the summary-status poll."""
+    r = client.post(
+        f"/tanks/{tank_id}/tests", data={"ph": "7.0"}, headers={"Accept": "application/json"}
+    )
+    result_id = r.json()["id"]
+    page = client.get(f"/tanks/{tank_id}/tests/{result_id}/saved?since=2026-07-27+17:21:31")
+    assert page.status_code == 200
+    assert "summary-status" in page.text
+    assert "result_id" in page.text
+    assert "2026-07-27" in page.text
+    assert "Generating AI analysis" in page.text
+    assert "120000" in page.text or "MAX_WAIT" in page.text  # longer wait for thinking+retry
+
+
+def test_browser_submit_redirect_includes_utc_since_query(client, tank_id):
+    """since= must be a comparable UTC datetime string for summary-status string compare."""
+    import re
+    from datetime import datetime, timezone
+
+    before = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    r = client.post(f"/tanks/{tank_id}/tests", data={"ph": "7.0"}, follow_redirects=False)
+    after = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    assert r.status_code == 303
+    location = r.headers["location"]
+    m = re.search(r"since=([^&]+)", location)
+    assert m, location
+    from urllib.parse import unquote
+
+    since = unquote(m.group(1)).replace("+", " ")
+    # Lexicographic ISO-ish form used by summary-status: "YYYY-MM-DD HH:MM:SS"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", since), since
+    assert before <= since <= after
 
 
 def test_add_test_result_return_to_tests_still_honored(client, tank_id):

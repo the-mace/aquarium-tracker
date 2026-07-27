@@ -6,9 +6,128 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from database import get_db, rows_to_list, row_to_dict
-from ai_config import CLAUDE_MODEL
+from ai_config import (
+    CLAUDE_MODEL,
+    CLAUDE_THINKING_DISABLED,
+    ANALYSIS_FAILURE_PREFIX,
+    CLAUDE_MAX_TOKENS_ANALYSIS,
+    CLAUDE_MAX_TOKENS_ISSUE_REVIEW,
+    CLAUDE_MAX_TOKENS_SUMMARY,
+    CLAUDE_MAX_TOKENS_NOTES_PROPOSAL,
+    CLAUDE_MAX_TOKENS_RECOMMENDATION,
+)
 
 logger = logging.getLogger(__name__)
+
+# Claude call timeout (adaptive thinking can take longer than plain replies).
+_CLAUDE_TIMEOUT = 90.0
+
+
+def _message_text(msg) -> str:
+    """Visible text from a Claude messages response (skip thinking / non-text blocks).
+
+    On Claude Sonnet 5, adaptive thinking may put ThinkingBlock first; that block
+    has no ``.text`` attribute, so ``msg.content[0].text`` raises AttributeError.
+    """
+    parts = []
+    for block in getattr(msg, "content", None) or []:
+        btype = getattr(block, "type", None)
+        if btype in ("thinking", "redacted_thinking"):
+            continue
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
+    return "".join(parts).strip()
+
+
+async def _claude_text(client, *, label, tank_id, max_tokens, messages, timeout=_CLAUDE_TIMEOUT):
+    """Call Claude with adaptive thinking; if no visible text, retry once with thinking off.
+
+    Returns (message, text). text is '' if both attempts produce no TextBlock.
+    """
+    last_msg = None
+    # Attempt 1: omit thinking → Sonnet 5 adaptive default (model may think).
+    # Attempt 2: force thinking off so max_tokens is all reply text.
+    attempts = (
+        ("adaptive", None),
+        ("no_thinking", CLAUDE_THINKING_DISABLED),
+    )
+    for attempt_name, thinking in attempts:
+        kwargs = {
+            "model": CLAUDE_MODEL,
+            "max_tokens": max_tokens,
+            "messages": messages,
+            "timeout": timeout,
+        }
+        if thinking is not None:
+            kwargs["thinking"] = thinking
+
+        logger.info("Claude call: %s | tank=%d | thinking=%s", label, tank_id, attempt_name)
+        t0 = time.monotonic()
+        msg = await asyncio.to_thread(client.messages.create, **kwargs)
+        elapsed = time.monotonic() - t0
+        usage = getattr(msg, "usage", None)
+        in_tok = getattr(usage, "input_tokens", 0) if usage else 0
+        out_tok = getattr(usage, "output_tokens", 0) if usage else 0
+        stop = getattr(msg, "stop_reason", None)
+        if stop == "max_tokens":
+            logger.warning(
+                "Claude %s hit max_tokens for tank %d (thinking=%s) — response may be truncated",
+                label, tank_id, attempt_name,
+            )
+        logger.info(
+            "Claude done: %s | tank=%d | thinking=%s | in=%d out=%d elapsed=%.1fs stop=%s",
+            label, tank_id, attempt_name, in_tok, out_tok, elapsed, stop,
+        )
+        text = _message_text(msg)
+        if text:
+            if attempt_name == "no_thinking":
+                logger.info(
+                    "Claude %s recovered via thinking-disabled retry | tank=%d",
+                    label, tank_id,
+                )
+            return msg, text
+        logger.warning(
+            "Claude %s returned no text for tank %d (stop=%s, thinking=%s)",
+            label, tank_id, stop, attempt_name,
+        )
+        last_msg = msg
+    return last_msg, ""
+
+
+def _record_analysis_failure(tank_id, trigger_type, trigger_id, error):
+    """Persist a visible failure so the UI + wait page are not silent.
+
+    Writes an auto observation (linked to the triggering test/event when possible).
+    Does NOT overwrite a good tank_state_summary.
+    """
+    err = str(error).strip() or "unknown error"
+    # Keep the note readable; full traceback stays in logs.
+    if len(err) > 500:
+        err = err[:500] + "…"
+    text = (
+        f"{ANALYSIS_FAILURE_PREFIX} {err}\n\n"
+        "The previous AI summary (if any) was left unchanged. "
+        "Details are in the server log; try saving another test, or check later."
+    )
+    related_test_id = trigger_id if trigger_type == "test" else None
+    related_event_id = trigger_id if trigger_type == "event" else None
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO observations (tank_id, related_event_id, related_test_id, source, text)
+                   VALUES (?, ?, ?, 'auto', ?)""",
+                (tank_id, related_event_id, related_test_id, text),
+            )
+        logger.error(
+            "Recorded AI analysis failure observation for tank %d (%s=%s): %s",
+            tank_id, trigger_type, trigger_id, err,
+        )
+    except Exception as e:
+        logger.error(
+            "Could not record AI analysis failure for tank %d: %s (original: %s)",
+            tank_id, e, err,
+        )
 
 
 def _fmt_tank_notes(tank):
@@ -77,13 +196,23 @@ _HOME_WATER_PROMPT_RULE = (
     "Never invent or assume raw well, post-neutralizer, post-softener, hose, or other "
     "diagnostic home-water samples as tank fill; those are tracked separately and are "
     "irrelevant to tank water-change advice. "
-    "For water-change advice: the newest reading that matches what the keeper actually "
-    "uses for fills is the INCOMING water. Default is latest tap (home WC source). If a "
-    "newer bottled-spring / bottled-distilled / bottled reading is present, treat that as "
-    "a candidate fill source when it is the newest fill-water row or when schedule/events/"
-    "notes indicate bottled water was used for changes. Compare tank parameters to that "
-    "incoming water (e.g. how a % change pulls GH/KH). Do NOT flag source GH/KH as tank "
-    "out-of-range. "
+    "For water-change advice, choose the INCOMING fill chemistry carefully: "
+    "(1) Prefer tank notes and the recurring schedule over a naive 'newest home-water row' "
+    "when they describe a standing practice. "
+    "(2) If tank notes or schedule say water changes use tap water aged from the prior week "
+    "(or similar multi-day aging/preconditioning), the water going into the tank is NOT "
+    "necessarily today's latest home-water test — treat a home-water reading as the batch "
+    "that would be used for the *next* week's change only if its date is ~1 week old "
+    "(or older, if that is the newest available pre-aged batch). Do not claim today's fresh "
+    "home-water reading is what is going into that tank on today's water change. "
+    "Use the aged-batch reading for GH/KH/nitrate pull estimates when available; if only a "
+    "fresh reading exists, say the change uses last week's aged water whose chemistry is "
+    "assumed similar to recent home-water baselines, not identical to today's test. "
+    "(3) Default fill stream is home tap (WC source). Use bottled spring/distilled only when "
+    "it is the newest fill-water row that matches practice, or when notes/schedule/events "
+    "say bottled water was used. "
+    "(4) Compare tank parameters to that incoming water (e.g. how a % change pulls GH/KH). "
+    "Do NOT flag source GH/KH as tank out-of-range. "
     "Kit nitrate near ~40–50 ppm is expected from this well (API chart colors are subjective; "
     "consistent color band is enough — do not over-precise or repeatedly flag stable ~40–50 "
     "source nitrate as a new crisis). Softener/neutralizer do not remove nitrate, so WCs from "
@@ -473,6 +602,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY not set, skipping AI analysis")
+        _record_analysis_failure(tank_id, trigger_type, trigger_id, "ANTHROPIC_API_KEY not set")
         return
 
     try:
@@ -526,36 +656,31 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             tank, test_results, issues, events, inhabitants, plants, hardscape, schedule_rows,
             home_water_tests=home_water_tests,
         )
-        logger.info("Claude call: analysis | tank=%d", tank_id)
-        t0 = time.monotonic()
-        msg = await asyncio.to_thread(
-            client.messages.create,
-            model=CLAUDE_MODEL,
-            max_tokens=1536,
+        _, analysis_text = await _claude_text(
+            client,
+            label="analysis",
+            tank_id=tank_id,
+            max_tokens=CLAUDE_MAX_TOKENS_ANALYSIS,
             messages=[{"role": "user", "content": analysis_prompt}],
-            timeout=60.0,
         )
-        if msg.stop_reason == "max_tokens":
-            logger.warning("Claude analysis hit max_tokens for tank %d — response may be truncated", tank_id)
-        logger.info("Claude done: analysis | tank=%d | in=%d out=%d elapsed=%.1fs",
-                    tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
-        analysis_text = msg.content[0].text
+        if not analysis_text:
+            _record_analysis_failure(
+                tank_id, trigger_type, trigger_id,
+                "Claude returned no analysis text after adaptive thinking + no-thinking retry",
+            )
+            return
 
         issue_updates = []
         if issues:
             issue_review_prompt = build_issue_review_prompt(tank, issues, test_results)
-            logger.info("Claude call: issue_review | tank=%d", tank_id)
-            t_ir = time.monotonic()
-            issue_msg = await asyncio.to_thread(
-                client.messages.create,
-                model=CLAUDE_MODEL,
-                max_tokens=768,
+            _, issue_raw = await _claude_text(
+                client,
+                label="issue_review",
+                tank_id=tank_id,
+                max_tokens=CLAUDE_MAX_TOKENS_ISSUE_REVIEW,
                 messages=[{"role": "user", "content": issue_review_prompt}],
-                timeout=60.0,
             )
-            logger.info("Claude done: issue_review | tank=%d | in=%d out=%d elapsed=%.1fs",
-                        tank_id, issue_msg.usage.input_tokens, issue_msg.usage.output_tokens, time.monotonic() - t_ir)
-            issue_updates = _parse_issue_updates(issue_msg.content[0].text, {i["id"] for i in issues})
+            issue_updates = _parse_issue_updates(issue_raw, {i["id"] for i in issues})
 
         related_test_id = trigger_id if trigger_type == "test" else None
         related_event_id = trigger_id if trigger_type == "event" else None
@@ -597,20 +722,22 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             tank, test_results, issues, inhabitants, plants, hardscape, analysis_text,
             schedule_rows, events, home_water_tests=home_water_tests,
         )
-        logger.info("Claude call: summary | tank=%d", tank_id)
-        t1 = time.monotonic()
-        sum_msg = await asyncio.to_thread(
-            client.messages.create,
-            model=CLAUDE_MODEL,
-            max_tokens=1024,
+        _, summary_text = await _claude_text(
+            client,
+            label="summary",
+            tank_id=tank_id,
+            max_tokens=CLAUDE_MAX_TOKENS_SUMMARY,
             messages=[{"role": "user", "content": summary_prompt}],
-            timeout=60.0,
         )
-        if sum_msg.stop_reason == "max_tokens":
-            logger.warning("Claude summary hit max_tokens for tank %d — response may be truncated", tank_id)
-        logger.info("Claude done: summary | tank=%d | in=%d out=%d elapsed=%.1fs",
-                    tank_id, sum_msg.usage.input_tokens, sum_msg.usage.output_tokens, time.monotonic() - t1)
-        summary_text = sum_msg.content[0].text
+        if not summary_text:
+            # Analysis observation already saved; still surface that summary failed
+            # so the wait page unblocks and the user sees the error.
+            _record_analysis_failure(
+                tank_id, trigger_type, trigger_id,
+                "Claude returned no summary text after adaptive thinking + no-thinking retry "
+                "(analysis note was saved)",
+            )
+            return
 
         with get_db() as conn:
             conn.execute(
@@ -632,7 +759,8 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         logger.info("AI analysis complete for tank %d", tank_id)
 
     except Exception as e:
-        logger.error("AI analysis failed for tank %d: %s", tank_id, e)
+        logger.error("AI analysis failed for tank %d: %s", tank_id, e, exc_info=True)
+        _record_analysis_failure(tank_id, trigger_type, trigger_id, e)
 
 
 async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows, events, test_results,
@@ -656,24 +784,18 @@ async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows,
     prompt = build_notes_proposal_prompt(
         tank, schedule_rows, events, test_results, home_water_tests=home_water_tests,
     )
-    logger.info("Claude call: notes_proposal | tank=%d", tank_id)
-    t0 = time.monotonic()
     try:
-        msg = await asyncio.to_thread(
-            client.messages.create,
-            model=CLAUDE_MODEL,
-            max_tokens=1024,
+        _, proposal_raw = await _claude_text(
+            client,
+            label="notes_proposal",
+            tank_id=tank_id,
+            max_tokens=CLAUDE_MAX_TOKENS_NOTES_PROPOSAL,
             messages=[{"role": "user", "content": prompt}],
-            timeout=60.0,
         )
     except Exception as e:
         logger.error("Notes proposal Claude call failed for tank %d: %s", tank_id, e)
         return
-    logger.info(
-        "Claude done: notes_proposal | tank=%d | in=%d out=%d elapsed=%.1fs",
-        tank_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0,
-    )
-    proposal = _parse_notes_proposal(msg.content[0].text, tank.get("notes"))
+    proposal = _parse_notes_proposal(proposal_raw, tank.get("notes"))
     if not proposal:
         logger.info("No tank notes update needed for tank %d", tank_id)
         return
@@ -750,19 +872,18 @@ async def run_test_recommendation(tank_id: int, result_id: int):
             tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows,
             home_water_tests=home_water_tests,
         )
-        logger.info("Claude call: test_recommendation | tank=%d test=%d", tank_id, result_id)
-        t0 = time.monotonic()
-        msg = await asyncio.to_thread(
-            client.messages.create,
-            model=CLAUDE_MODEL,
-            max_tokens=500,
+        _, recommendation = await _claude_text(
+            client,
+            label="test_recommendation",
+            tank_id=tank_id,
+            max_tokens=CLAUDE_MAX_TOKENS_RECOMMENDATION,
             messages=[{"role": "user", "content": prompt}],
-            timeout=60.0,
         )
-        logger.info("Claude done: test_recommendation | tank=%d test=%d | in=%d out=%d elapsed=%.1fs",
-                    tank_id, result_id, msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0)
-        recommendation = msg.content[0].text.strip()
         if not recommendation:
+            logger.warning(
+                "Test recommendation returned no text for tank %d test %d (after retry)",
+                tank_id, result_id,
+            )
             return
 
         with get_db() as conn:

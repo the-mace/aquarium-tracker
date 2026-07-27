@@ -83,10 +83,11 @@
 {% if observations %}
 <div class="observations-list">
   {% for obs in observations %}
-  <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
+  {% set is_fail = obs.source == 'auto' and obs.text and obs.text.startswith('AI analysis failed:') %}
+  <div class="observation-item {% if is_fail %}obs-fail{% elif obs.source == 'auto' %}obs-auto{% endif %}">
     <div class="obs-meta">
-      <span class="obs-source-badge {% if obs.source == 'auto' %}obs-ai{% elif obs.source == 'import' %}obs-import{% endif %}">
-        {% if obs.source == 'auto' %}AI Analysis{% elif obs.source == 'import' %}Import Note{% else %}Manual Note{% endif %}
+      <span class="obs-source-badge {% if is_fail %}obs-fail-badge{% elif obs.source == 'auto' %}obs-ai{% elif obs.source == 'import' %}obs-import{% endif %}">
+        {% if is_fail %}AI Failed{% elif obs.source == 'auto' %}AI Analysis{% elif obs.source == 'import' %}Import Note{% else %}Manual Note{% endif %}
       </span>
       <span class="obs-time ts-local" data-utc="{{ obs.created_at }}">{{ obs.created_at }}</span>
       {% if obs.related_test_id %}<span class="obs-link muted">linked to test #{{ obs.related_test_id }}</span>{% endif %}

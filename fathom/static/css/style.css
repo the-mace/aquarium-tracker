@@ -292,6 +292,31 @@ p { margin-bottom: .5rem; }
   margin-top: .85rem;
 }
 
+/* ── AI analysis failure banner ─────────────────────────────────────────── */
+.analysis-fail-banner {
+  background: rgba(245, 158, 11, .1);
+  border: 1px solid rgba(245, 158, 11, .4);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.analysis-fail-header {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--warning);
+  margin-bottom: .4rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.analysis-fail-text {
+  font-size: .9rem;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
 /* ── Summary Card ───────────────────────────────────────────────────────── */
 .summary-card {
   background: linear-gradient(135deg, rgba(0,196,160,.08), rgba(56,189,248,.05));
@@ -461,10 +486,12 @@ p { margin-bottom: .5rem; }
 }
 .observation-item:last-child { border-bottom: 0; }
 .obs-auto { border-left: 2px solid var(--primary); padding-left: .75rem; }
+.obs-fail { border-left: 2px solid var(--warning); padding-left: .75rem; background: rgba(245, 158, 11, .06); }
 .obs-meta { display: flex; align-items: center; gap: .5rem; margin-bottom: .35rem; flex-wrap: wrap; }
 .obs-source { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .obs-source-badge { font-size: .7rem; font-weight: 600; padding: .1rem .45rem; border-radius: 999px; background: var(--card-alt); color: var(--muted); }
 .obs-ai { background: rgba(0,196,160,.12); color: var(--primary); }
+.obs-fail-badge { background: rgba(245, 158, 11, .18); color: var(--warning); }
 .obs-import { background: rgba(56,189,248,.12); color: var(--accent); }
 .obs-time { font-size: .75rem; color: var(--muted); }
 .obs-link { font-size: .72rem; }

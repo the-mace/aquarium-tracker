@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="form-card" style="max-width:480px;margin:2.5rem auto;text-align:center">
-  <div style="font-size:2.2rem;line-height:1;color:var(--primary);margin-bottom:.5rem">✓</div>
+  <div id="save-wait-icon" style="font-size:2.2rem;line-height:1;color:var(--primary);margin-bottom:.5rem">✓</div>
   <h2 style="margin:0 0 .35rem">Test result saved</h2>
   <p id="save-wait-status" class="muted" style="margin:0 0 1.25rem">Generating AI analysis…</p>
 
@@ -21,14 +21,18 @@
 {% block scripts %}
 <script>
 const SINCE = {{ since|tojson }};
+const RESULT_ID = {{ result_id|tojson }};
 const START = Date.now();
-const MAX_WAIT_MS = 40000;
+// Adaptive thinking + possible no-thinking retry + summary can exceed 40s.
+const MAX_WAIT_MS = 120000;
 const POLL_MS = 1500;
 const fill = document.getElementById('save-wait-fill');
 const status = document.getElementById('save-wait-status');
+const icon = document.getElementById('save-wait-icon');
 
-function goToDashboard() {
-  window.location.href = `/tanks/${TANK_ID}`;
+function goToDashboard(failed) {
+  const q = failed ? '?ai=failed' : '?ai=ready';
+  window.location.href = `/tanks/${TANK_ID}${q}`;
 }
 
 async function poll() {
@@ -36,17 +40,27 @@ async function poll() {
   fill.style.width = `${Math.min(100, (elapsed / MAX_WAIT_MS) * 100)}%`;
   if (elapsed >= MAX_WAIT_MS) {
     status.textContent = 'Still working — continuing in the background, taking you to the dashboard now.';
-    setTimeout(goToDashboard, 600);
+    setTimeout(() => goToDashboard(false), 600);
     return;
   }
   if (!SINCE) { setTimeout(poll, POLL_MS); return; }
   try {
-    const res = await fetch(`/tanks/${TANK_ID}/tests/summary-status?since=${encodeURIComponent(SINCE)}`);
+    const params = new URLSearchParams({ since: SINCE });
+    if (RESULT_ID != null) params.set('result_id', String(RESULT_ID));
+    const res = await fetch(`/tanks/${TANK_ID}/tests/summary-status?${params}`);
     const data = await res.json();
     if (data.ready) {
       fill.style.width = '100%';
-      status.textContent = 'Analysis ready!';
-      setTimeout(goToDashboard, 400);
+      if (data.error) {
+        fill.style.background = 'var(--warning)';
+        icon.textContent = '!';
+        icon.style.color = 'var(--warning)';
+        status.textContent = 'Analysis failed — details on the dashboard.';
+        setTimeout(() => goToDashboard(true), 700);
+      } else {
+        status.textContent = 'Analysis ready!';
+        setTimeout(() => goToDashboard(false), 400);
+      }
       return;
     }
   } catch (e) {

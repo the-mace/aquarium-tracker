@@ -48,6 +48,24 @@
 </div>
 {% endif %}
 
+{% set ai_failed_q = request.query_params.get('ai') == 'failed' %}
+{% if ai_failed_q or analysis_failure_obs %}
+<div class="analysis-fail-banner" role="alert">
+  <div class="analysis-fail-header">
+    <span>⚠</span>
+    <span>AI analysis failed</span>
+  </div>
+  <p class="analysis-fail-text">
+    {% if analysis_failure_obs %}
+    {{ analysis_failure_obs.text.split('\n\n')[0] }}
+    {% else %}
+    Analysis did not complete. Check Recent Observations or the server log for details.
+    {% endif %}
+  </p>
+  <p class="muted" style="margin:.35rem 0 0;font-size:.8rem">The previous AI summary (if any) was left unchanged.</p>
+</div>
+{% endif %}
+
 <!-- Summary Banner -->
 {% if summary and summary.summary_text %}
 <div class="summary-card">
@@ -311,9 +329,10 @@
     </div>
     {% if recent_observations %}
     {% for obs in recent_observations %}
-    <div class="observation-item {% if obs.source == 'auto' %}obs-auto{% endif %}">
+    {% set is_fail = obs.source == 'auto' and obs.text and obs.text.startswith('AI analysis failed:') %}
+    <div class="observation-item {% if is_fail %}obs-fail{% elif obs.source == 'auto' %}obs-auto{% endif %}">
       <div class="obs-meta">
-        <span class="obs-source">{% if obs.source == 'auto' %}AI{% elif obs.source == 'import' %}Import{% else %}Manual{% endif %}</span>
+        <span class="obs-source">{% if is_fail %}AI failed{% elif obs.source == 'auto' %}AI{% elif obs.source == 'import' %}Import{% else %}Manual{% endif %}</span>
         <span class="obs-time ts-local" data-utc="{{ obs.created_at }}">{{ obs.created_at }}</span>
       </div>
       <p class="obs-text">{{ obs.text }}</p>

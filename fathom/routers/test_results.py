@@ -113,16 +113,41 @@ async def add_test_result(
 
 
 @router.get("/summary-status")
-async def summary_status(tank_id: int, since: Optional[str] = None):
-    """Polled by tests/saved.html to detect when the background AI summary
-    generated after `since` has landed, so it can redirect to the dashboard
-    as soon as it's ready instead of on a blind fixed delay."""
+async def summary_status(
+    tank_id: int,
+    since: Optional[str] = None,
+    result_id: Optional[int] = None,
+):
+    """Polled by tests/saved.html until AI analysis finishes (success or failure).
+
+    ready when:
+      - tank_state_summary was generated after `since` (success), or
+      - an auto failure observation for this test was written after `since`
+        (analysis crashed / returned empty after retries — visible on dashboard).
+    """
+    from ai_config import ANALYSIS_FAILURE_PREFIX
+
+    ready = False
+    error = False
     with get_db() as conn:
         row = conn.execute(
             "SELECT generated_at FROM tank_state_summary WHERE tank_id = ?", (tank_id,)
         ).fetchone()
-    ready = bool(row and row[0] and since and row[0] > since)
-    return JSONResponse({"ready": ready})
+        if row and row[0] and since and row[0] > since:
+            ready = True
+        elif result_id is not None and since:
+            fail = conn.execute(
+                """SELECT id FROM observations
+                   WHERE tank_id = ? AND related_test_id = ? AND source = 'auto'
+                     AND created_at > ?
+                     AND text LIKE ?
+                   ORDER BY id DESC LIMIT 1""",
+                (tank_id, result_id, since, f"{ANALYSIS_FAILURE_PREFIX}%"),
+            ).fetchone()
+            if fail:
+                ready = True
+                error = True
+    return JSONResponse({"ready": ready, "error": error})
 
 
 @router.get("/{result_id}/saved", response_class=HTMLResponse)
@@ -136,7 +161,11 @@ async def test_saved_wait(request: Request, tank_id: int, result_id: int, since:
         ).fetchone())
         if not test_result:
             raise HTTPException(status_code=404, detail="Test result not found")
-    return templates.TemplateResponse(request, "tests/saved.html", {"tank": tank, "since": since or ""})
+    return templates.TemplateResponse(
+        request,
+        "tests/saved.html",
+        {"tank": tank, "since": since or "", "result_id": result_id},
+    )
 
 
 @router.post("/{result_id}/update")

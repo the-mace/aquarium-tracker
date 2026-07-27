@@ -7,6 +7,7 @@ from routers.ai_analysis import (
     _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
     _fmt_issues, _fmt_issues_with_id, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
     _fmt_home_water,
+    _message_text,
     build_recommendation_prompt, build_analysis_prompt, build_summary_prompt,
     build_issue_review_prompt, _parse_issue_updates,
     build_notes_proposal_prompt, _parse_notes_proposal,
@@ -78,6 +79,57 @@ def test_get_db_rolls_back_on_error(tmp_path, monkeypatch):
     assert count == 0
 
 
+# ── Claude response text extraction ─────────────────────────────────────────
+
+class _Blk:
+    def __init__(self, type=None, text=None, thinking=None):
+        self.type = type
+        if text is not None:
+            self.text = text
+        if thinking is not None:
+            self.thinking = thinking
+
+
+class _Msg:
+    def __init__(self, content):
+        self.content = content
+
+
+def test_message_text_plain_text_only():
+    assert _message_text(_Msg([_Blk(type="text", text="hello")])) == "hello"
+
+
+def test_message_text_skips_thinking_block():
+    """Sonnet 5 adaptive thinking: ThinkingBlock first has no .text."""
+    msg = _Msg([
+        _Blk(type="thinking", thinking="reason step by step…"),
+        _Blk(type="text", text="Tank looks stable."),
+    ])
+    assert _message_text(msg) == "Tank looks stable."
+
+
+def test_message_text_thinking_only_returns_empty():
+    """max_tokens exhausted on thinking → no TextBlock (the prod failure mode)."""
+    msg = _Msg([_Blk(type="thinking", thinking="…")])
+    assert _message_text(msg) == ""
+
+
+def test_message_text_legacy_fake_without_type():
+    """test_ai_recommendation fakes only set .text — still must work."""
+    class _Fake:
+        def __init__(self, text):
+            self.text = text
+    assert _message_text(_Msg([_Fake("ok")])) == "ok"
+
+
+def test_message_text_skips_redacted_thinking():
+    msg = _Msg([
+        _Blk(type="redacted_thinking"),
+        _Blk(type="text", text="visible"),
+    ])
+    assert _message_text(msg) == "visible"
+
+
 # ── ai_analysis formatter helpers ───────────────────────────────────────────
 
 def test_fmt_home_water_empty():
@@ -117,6 +169,7 @@ def test_build_recommendation_prompt_includes_home_water():
     assert "GH=8.0" in prompt
     assert "INCOMING" in prompt or "incoming" in prompt
     assert "bottled" in prompt.lower()
+    assert "prior week" in prompt.lower() or "aged" in prompt.lower()
     assert "infants" in prompt.lower()
     assert "adult" in prompt.lower() or "3+" in prompt
 
