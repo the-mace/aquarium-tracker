@@ -20,8 +20,8 @@ async def list_issues(request: Request, tank_id: int):
             "SELECT * FROM issues WHERE tank_id = ? ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'monitoring' THEN 1 ELSE 2 END, opened_at DESC",
             (tank_id,),
         ).fetchall())
-    return templates.TemplateResponse("issues/list.html", {
-        "request": request, "tank": tank, "issues": issues,
+    return templates.TemplateResponse(request, "issues/list.html", {
+        "tank": tank, "issues": issues,
     })
 
 

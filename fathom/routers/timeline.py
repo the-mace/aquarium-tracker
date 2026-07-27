@@ -199,8 +199,7 @@ async def tank_timeline(
         for date, items in groupby(rows, key=_date)
     ]
 
-    return templates.TemplateResponse("tanks/timeline.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "tanks/timeline.html", {
         "tank": tank,
         "groups": groups,
         "total": len(rows),

@@ -48,8 +48,7 @@ async def today_page(request: Request):
                 (tank["id"], today_date, today_date, today_date),
             ).fetchall())
 
-    return templates.TemplateResponse("today.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "today.html", {
         "tanks": tanks,
         "today_date": today_date,
         "today_dow_label": date.today().strftime("%A"),

@@ -99,8 +99,8 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
             if entity_name:
                 maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, hs.get("item", ""), wt)
 
-    return templates.TemplateResponse("plants/list.html", {
-        "request": request, "tank": tank,
+    return templates.TemplateResponse(request, "plants/list.html", {
+        "tank": tank,
         "plants": plants, "removed_plants": removed_plants, "hardscape": hardscape,
     })
 

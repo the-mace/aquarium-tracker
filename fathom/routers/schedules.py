@@ -106,8 +106,8 @@ async def schedule_page(request: Request, tank_id: int):
         cat = s.get("category", "feeding")
         if cat in by_cat:
             by_cat[cat].append(s)
-    return templates.TemplateResponse("tanks/schedule.html", {
-        "request": request, "tank": tank, "by_cat": by_cat,
+    return templates.TemplateResponse(request, "tanks/schedule.html", {
+        "tank": tank, "by_cat": by_cat,
         "dow_labels": DOW_LABELS, "today": date.today().isoformat(),
     })
 

@@ -33,12 +33,12 @@ async def list_tanks(request: Request):
             " (SELECT COUNT(*) FROM issues iss WHERE iss.tank_id=t.id AND iss.status!='resolved') as open_issues"
             " FROM tanks t ORDER BY t.status, t.name"
         ).fetchall())
-    return templates.TemplateResponse("tanks/list.html", {"request": request, "tanks": tanks})
+    return templates.TemplateResponse(request, "tanks/list.html", {"tanks": tanks})
 
 
 @router.get("/new", response_class=HTMLResponse)
 async def new_tank_form(request: Request):
-    return templates.TemplateResponse("tanks/form.html", {"request": request, "tank": None, "action": "add"})
+    return templates.TemplateResponse(request, "tanks/form.html", {"tank": None, "action": "add"})
 
 
 @router.post("", response_class=HTMLResponse)
@@ -166,8 +166,7 @@ async def tank_detail(request: Request, tank_id: int):
 
     today_dow_label = date.today().strftime('%A')
 
-    return templates.TemplateResponse("tanks/detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "tanks/detail.html", {
         "tank": tank,
         "latest_test": latest_test,
         "latest_home_water": latest_home_water,
@@ -194,7 +193,7 @@ async def edit_tank_form(request: Request, tank_id: int):
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
-    return templates.TemplateResponse("tanks/form.html", {"request": request, "tank": tank, "action": "edit"})
+    return templates.TemplateResponse(request, "tanks/form.html", {"tank": tank, "action": "edit"})
 
 
 @router.post("/{tank_id}/edit", response_class=HTMLResponse)

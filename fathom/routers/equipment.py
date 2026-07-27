@@ -37,8 +37,8 @@ async def list_equipment(request: Request, tank_id: int):
         ).fetchall())
     for eq in equipment:
         eq["specs_display"] = _specs_display(eq.get("specs"))
-    return templates.TemplateResponse("equipment/list.html", {
-        "request": request, "tank": tank, "equipment": equipment,
+    return templates.TemplateResponse(request, "equipment/list.html", {
+        "tank": tank, "equipment": equipment,
     })
 
 

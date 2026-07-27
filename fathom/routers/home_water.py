@@ -596,8 +596,7 @@ async def list_home_water(request: Request, background_tasks: BackgroundTasks):
         # Backfill: first visit after feature ships, or newer tests landed offline
         if home_water_summary_is_stale(conn):
             background_tasks.add_task(run_home_water_summary, False)
-    return templates.TemplateResponse("home_water/list.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "home_water/list.html", {
         "tests": tests,
         "latest": latest,
         "latest_tap": latest_tap,

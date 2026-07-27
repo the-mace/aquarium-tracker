@@ -22,8 +22,8 @@ async def list_purchases(request: Request, tank_id: int):
         total = conn.execute(
             "SELECT SUM(cost) as total FROM purchases WHERE tank_id = ?", (tank_id,),
         ).fetchone()["total"] or 0
-    return templates.TemplateResponse("purchases/list.html", {
-        "request": request, "tank": tank, "purchases": purchases, "total": total,
+    return templates.TemplateResponse(request, "purchases/list.html", {
+        "tank": tank, "purchases": purchases, "total": total,
     })
 
 

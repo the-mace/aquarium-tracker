@@ -67,8 +67,8 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
                 display = inh.get("common_name") or inh.get("species") or ""
                 maybe_fetch_reference_info(background_tasks, "species", entity_name, display, wt)
 
-    return templates.TemplateResponse("inhabitants/list.html", {
-        "request": request, "tank": tank,
+    return templates.TemplateResponse(request, "inhabitants/list.html", {
+        "tank": tank,
         "inhabitants": inhabitants, "pop_events": pop_events,
     })
 

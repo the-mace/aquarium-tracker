@@ -196,8 +196,8 @@ async def list_observations(
     # "Clear" (filter bar) drops text/source/date filters but keeps the entity link
     clear_search_url = base_url + (f"?{urlencode(link_params)}" if link_params else "")
 
-    return templates.TemplateResponse("observations/list.html", {
-        "request": request, "tank": tank, "observations": observations,
+    return templates.TemplateResponse(request, "observations/list.html", {
+        "tank": tank, "observations": observations,
         "entity_options": entity_options, "active_filter": active_filter,
         "clear_link_url": clear_link_url, "clear_search_url": clear_search_url,
         "filter_search": search or "", "filter_source": source or "",

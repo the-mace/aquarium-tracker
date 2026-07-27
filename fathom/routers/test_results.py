@@ -25,7 +25,7 @@ async def list_tests(request: Request, tank_id: int):
             "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 50",
             (tank_id,),
         ).fetchall())
-    return templates.TemplateResponse("tests/list.html", {"request": request, "tank": tank, "tests": tests})
+    return templates.TemplateResponse(request, "tests/list.html", {"tank": tank, "tests": tests})
 
 
 @router.get("/new", response_class=HTMLResponse)
@@ -48,8 +48,8 @@ async def new_test_form(request: Request, tank_id: int):
                         opened_at DESC""",
             (tank_id,),
         ).fetchall())
-    return templates.TemplateResponse("tests/form.html", {
-        "request": request, "tank": tank, "latest": latest, "open_issues": open_issues,
+    return templates.TemplateResponse(request, "tests/form.html", {
+        "tank": tank, "latest": latest, "open_issues": open_issues,
     })
 
 
@@ -136,9 +136,7 @@ async def test_saved_wait(request: Request, tank_id: int, result_id: int, since:
         ).fetchone())
         if not test_result:
             raise HTTPException(status_code=404, detail="Test result not found")
-    return templates.TemplateResponse(
-        "tests/saved.html", {"request": request, "tank": tank, "since": since or ""}
-    )
+    return templates.TemplateResponse(request, "tests/saved.html", {"tank": tank, "since": since or ""})
 
 
 @router.post("/{result_id}/update")

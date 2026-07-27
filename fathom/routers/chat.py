@@ -250,8 +250,7 @@ def _gather_tank_context(conn, tank_id: int) -> dict:
 async def new_chat_page(request: Request, tank_id: int):
     with get_db() as conn:
         tank = _require_tank(conn, tank_id)
-    return templates.TemplateResponse("chat/page.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "chat/page.html", {
         "tank": tank,
         "conversation": None,
         "messages": [],
@@ -266,8 +265,7 @@ async def conversation_page(request: Request, tank_id: int, conversation_id: int
         tank = _require_tank(conn, tank_id)
         conv = _get_conversation(conn, tank_id, conversation_id)
         messages = _load_messages(conn, conversation_id)
-    return templates.TemplateResponse("chat/page.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "chat/page.html", {
         "tank": tank,
         "conversation": conv,
         "messages": messages,

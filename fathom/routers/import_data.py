@@ -21,7 +21,7 @@ async def import_page(request: Request, tank_id: int):
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
-    return templates.TemplateResponse("tanks/import.html", {"request": request, "tank": tank})
+    return templates.TemplateResponse(request, "tanks/import.html", {"tank": tank})
 
 
 IMPORT_PROMPT = """You are a data extraction expert for an aquarium tracking app. Extract ALL aquarium-related data from the provided text.
@@ -439,7 +439,7 @@ async def quick_log_page(request: Request, tank_id: int):
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
-    return templates.TemplateResponse("tanks/quick_log.html", {"request": request, "tank": tank})
+    return templates.TemplateResponse(request, "tanks/quick_log.html", {"tank": tank})
 
 
 @router.post("/tanks/{tank_id}/quick-log")
