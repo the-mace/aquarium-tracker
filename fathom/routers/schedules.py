@@ -157,6 +157,7 @@ async def update_schedule(
     is_active: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
     last_done: Optional[str] = Form(None),
+    next_due: Optional[str] = Form(None),
 ):
     interval_days = int(interval_days) if interval_days and interval_days.strip() else None
     tracking_mode = "logged" if category == "maintenance" else "reference_only"
@@ -169,13 +170,24 @@ async def update_schedule(
         if not existing:
             raise HTTPException(status_code=404, detail="Schedule entry not found")
 
-        # Editing last_done (e.g. to fix a mistaken mark-done) recomputes next_due from
-        # that corrected date, same rules as mark-done itself. Leaving the field blank
-        # keeps whatever last_done/next_due were already stored.
+        # last_done / next_due are calendar-day fields. Blank form values preserve
+        # whatever was already stored. An explicit next_due wins when provided
+        # (e.g. catch-up water change Monday → push next due past this week's
+        # normal Thursday). When last_done is corrected without an explicit
+        # next_due, recompute next_due the same way mark-done does.
         last_done_val = existing["last_done"]
         next_due_val = existing["next_due"]
-        if last_done is not None and last_done.strip():
+        last_done_set = last_done is not None and last_done.strip() != ""
+        next_due_set = next_due is not None and next_due.strip() != ""
+        if last_done_set:
             last_done_val = last_done.strip()
+        if next_due_set:
+            next_due_val = next_due.strip()
+        elif last_done_set and next_due is None:
+            # Field not in the form at all (API / older clients) → recompute.
+            next_due_val = compute_next_due(dow, interval_days, date.fromisoformat(last_done_val))
+        elif last_done_set and next_due is not None and not next_due.strip():
+            # Field present but cleared while last_done was set → recompute.
             next_due_val = compute_next_due(dow, interval_days, date.fromisoformat(last_done_val))
 
         summary = _describe_schedule_changes(existing, {

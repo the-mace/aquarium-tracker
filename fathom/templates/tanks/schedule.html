@@ -155,7 +155,7 @@
         </div>
         <div class="form-group" id="edit-dow-group">
           <label>Day of week</label>
-          <select name="day_of_week" id="edit-dow">
+          <select name="day_of_week" id="edit-dow" onchange="recomputeNextDueFromLastDone()">
             <option value="">Floating / any day</option>
             <option value="mon">Monday</option>
             <option value="tue">Tuesday</option>
@@ -168,13 +168,18 @@
         </div>
         <div class="form-group" id="edit-interval-group" style="display:none">
           <label>Interval (days)</label>
-          <input type="number" name="interval_days" id="edit-interval" min="1">
+          <input type="number" name="interval_days" id="edit-interval" min="1" onchange="recomputeNextDueFromLastDone()">
         </div>
       </div>
       <div class="form-group" id="edit-last-done-group" style="display:none;margin-top:.75rem">
         <label>Last done</label>
-        <input type="date" name="last_done" id="edit-last-done">
-        <span class="muted" style="font-size:.75rem">Fixes a mistaken "✓ Done" — changing this recomputes the due date too.</span>
+        <input type="date" name="last_done" id="edit-last-done" onchange="recomputeNextDueFromLastDone()">
+        <span class="muted" style="font-size:.75rem">Fixes a mistaken "✓ Done" — changing this suggests a new due date below.</span>
+      </div>
+      <div class="form-group" id="edit-next-due-group" style="display:none;margin-top:.75rem">
+        <label>Next due</label>
+        <input type="date" name="next_due" id="edit-next-due">
+        <span class="muted" style="font-size:.75rem">Set this when plans change (e.g. did water change early → push due to next week).</span>
       </div>
       <div class="form-group" style="margin-top:.75rem">
         <label>Description *</label>
@@ -202,13 +207,65 @@
 
 {% block scripts %}
 <script>
+const DOW_INDEX = {mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6};
+
 function syncSchedForm(prefix) {
   const cat = document.getElementById(prefix + '-category').value;
   const isMaint = cat === 'maintenance';
   const intGroup = document.getElementById(prefix + '-interval-group');
   const lastDoneGroup = document.getElementById(prefix + '-last-done-group');
+  const nextDueGroup = document.getElementById(prefix + '-next-due-group');
   if (intGroup) intGroup.style.display = isMaint ? '' : 'none';
   if (lastDoneGroup) lastDoneGroup.style.display = isMaint ? '' : 'none';
+  if (nextDueGroup) nextDueGroup.style.display = isMaint ? '' : 'none';
+}
+
+/** Mirror of compute_next_due in schedules.py — suggests a due date when last_done changes. */
+function computeNextDue(dayOfWeek, intervalDays, fromDateStr) {
+  if (!fromDateStr) return '';
+  // Parse as local noon to avoid UTC off-by-one on date-only strings.
+  const from = new Date(fromDateStr + 'T12:00:00');
+  if (isNaN(from.getTime())) return '';
+  const addDays = (d, n) => {
+    const out = new Date(d);
+    out.setDate(out.getDate() + n);
+    return out;
+  };
+  const toIso = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  // DOW_INDEX is Mon=0…Sun=6; JS getDay() is Sun=0…Sat=6.
+  const toJsWeekday = (idx) => (idx + 1) % 7;
+  const nextWeekdayOnOrAfter = (d, monIdx) => {
+    const targetJs = toJsWeekday(monIdx);
+    let ahead = targetJs - d.getDay();
+    if (ahead < 0) ahead += 7;
+    return addDays(d, ahead);
+  };
+  if (dayOfWeek && dayOfWeek in DOW_INDEX) {
+    if (intervalDays && intervalDays > 7) {
+      return toIso(nextWeekdayOnOrAfter(addDays(from, intervalDays), DOW_INDEX[dayOfWeek]));
+    }
+    const targetJs = toJsWeekday(DOW_INDEX[dayOfWeek]);
+    let ahead = targetJs - from.getDay();
+    if (ahead <= 0) ahead += 7;
+    return toIso(addDays(from, ahead));
+  }
+  if (intervalDays) return toIso(addDays(from, intervalDays));
+  return '';
+}
+
+function recomputeNextDueFromLastDone() {
+  const lastDone = document.getElementById('edit-last-done').value;
+  if (!lastDone) return;
+  const dow = document.getElementById('edit-dow').value || '';
+  const intervalRaw = document.getElementById('edit-interval').value;
+  const intervalDays = intervalRaw ? parseInt(intervalRaw, 10) : null;
+  const suggested = computeNextDue(dow, intervalDays, lastDone);
+  if (suggested) document.getElementById('edit-next-due').value = suggested;
 }
 
 function openEditSched(s) {
@@ -221,6 +278,7 @@ function openEditSched(s) {
   document.getElementById('edit-notes').value = s.notes || '';
   document.getElementById('edit-active').checked = !!s.is_active;
   document.getElementById('edit-last-done').value = s.last_done || '';
+  document.getElementById('edit-next-due').value = s.next_due || '';
   syncSchedForm('edit');
   openModal('modal-edit');
 }

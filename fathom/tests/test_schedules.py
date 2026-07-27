@@ -544,6 +544,92 @@ def test_edit_last_done_recomputes_next_due(client, tank_id):
     assert sched["next_due"] == expected_next
 
 
+def test_edit_next_due_override_without_recompute(client, tank_id):
+    """Catch-up water change: mark done mid-week, then push next due past this week's normal day."""
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={
+            "category": "maintenance",
+            "day_of_week": "thu",
+            "description": "Water change",
+            "interval_days": "7",
+        },
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Water change'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    # Done on a Monday; auto formula would land on this week's Thursday.
+    monday = date(2026, 7, 20)  # a Monday
+    this_thu = date(2026, 7, 23)
+    next_thu = date(2026, 7, 30)
+
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={
+            "category": "maintenance",
+            "day_of_week": "thu",
+            "description": "Water change",
+            "interval_days": "7",
+            "is_active": "1",
+            "last_done": monday.isoformat(),
+            "next_due": next_thu.isoformat(),
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    with _db.get_db() as conn:
+        sched = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert sched["last_done"] == monday.isoformat()
+    assert sched["next_due"] == next_thu.isoformat()
+    assert sched["next_due"] != this_thu.isoformat()
+
+
+def test_edit_next_due_alone_preserves_last_done(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "maintenance", "description": "Glass wipe", "interval_days": "7"},
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Glass wipe'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    client.post(f"/tanks/{tank_id}/schedule/{sch_id}/mark-done", follow_redirects=False)
+    with _db.get_db() as conn:
+        before = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+
+    pushed = (date.today() + timedelta(days=14)).isoformat()
+    r = client.post(
+        f"/tanks/{tank_id}/schedule/{sch_id}/update",
+        data={
+            "category": "maintenance",
+            "description": "Glass wipe",
+            "interval_days": "7",
+            "is_active": "1",
+            "last_done": before["last_done"],
+            "next_due": pushed,
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    with _db.get_db() as conn:
+        after = dict(conn.execute("SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
+    assert after["last_done"] == before["last_done"]
+    assert after["next_due"] == pushed
+
+
 def test_edit_without_last_done_preserves_existing(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/schedule",
