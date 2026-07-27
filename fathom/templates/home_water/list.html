@@ -1,0 +1,540 @@
+{% extends "base.html" %}
+{% block title %}Home Water — Fathom{% endblock %}
+{% set active = "home_water" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Home Water</h1>
+  <button class="btn btn-primary" onclick="openAddHomeWater()">+ Log Reading</button>
+</div>
+
+<p class="muted" style="margin-top:-.5rem;margin-bottom:1.25rem;max-width:44rem">
+  Source water for water changes (shared across all tanks). Kit readings are usually
+  flushed WC-source tap with GH &amp; KH. Lab PDFs/CSVs can be uploaded — sample date and
+  metrics are extracted by AI; you set whether it was regular WC water (hard/soft mix) or unfiltered.
+</p>
+
+{% if summary and summary.summary_text %}
+<div class="summary-card" style="margin-bottom:1rem">
+  <div class="summary-header">
+    <span class="summary-icon">✦</span>
+    <span>Suitability (WC source)</span>
+    {% if summary.generated_at %}<span class="summary-time">{{ summary.generated_at }}</span>{% endif %}
+  </div>
+  <p class="summary-text">{{ summary.summary_text }}</p>
+  {% if summary.based_on_timestamp %}
+  <p class="muted" style="font-size:.8rem;margin:0.5rem 0 0">
+    Based on newest reading
+    <span class="ts-local" data-utc="{{ summary.based_on_timestamp }}">{{ summary.based_on_timestamp }}</span>
+    — regenerates only when a newer-dated test is saved.
+  </p>
+  {% endif %}
+</div>
+{% if summary.raw_outdoor_text %}
+<div class="summary-card" style="margin-bottom:1.25rem;border-color:rgba(212,162,124,.35)">
+  <div class="summary-header">
+    <span class="summary-icon">🌿</span>
+    <span>Raw well — horses / outdoor troughs</span>
+    {% if summary.based_on_raw_timestamp %}
+    <span class="summary-time ts-local" data-utc="{{ summary.based_on_raw_timestamp }}">{{ summary.based_on_raw_timestamp }}</span>
+    {% endif %}
+  </div>
+  <p class="summary-text">{{ summary.raw_outdoor_text }}</p>
+</div>
+{% endif %}
+{% elif tests %}
+<div class="summary-card" style="margin-bottom:1.25rem">
+  <div class="summary-header">
+    <span class="summary-icon">✦</span>
+    <span>Suitability summary</span>
+  </div>
+  <p class="summary-text muted">Generating AI suitability assessment… refresh in a moment.</p>
+</div>
+{% endif %}
+
+{% if latest_tap %}
+<div class="stat-card" style="margin-bottom:1.25rem;max-width:28rem">
+  <div class="stat-card-title">Latest WC source (tap)</div>
+  <div class="param-grid">
+    {% if latest_tap.gh is not none %}<div class="param-item"><span class="param-label">GH</span><span class="param-value">{{ latest_tap.gh }}</span></div>{% endif %}
+    {% if latest_tap.kh is not none %}<div class="param-item"><span class="param-label">KH</span><span class="param-value">{{ latest_tap.kh }}</span></div>{% endif %}
+    {% if latest_tap.ph is not none %}<div class="param-item"><span class="param-label">pH</span><span class="param-value">{{ latest_tap.ph }}</span></div>{% endif %}
+    {% if latest_tap.tds is not none %}<div class="param-item"><span class="param-label">TDS</span><span class="param-value">{{ latest_tap.tds }}</span></div>{% endif %}
+    {% if latest_tap.nitrate is not none %}<div class="param-item"><span class="param-label">NO₃</span><span class="param-value">{{ latest_tap.nitrate }}</span></div>{% endif %}
+    {% if latest_tap.temp is not none %}<div class="param-item"><span class="param-label">Temp</span><span class="param-value">{{ latest_tap.temp }}°</span></div>{% endif %}
+  </div>
+  <div class="stat-card-footer">
+    <span class="ts-local" data-utc="{{ latest_tap.timestamp }}">{{ latest_tap.timestamp }}</span>
+    {% if latest_tap.water_blend %}<span class="badge badge-cat" style="margin-left:.35rem">{{ water_blend_labels.get(latest_tap.water_blend, latest_tap.water_blend) }}</span>{% endif %}
+    {% if latest_tap.is_lab_test %}<span class="badge badge-warning" style="margin-left:.25rem">Lab</span>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if tests %}
+<div class="table-wrapper responsive-cards">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Sample</th>
+        <th>GH</th>
+        <th>KH</th>
+        <th>pH</th>
+        <th>NO₃</th>
+        <th>Other</th>
+        <th>Notes</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tests %}
+      <tr>
+        <td class="nowrap ts-local" data-utc="{{ t.timestamp }}" data-label="Date">{{ t.timestamp }}</td>
+        <td data-label="Sample">
+          <span class="badge badge-cat">{{ sample_point_labels.get(t.sample_point or 'tap', t.sample_point or 'Tap') }}</span>
+          {% if t.water_blend %}<span class="badge badge-cat">{{ water_blend_labels.get(t.water_blend, t.water_blend) }}</span>{% endif %}
+          {% if t.is_lab_test %}<span class="badge badge-warning">Lab</span>{% endif %}
+        </td>
+        <td data-label="GH">{{ t.gh if t.gh is not none else '—' }}</td>
+        <td data-label="KH">{{ t.kh if t.kh is not none else '—' }}</td>
+        <td data-label="pH">{{ t.ph if t.ph is not none else '—' }}</td>
+        <td data-label="NO₃">{{ t.nitrate if t.nitrate is not none else '—' }}</td>
+        <td class="muted" data-label="Other" style="font-size:.85rem">
+          {% if t.tds is not none or t.ammonia is not none or t.nitrite is not none or t.temp is not none %}
+            {% if t.tds is not none %}TDS={{ t.tds }}{% endif %}
+            {% if t.ammonia is not none %}{% if t.tds is not none %}, {% endif %}NH₃={{ t.ammonia }}{% endif %}
+            {% if t.nitrite is not none %}{% if t.tds is not none or t.ammonia is not none %}, {% endif %}NO₂={{ t.nitrite }}{% endif %}
+            {% if t.temp is not none %}{% if t.tds is not none or t.ammonia is not none or t.nitrite is not none %}, {% endif %}{{ t.temp }}°{% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td class="muted" data-label="Notes" style="max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ t.notes or '' }}">{{ t.notes or '' }}</td>
+        <td class="actions-cell">
+          <button class="btn btn-xs btn-ghost" type="button" onclick="openEditHomeWater(this)"
+                  data-id="{{ t.id }}"
+                  data-timestamp="{{ t.timestamp or '' }}"
+                  data-ph="{{ t.ph if t.ph is not none else '' }}"
+                  data-gh="{{ t.gh if t.gh is not none else '' }}"
+                  data-kh="{{ t.kh if t.kh is not none else '' }}"
+                  data-ammonia="{{ t.ammonia if t.ammonia is not none else '' }}"
+                  data-nitrite="{{ t.nitrite if t.nitrite is not none else '' }}"
+                  data-nitrate="{{ t.nitrate if t.nitrate is not none else '' }}"
+                  data-tds="{{ t.tds if t.tds is not none else '' }}"
+                  data-temp="{{ t.temp if t.temp is not none else '' }}"
+                  data-sample-point="{{ t.sample_point or 'tap' }}"
+                  data-water-blend="{{ t.water_blend or '' }}"
+                  data-is-lab="{{ t.is_lab_test or 0 }}"
+                  data-notes="{{ (t.notes or '')|e }}">Edit</button>
+          <form method="post" action="/home-water/{{ t.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete this home water reading?')">
+            <button class="btn btn-xs btn-danger" type="submit">✕</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No home water readings yet</h2>
+  <p>Log a kit baseline or upload a lab PDF so water-change analysis knows the incoming water.</p>
+  <button class="btn btn-primary" onclick="openAddHomeWater()">Log First Reading</button>
+</div>
+{% endif %}
+
+{# ── Add modal: Manual | Lab upload ─────────────────────────────────────── #}
+<div id="modal-add-home-water" class="modal" style="display:none">
+  <div class="modal-box" style="max-width:40rem">
+    <div class="modal-header">
+      <h3>Log Home Water</h3>
+      <button class="modal-close" type="button" onclick="closeModal('modal-add-home-water')">×</button>
+    </div>
+
+    <div class="filter-pills" style="margin:0 0 1rem;padding:0 .25rem" role="tablist">
+      <button type="button" class="pill pill-active" id="tab-manual" onclick="switchAddTab('manual')">Manual entry</button>
+      <button type="button" class="pill" id="tab-lab" onclick="switchAddTab('lab')">Lab report (PDF/CSV)</button>
+    </div>
+
+    {# Manual #}
+    <div id="panel-manual">
+      <form method="post" action="/home-water" onsubmit="return prepareLocalTimestamps(this)">
+        <div class="form-group">
+          <label>Date &amp; Time</label>
+          <input type="datetime-local" class="dt-local" id="add-home-water-ts">
+          <input type="hidden" name="timestamp" class="dt-utc">
+        </div>
+        <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">
+          Usually just GH &amp; KH. Other parameters optional.
+        </p>
+        <div class="form-grid">
+          <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh"{% if latest_tap and latest_tap.gh is not none %} value="{{ latest_tap.gh }}"{% endif %}></div>
+          <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh"{% if latest_tap and latest_tap.kh is not none %} value="{{ latest_tap.kh }}"{% endif %}></div>
+          <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph"></div>
+          <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds"></div>
+          <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia"></div>
+          <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite"></div>
+          <div class="form-group"><label>Nitrate (ppm as NO₃⁻)</label><input type="number" step="0.1" name="nitrate"></div>
+          <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp"></div>
+        </div>
+        <div class="form-grid" style="margin-top:.75rem">
+          <div class="form-group">
+            <label>Sample point</label>
+            <select name="sample_point">
+              {% for value, label in sample_points %}
+              <option value="{{ value }}"{% if value == 'tap' %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Hard / soft blend</label>
+            <select name="water_blend">
+              {% for value, label in water_blends %}
+              <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:.35rem">
+            <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
+              <input type="checkbox" name="is_lab_test" value="1"> Lab panel
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea name="notes" rows="2" placeholder="Optional — flushed 2 min, etc."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-home-water')">Cancel</button>
+          <button class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+
+    {# Lab upload #}
+    <div id="panel-lab" style="display:none">
+      <div id="lab-upload-step">
+        <p class="muted" style="font-size:.85rem;margin-bottom:.85rem">
+          Upload a lab PDF or CSV. AI pulls sample date and key metrics (converting
+          nitrate-as-N → NO₃⁻ ppm and hardness mg/L → dGH/dKH when needed).
+          <strong>You must set sample context</strong> — labs rarely say “WC blend” vs unfiltered.
+        </p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Sample point *</label>
+            <select id="lab-sample-point">
+              {% for value, label in sample_points %}
+              <option value="{{ value }}"{% if value == 'tap' %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Hard / soft blend *</label>
+            <select id="lab-water-blend">
+              {% for value, label in water_blends %}
+              <option value="{{ value }}"{% if value == 'as_used' %} selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Your notes (optional)</label>
+          <textarea id="lab-user-notes" rows="2" placeholder="e.g. kitchen cold tap after 2 min flush; normal WC mix ~30% soft"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Lab report file *</label>
+          <input type="file" id="lab-file" accept=".pdf,.csv,.txt,.tsv,application/pdf,text/*">
+        </div>
+        <p id="lab-extract-status" class="muted" style="font-size:.85rem;display:none;margin:.5rem 0"></p>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-home-water')">Cancel</button>
+          <button class="btn btn-primary" type="button" id="lab-extract-btn" onclick="extractLabReport()">Extract with AI</button>
+        </div>
+      </div>
+
+      <div id="lab-review-step" style="display:none">
+        <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">
+          Review extracted readings. Edit anything wrong, uncheck rows to skip, then save.
+        </p>
+        <div id="lab-review-list"></div>
+        <div class="modal-footer" style="margin-top:1rem">
+          <button class="btn btn-ghost" type="button" onclick="backToLabUpload()">← Back</button>
+          <button class="btn btn-primary" type="button" id="lab-save-btn" onclick="saveLabReadings()">Save selected</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Edit modal ─────────────────────────────────────────────────────────── #}
+<div id="modal-edit-home-water" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Edit Home Water</h3>
+      <button class="modal-close" type="button" onclick="closeModal('modal-edit-home-water')">×</button>
+    </div>
+    <form id="edit-home-water-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
+      <div class="form-group">
+        <label>Date &amp; Time</label>
+        <input type="datetime-local" class="dt-local" id="edit-home-water-ts">
+        <input type="hidden" name="timestamp" class="dt-utc" id="edit-home-water-ts-utc">
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>GH (dGH)</label><input type="number" step="0.1" name="gh" id="edit-home-water-gh"></div>
+        <div class="form-group"><label>KH (dKH)</label><input type="number" step="0.1" name="kh" id="edit-home-water-kh"></div>
+        <div class="form-group"><label>pH</label><input type="number" step="0.01" name="ph" id="edit-home-water-ph"></div>
+        <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds" id="edit-home-water-tds"></div>
+        <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia" id="edit-home-water-ammonia"></div>
+        <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite" id="edit-home-water-nitrite"></div>
+        <div class="form-group"><label>Nitrate (ppm as NO₃⁻)</label><input type="number" step="0.1" name="nitrate" id="edit-home-water-nitrate"></div>
+        <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp" id="edit-home-water-temp"></div>
+      </div>
+      <div class="form-grid" style="margin-top:.75rem">
+        <div class="form-group">
+          <label>Sample point</label>
+          <select name="sample_point" id="edit-home-water-sample">
+            {% for value, label in sample_points %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Hard / soft blend</label>
+          <select name="water_blend" id="edit-home-water-blend">
+            {% for value, label in water_blends %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:.35rem">
+          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
+            <input type="checkbox" name="is_lab_test" value="1" id="edit-home-water-lab"> Lab panel
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea name="notes" id="edit-home-water-notes" rows="2"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-home-water')">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var SAMPLE_POINTS = {{ sample_points|list|tojson }};
+var WATER_BLENDS = {{ water_blends|list|tojson }};
+var labExtractedReadings = [];
+
+function openAddHomeWater() {
+  switchAddTab('manual');
+  backToLabUpload();
+  var input = document.getElementById('add-home-water-ts');
+  if (input) {
+    var now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    input.value = now.toISOString().slice(0, 16);
+  }
+  openModal('modal-add-home-water');
+}
+
+function switchAddTab(which) {
+  var manual = which === 'manual';
+  document.getElementById('panel-manual').style.display = manual ? '' : 'none';
+  document.getElementById('panel-lab').style.display = manual ? 'none' : '';
+  document.getElementById('tab-manual').classList.toggle('pill-active', manual);
+  document.getElementById('tab-lab').classList.toggle('pill-active', !manual);
+}
+
+function backToLabUpload() {
+  document.getElementById('lab-upload-step').style.display = '';
+  document.getElementById('lab-review-step').style.display = 'none';
+  document.getElementById('lab-extract-status').style.display = 'none';
+  document.getElementById('lab-extract-btn').disabled = false;
+  labExtractedReadings = [];
+}
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function optSelect(options, selected, nameAttr, idx) {
+  var html = '<select name="' + nameAttr + '" data-idx="' + idx + '" data-field="' + nameAttr + '">';
+  options.forEach(function (pair) {
+    var v = pair[0], lab = pair[1];
+    html += '<option value="' + escHtml(v) + '"' + (v === (selected || '') ? ' selected' : '') + '>' + escHtml(lab) + '</option>';
+  });
+  html += '</select>';
+  return html;
+}
+
+function renderLabReview(readings) {
+  labExtractedReadings = readings;
+  var host = document.getElementById('lab-review-list');
+  if (!readings.length) {
+    host.innerHTML = '<p class="muted">No readings extracted.</p>';
+    return;
+  }
+  var html = '';
+  readings.forEach(function (r, i) {
+    var flags = (r.flags || []).map(function (f) {
+      return '<div class="muted" style="font-size:.8rem;color:var(--warning)">⚠ ' + escHtml(f) + '</div>';
+    }).join('');
+    var tsLocal = '';
+    if (r.timestamp) {
+      // Show as datetime-local value in browser TZ when possible
+      try { tsLocal = utcToLocalInputValue(r.timestamp); } catch (e) { tsLocal = (r.timestamp || '').replace(' ', 'T').slice(0, 16); }
+    }
+    html += '<div class="lab-review-card" data-idx="' + i + '" style="border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;margin-bottom:.75rem;background:var(--card)">';
+    html += '<label style="display:flex;align-items:center;gap:.4rem;margin-bottom:.6rem;font-weight:600">'
+      + '<input type="checkbox" class="lab-row-check" data-idx="' + i + '" checked> Reading ' + (i + 1)
+      + (r.is_lab_test ? ' <span class="badge badge-warning">Lab</span>' : '')
+      + '</label>';
+    html += flags;
+    html += '<div class="form-group"><label>Date &amp; Time</label>'
+      + '<input type="datetime-local" class="lab-field" data-idx="' + i + '" data-field="timestamp_local" value="' + escHtml(tsLocal) + '">'
+      + '</div>';
+    html += '<div class="form-grid">';
+    ['gh','kh','ph','nitrate','tds','ammonia','nitrite','temp'].forEach(function (field) {
+      var labels = {gh:'GH (dGH)',kh:'KH (dKH)',ph:'pH',nitrate:'NO₃ (ppm)',tds:'TDS',ammonia:'NH₃',nitrite:'NO₂',temp:'Temp °F'};
+      var val = r[field] != null ? r[field] : '';
+      html += '<div class="form-group"><label>' + labels[field] + '</label>'
+        + '<input type="number" step="any" class="lab-field" data-idx="' + i + '" data-field="' + field + '" value="' + escHtml(val) + '">'
+        + '</div>';
+    });
+    html += '</div>';
+    html += '<div class="form-grid" style="margin-top:.5rem">';
+    html += '<div class="form-group"><label>Sample point</label>' + optSelect(SAMPLE_POINTS, r.sample_point || 'tap', 'sample_point', i) + '</div>';
+    html += '<div class="form-group"><label>Hard / soft blend</label>' + optSelect(WATER_BLENDS, r.water_blend || '', 'water_blend', i) + '</div>';
+    html += '</div>';
+    html += '<div class="form-group"><label>Notes</label>'
+      + '<textarea class="lab-field" data-idx="' + i + '" data-field="notes" rows="2">' + escHtml(r.notes || '') + '</textarea></div>';
+    html += '</div>';
+  });
+  host.innerHTML = html;
+}
+
+async function extractLabReport() {
+  var fileInput = document.getElementById('lab-file');
+  var file = fileInput.files && fileInput.files[0];
+  if (!file) {
+    alert('Choose a PDF or CSV lab report first.');
+    return;
+  }
+  var status = document.getElementById('lab-extract-status');
+  var btn = document.getElementById('lab-extract-btn');
+  status.style.display = '';
+  status.textContent = 'Extracting with AI… this can take 15–40s for PDFs.';
+  btn.disabled = true;
+
+  var fd = new FormData();
+  fd.append('file', file);
+  fd.append('sample_point', document.getElementById('lab-sample-point').value);
+  fd.append('water_blend', document.getElementById('lab-water-blend').value);
+  fd.append('user_notes', document.getElementById('lab-user-notes').value);
+
+  try {
+    var res = await fetch('/home-water/extract', { method: 'POST', body: fd });
+    var body = await res.json().catch(function () { return {}; });
+    if (!res.ok) {
+      throw new Error(body.detail || ('Extraction failed (' + res.status + ')'));
+    }
+    document.getElementById('lab-upload-step').style.display = 'none';
+    document.getElementById('lab-review-step').style.display = '';
+    renderLabReview(body.readings || []);
+    status.style.display = 'none';
+  } catch (err) {
+    status.textContent = err.message || String(err);
+    status.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function collectLabReading(idx) {
+  var card = document.querySelector('.lab-review-card[data-idx="' + idx + '"]');
+  if (!card) return null;
+  function val(field) {
+    var el = card.querySelector('[data-field="' + field + '"]');
+    return el ? el.value : '';
+  }
+  function num(field) {
+    var v = val(field);
+    if (v === '' || v == null) return null;
+    var n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+  var localTs = val('timestamp_local');
+  var ts = localTs ? localDatetimeToUTCString(localTs) : null;
+  return {
+    timestamp: ts,
+    gh: num('gh'),
+    kh: num('kh'),
+    ph: num('ph'),
+    nitrate: num('nitrate'),
+    tds: num('tds'),
+    ammonia: num('ammonia'),
+    nitrite: num('nitrite'),
+    temp: num('temp'),
+    sample_point: val('sample_point') || 'tap',
+    water_blend: val('water_blend') || null,
+    is_lab_test: 1,
+    notes: val('notes') || null,
+  };
+}
+
+async function saveLabReadings() {
+  var checks = document.querySelectorAll('.lab-row-check:checked');
+  if (!checks.length) {
+    alert('Select at least one reading to save.');
+    return;
+  }
+  var readings = [];
+  checks.forEach(function (cb) {
+    var r = collectLabReading(cb.dataset.idx);
+    if (r) readings.push(r);
+  });
+  var btn = document.getElementById('lab-save-btn');
+  btn.disabled = true;
+  try {
+    var res = await fetch('/home-water/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ readings: readings }),
+    });
+    var body = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(body.detail || ('Save failed (' + res.status + ')'));
+    location.reload();
+  } catch (err) {
+    alert(err.message || String(err));
+    btn.disabled = false;
+  }
+}
+
+function openEditHomeWater(btn) {
+  var d = btn.dataset;
+  var form = document.getElementById('edit-home-water-form');
+  form.action = '/home-water/' + d.id + '/update';
+  document.getElementById('edit-home-water-ts').value = utcToLocalInputValue(d.timestamp);
+  document.getElementById('edit-home-water-gh').value = d.gh;
+  document.getElementById('edit-home-water-kh').value = d.kh;
+  document.getElementById('edit-home-water-ph').value = d.ph;
+  document.getElementById('edit-home-water-tds').value = d.tds;
+  document.getElementById('edit-home-water-ammonia').value = d.ammonia;
+  document.getElementById('edit-home-water-nitrite').value = d.nitrite;
+  document.getElementById('edit-home-water-nitrate').value = d.nitrate;
+  document.getElementById('edit-home-water-temp').value = d.temp;
+  document.getElementById('edit-home-water-sample').value = d.samplePoint || 'tap';
+  document.getElementById('edit-home-water-blend').value = d.waterBlend || '';
+  document.getElementById('edit-home-water-lab').checked = d.isLab === '1' || d.isLab === 'true';
+  document.getElementById('edit-home-water-notes').value = d.notes || '';
+  openModal('modal-edit-home-water');
+}
+</script>
+{% endblock %}

@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 import database as _db
 import routers.ai_analysis as _ai
 import routers.reference_info as _ref
+import routers.home_water as _hw
 
 
 @pytest.fixture()
@@ -13,11 +14,13 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(_ai, "run_test_recommendation", lambda *a, **kw: None)
     monkeypatch.setattr(_ref, "fetch_reference_info_bg", lambda *a, **kw: None)
     monkeypatch.setattr(_ref, "fetch_tank_dimensions_bg", lambda *a, **kw: None)
+    monkeypatch.setattr(_hw, "run_home_water_summary", lambda *a, **kw: None)
     # In-flight trackers are module-level sets; tests that mock the bg task itself
     # (instead of letting the real task's `finally` clean up) can leak entries
     # across tests sharing the same tank_id/entity_name in a fresh per-test DB.
     _ref._in_flight.clear()
     _ref._dim_in_flight.clear()
+    _hw._summary_in_flight = False
     from main import app
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c

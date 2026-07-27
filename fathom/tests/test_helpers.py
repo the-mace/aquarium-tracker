@@ -6,6 +6,7 @@ from database import row_to_dict, rows_to_list, init_db, get_db
 from routers.ai_analysis import (
     _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
     _fmt_issues, _fmt_issues_with_id, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
+    _fmt_home_water,
     build_recommendation_prompt, build_analysis_prompt, build_summary_prompt,
     build_issue_review_prompt, _parse_issue_updates,
     build_notes_proposal_prompt, _parse_notes_proposal,
@@ -57,7 +58,8 @@ def test_init_db_idempotent(tmp_path, monkeypatch):
     expected = {
         "tanks", "test_results", "events", "inhabitants", "population_events",
         "purchases", "tank_equipment", "issues", "observations",
-        "tank_state_summary", "plants", "hardscape",
+        "tank_state_summary", "plants", "hardscape", "home_water_tests",
+        "home_water_summary",
     }
     assert expected.issubset(tables)
 
@@ -77,6 +79,64 @@ def test_get_db_rolls_back_on_error(tmp_path, monkeypatch):
 
 
 # ── ai_analysis formatter helpers ───────────────────────────────────────────
+
+def test_fmt_home_water_empty():
+    assert "No home/source water" in _fmt_home_water([])
+
+
+def test_fmt_home_water_formats_sample_and_lab():
+    rows = [{
+        "timestamp": "2026-07-20 12:00:00", "gh": 8.0, "kh": 10.0,
+        "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+        "tds": None, "temp": None, "sample_point": "tap", "is_lab_test": 0,
+        "water_blend": "mixed", "notes": None,
+    }, {
+        "timestamp": "2026-03-01 12:00:00", "gh": 12.0, "kh": 14.0,
+        "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+        "tds": 280, "temp": None, "sample_point": "raw", "is_lab_test": 1,
+        "water_blend": "hard", "notes": "municipal report",
+    }]
+    result = _fmt_home_water(rows)
+    assert "[tap, mixed_hard_soft]" in result
+    assert "GH=8.0" in result
+    assert "[raw, lab, hard_only]" in result
+    assert "TDS=280" in result
+    assert "municipal report" in result
+
+
+def test_build_recommendation_prompt_includes_home_water():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5, "notes": ""}
+    test_result = {"id": 1, "timestamp": "2026-07-02 08:00:00", "ph": 7.0, "gh": 6.0, "kh": 4.0,
+                   "ammonia": 0.0, "nitrite": 0.0, "nitrate": 5.0, "tds": None, "temp": 76.0, "notes": None}
+    home = [{"timestamp": "2026-07-01", "gh": 8.0, "kh": 10.0, "sample_point": "tap",
+             "is_lab_test": 0, "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+             "tds": None, "temp": None, "notes": None}]
+    prompt = build_recommendation_prompt(tank, test_result, [test_result], [], [], [], [],
+                                         home_water_tests=home)
+    assert "Home / source water" in prompt
+    assert "GH=8.0" in prompt
+    assert "INCOMING" in prompt or "incoming" in prompt
+
+
+def test_build_analysis_prompt_includes_home_water():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5}
+    home = [{"timestamp": "2026-07-01", "gh": 8.0, "kh": 10.0, "sample_point": "tap",
+             "is_lab_test": 0, "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+             "tds": None, "temp": None, "notes": None}]
+    prompt = build_analysis_prompt(tank, [], [], [], [], [], [], home_water_tests=home)
+    assert "Home / source water" in prompt
+    assert "GH=8.0" in prompt
+
+
+def test_build_summary_prompt_includes_home_water():
+    tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5}
+    home = [{"timestamp": "2026-07-01", "gh": 8.0, "kh": 10.0, "sample_point": "tap",
+             "is_lab_test": 0, "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+             "tds": None, "temp": None, "notes": None}]
+    prompt = build_summary_prompt(tank, [], [], [], [], [], "analysis", home_water_tests=home)
+    assert "Home / source water" in prompt
+    assert "KH=10.0" in prompt
+
 
 def test_fmt_test_results_empty():
     result = _fmt_test_results([])

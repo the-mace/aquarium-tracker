@@ -271,6 +271,50 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_test_results_tank_ts ON test_results(tank_id, timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_tank_ts ON events(tank_id, timestamp);
+
+            -- Shared home/source water readings (not tank-scoped). Used as incoming
+            -- water context for water-change analysis across all tanks.
+            CREATE TABLE IF NOT EXISTS home_water_tests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT (datetime('now')),
+                ph REAL,
+                gh REAL,
+                kh REAL,
+                ammonia REAL,
+                nitrite REAL,
+                nitrate REAL,
+                tds REAL,
+                temp REAL,
+                sample_point TEXT DEFAULT 'tap'
+                    CHECK(sample_point IN (
+                        'tap','raw','post_neutralizer','post_softener','hose','other'
+                    )),
+                -- Softener/blend context for well systems that mix hard + soft water.
+                -- null = not specified; 'as_used' = normal WC blend; hard/soft/mixed explicit.
+                water_blend TEXT
+                    CHECK(water_blend IS NULL OR water_blend IN (
+                        'as_used','hard','soft','mixed','unknown'
+                    )),
+                is_lab_test INTEGER DEFAULT 0,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_home_water_tests_ts
+                ON home_water_tests(timestamp DESC);
+
+            -- Singleton AI suitability summary for home/source water (regenerated only
+            -- when a newer home_water_tests.timestamp appears than based_on_timestamp).
+            CREATE TABLE IF NOT EXISTS home_water_summary (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                summary_text TEXT NOT NULL,
+                raw_outdoor_text TEXT,
+                based_on_timestamp TEXT,
+                based_on_raw_timestamp TEXT,
+                generated_at TEXT DEFAULT (datetime('now')),
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
             CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_issues_tank_status ON issues(tank_id, status);
             CREATE INDEX IF NOT EXISTS idx_inhabitants_tank ON inhabitants(tank_id);
@@ -356,6 +400,11 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_chat_messages_conv
                 ON chat_messages(conversation_id, id);
         """)
+
+        # Migration: water_blend on home_water_tests (softener mix context for wells)
+        hw_cols = {row[1] for row in conn.execute("PRAGMA table_info(home_water_tests)").fetchall()}
+        if hw_cols and "water_blend" not in hw_cols:
+            conn.execute("ALTER TABLE home_water_tests ADD COLUMN water_blend TEXT")
 
         # Migration: add schedule_id to events if not present
         cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}

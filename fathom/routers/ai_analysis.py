@@ -52,6 +52,70 @@ def _fmt_test_results(rows):
     return "\n".join(lines)
 
 
+_HOME_WATER_SAMPLE_LABELS = {
+    "tap": "tap",
+    "raw": "raw",
+    "post_neutralizer": "post_neutralizer",
+    "post_softener": "post_softener",
+    "hose": "hose",
+    "other": "other",
+}
+
+_HOME_WATER_PROMPT_RULE = (
+    "Home/source water readings above are SHARED across all tanks (not tank chemistry). "
+    "For water-change advice, treat the latest tap (WC source) reading as the INCOMING water "
+    "and compare it to current tank parameters (e.g. how a % change will pull GH/KH toward "
+    "home-water values). Do NOT flag home-water GH/KH as tank out-of-range. Sample points other "
+    "than tap (raw, post-neutralizer, hose, lab panels, etc.) are diagnostic context only — "
+    "not the fill water — unless tank notes/schedule explicitly say that stream is used for changes."
+)
+
+
+_HOME_WATER_BLEND_LABELS = {
+    "as_used": "as_used_for_WC",
+    "hard": "hard_only",
+    "soft": "soft_only",
+    "mixed": "mixed_hard_soft",
+    "unknown": "blend_unknown",
+}
+
+
+def _fmt_home_water(rows):
+    """Format shared home/source water tests for AI prompts."""
+    if not rows:
+        return "  No home/source water readings recorded."
+    lines = []
+    for r in rows:
+        parts = []
+        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp"):
+            val = r.get(field)
+            if val is not None:
+                parts.append(f"{field.upper()}={val}")
+        sp = r.get("sample_point") or "tap"
+        label = _HOME_WATER_SAMPLE_LABELS.get(sp, sp)
+        tags = [label]
+        if r.get("is_lab_test"):
+            tags.append("lab")
+        blend = r.get("water_blend")
+        if blend:
+            tags.append(_HOME_WATER_BLEND_LABELS.get(blend, blend))
+        tag_str = ", ".join(tags)
+        params = ", ".join(parts) if parts else "(no numeric params)"
+        line = f"  {r.get('timestamp')}: [{tag_str}] {params}"
+        if r.get("notes"):
+            line += f" | {r['notes']}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def load_home_water_tests(conn, limit=8):
+    """Load recent home water readings (newest first) for AI context."""
+    return rows_to_list(conn.execute(
+        "SELECT * FROM home_water_tests ORDER BY timestamp DESC, id DESC LIMIT ?",
+        (limit,),
+    ).fetchall())
+
+
 def _fmt_inhabitants(rows):
     if not rows:
         return "  None"
@@ -134,7 +198,9 @@ def _fmt_timeline_rows(rows):
     return "\n".join(lines)
 
 
-def build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows):
+def build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows,
+                                home_water_tests=None):
+    home_water_tests = home_water_tests or []
     return f"""You are helping during routine aquarium maintenance, right after a water test was just logged. Write a short status update the keeper will read immediately, mid-maintenance.
 
 Background context (use this ONLY to judge whether something needs attention — e.g. species-appropriate parameter ranges for the inhabitants below, or whether a scheduled task is overdue. Do NOT summarize or restate this background in your answer; the keeper already knows their own tank contents):
@@ -147,20 +213,25 @@ Recurring feeding/dosing/maintenance schedule:
 Tank activity over the last 4 weeks (newest first):
 {_fmt_timeline_rows(timeline_rows)}
 
+Home / source water (shared across all tanks — incoming water for water changes; newest first):
+{_fmt_home_water(home_water_tests)}
+{_HOME_WATER_PROMPT_RULE}
+
 Water test just recorded (newest) plus recent tests for trend comparison:
 {_fmt_test_results([test_result] + [t for t in recent_tests if t.get('id') != test_result.get('id')])}
 
 Now write the actual response. Cover only what's relevant, briefly:
 1. Open issues — one short line (e.g. "No open issues at this time."). Skip if genuinely nothing to say.
 2. Any water parameter values or trends worth flagging vs. the recent tests above (e.g. a drop/rise since the last test, or a value outside the *safe tolerance* range for the inhabitants). Use precise, species-specific tolerance ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary. Only mention parameters that are actually notable, skip the rest.
-3. The action to take now. Usually this is simply "Proceed with the standard water change" per the schedule above — do not restate the schedule's gallons/dose/interval details, the keeper already has those. Only describe something different if this test's results or recent history genuinely call for a different action.
+3. The action to take now. Usually this is simply "Proceed with the standard water change" per the schedule above — do not restate the schedule's gallons/dose/interval details, the keeper already has those. Only describe something different if this test's results or recent history genuinely call for a different action. When a water change is the plan, you may briefly note how incoming home-water GH/KH will pull tank parameters if that is actually material (skip if home water is unknown or already aligned).
 
 2-4 sentences total, plain text, no markdown, no headers, no preamble like "Recommendation:" or "Analysis:" — this text is appended directly to the test result's own notes field."""
 
 
 def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape,
-                          schedule_rows=None):
+                          schedule_rows=None, home_water_tests=None):
     schedule_rows = schedule_rows or []
+    home_water_tests = home_water_tests or []
     return f"""You are an expert aquarium keeper analyzing water chemistry and tank health data.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
@@ -177,6 +248,10 @@ Hardscape:
 Recent Test Results (newest first):
 {_fmt_test_results(test_results)}
 
+Home / source water (shared across all tanks — incoming water for water changes; newest first):
+{_fmt_home_water(home_water_tests)}
+{_HOME_WATER_PROMPT_RULE}
+
 Open Issues:
 {_fmt_issues(issues)}
 
@@ -189,7 +264,7 @@ Recent Events (last 30 days — evidence of actual practices, including water so
 {_CURRENT_PRACTICES_RULE}
 
 Please provide:
-1. A brief analysis of the water chemistry trends
+1. A brief analysis of the water chemistry trends (include how tank parameters relate to home/source water when relevant, especially after water changes)
 2. Any flags or concerns about parameters outside the *safe tolerance* range for this tank's inhabitants — use precise, species-specific ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary.
 3. Specific actionable recommendations
 4. For each open issue, suggest whether it should remain open, move to monitoring, or be resolved
@@ -199,9 +274,10 @@ Keep your response concise and practical. Use plain text, no markdown formatting
 
 
 def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis,
-                         schedule_rows=None, events=None):
+                         schedule_rows=None, events=None, home_water_tests=None):
     schedule_rows = schedule_rows or []
     events = events or []
+    home_water_tests = home_water_tests or []
     return f"""You are an expert aquarium keeper. Write a concise 2-3 paragraph summary of this tank's current state for use as context in future questions.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
@@ -218,6 +294,10 @@ Hardscape:
 Latest Water Parameters:
 {_fmt_test_results(test_results[:1])}
 
+Home / source water (shared — incoming water for water changes; newest first):
+{_fmt_home_water(home_water_tests)}
+{_HOME_WATER_PROMPT_RULE}
+
 Open Issues:
 {_fmt_issues([i for i in issues if i.get('status') != 'resolved'])}
 
@@ -232,12 +312,13 @@ Latest Analysis:
 
 {_CURRENT_PRACTICES_RULE}
 
-Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events, not obsolete notes), and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
+Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events and home-water readings, not obsolete notes), and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
 
 
-def build_notes_proposal_prompt(tank, schedule_rows, events, test_results):
+def build_notes_proposal_prompt(tank, schedule_rows, events, test_results, home_water_tests=None):
     """Ask Claude whether tank notes should be refreshed from schedule/events."""
     current = (tank.get("notes") or "").strip() or "(empty — no notes set)"
+    home_water_tests = home_water_tests or []
     return f"""You review whether a tank's free-text notes field is out of date versus current practice.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons)
@@ -251,6 +332,9 @@ Active recurring schedule (authoritative for planned maintenance/dosing/feeding)
 Recent events (last 30 days — evidence of actual water source and dosing):
 {_fmt_events(events)}
 
+Home / source water readings (shared measured incoming water; prefer these over free-text guesses for GH/KH of tap):
+{_fmt_home_water(home_water_tests)}
+
 Recent test results with notes (newest first; may record accepted parameter baselines):
 {_fmt_test_results(test_results[:6])}
 
@@ -260,12 +344,14 @@ Focus only on durable standing facts that notes should capture:
 - regular dosing products (Equilibrium, Flourish, Prime, Potassium, Iron, etc.)
 - accepted parameter targets/baselines the keeper has explicitly accepted (e.g. KH ~10 is permanent)
 - regular water-change practice when it differs from what notes claim
+- optional: approximate home-water GH/KH when structured home-water readings exist and notes still invent different numbers
 
 Do NOT propose an update for:
 - trivial wording or style differences
 - feeding details (those live on the schedule)
 - one-off events, temporary issues, or inhabitant count changes
-- inventing facts not supported by schedule, events, or test notes
+- inventing facts not supported by schedule, events, home-water readings, or test notes
+- copying every home-water history row into notes (a single current tap baseline is enough if useful)
 
 Preserve accurate hardware/setup text that is still true (dimensions, filter media, location, etc.).
 If notes are empty but schedule/events establish clear standing practices, you may propose a concise notes block.
@@ -400,10 +486,13 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 (tank_id,),
             ).fetchall())
 
+            home_water_tests = load_home_water_tests(conn, limit=8)
+
         client = anthropic.Anthropic(api_key=api_key)
 
         analysis_prompt = build_analysis_prompt(
             tank, test_results, issues, events, inhabitants, plants, hardscape, schedule_rows,
+            home_water_tests=home_water_tests,
         )
         logger.info("Claude call: analysis | tank=%d", tank_id)
         t0 = time.monotonic()
@@ -474,7 +563,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
 
         summary_prompt = build_summary_prompt(
             tank, test_results, issues, inhabitants, plants, hardscape, analysis_text,
-            schedule_rows, events,
+            schedule_rows, events, home_water_tests=home_water_tests,
         )
         logger.info("Claude call: summary | tank=%d", tank_id)
         t1 = time.monotonic()
@@ -505,7 +594,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         # After summary: if schedule/events contradict tank notes, propose a notes refresh
         # for the user to accept/dismiss on the dashboard (never auto-write notes).
         await _maybe_propose_tank_notes_update(
-            client, tank_id, tank, schedule_rows, events, test_results,
+            client, tank_id, tank, schedule_rows, events, test_results, home_water_tests,
         )
 
         logger.info("AI analysis complete for tank %d", tank_id)
@@ -514,8 +603,10 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         logger.error("AI analysis failed for tank %d: %s", tank_id, e)
 
 
-async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows, events, test_results):
+async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows, events, test_results,
+                                          home_water_tests=None):
     """If notes look stale vs schedule/events, store a pending proposal for user confirmation."""
+    home_water_tests = home_water_tests or []
     with get_db() as conn:
         pending = conn.execute(
             """SELECT id FROM tank_notes_proposals
@@ -530,7 +621,9 @@ async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows,
     if not schedule_rows and not events:
         return
 
-    prompt = build_notes_proposal_prompt(tank, schedule_rows, events, test_results)
+    prompt = build_notes_proposal_prompt(
+        tank, schedule_rows, events, test_results, home_water_tests=home_water_tests,
+    )
     logger.info("Claude call: notes_proposal | tank=%d", tank_id)
     t0 = time.monotonic()
     try:
@@ -614,12 +707,17 @@ async def run_test_recommendation(tank_id: int, result_id: int):
 
             timeline_rows = rows_to_list(conn.execute(_TIMELINE_QUERY, (tank_id,) * 9).fetchall())
 
+            home_water_tests = load_home_water_tests(conn, limit=8)
+
         cutoff = (datetime.now(timezone.utc).date() - timedelta(days=28)).isoformat()
         timeline_rows = [r for r in timeline_rows if (r.get("ts") or "")[:10] >= cutoff]
 
         client = anthropic.Anthropic(api_key=api_key)
 
-        prompt = build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows)
+        prompt = build_recommendation_prompt(
+            tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows,
+            home_water_tests=home_water_tests,
+        )
         logger.info("Claude call: test_recommendation | tank=%d test=%d", tank_id, result_id)
         t0 = time.monotonic()
         msg = await asyncio.to_thread(

@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 from routers.reference_info import maybe_fetch_tank_dimensions
+from routers.home_water import latest_wc_source_test
 
 router = APIRouter(prefix="/tanks", tags=["tanks"])
 
@@ -161,12 +162,15 @@ async def tank_detail(request: Request, tank_id: int):
             (tank_id,),
         ).fetchone())
 
+        latest_home_water = latest_wc_source_test(conn)
+
     today_dow_label = date.today().strftime('%A')
 
     return templates.TemplateResponse("tanks/detail.html", {
         "request": request,
         "tank": tank,
         "latest_test": latest_test,
+        "latest_home_water": latest_home_water,
         "inhabitants": inhabitants,
         "open_issues": open_issues,
         "recent_observations": recent_observations,

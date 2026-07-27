@@ -1,0 +1,949 @@
+"""Global home/source water test CRUD — not tank-scoped.
+
+Most entries are flushed tap (WC source) with GH/KH only. Lab reports (PDF/CSV)
+can be uploaded for LLM extraction of date + key metrics; user supplies sample
+context (WC source vs unfiltered, hard/soft blend) because labs rarely encode that.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import logging
+import os
+import re
+import time
+from pathlib import Path
+from typing import Any, Optional
+
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, Field
+
+from ai_config import CLAUDE_MODEL
+from database import get_db, row_to_dict, rows_to_list
+
+router = APIRouter(prefix="/home-water", tags=["home-water"])
+templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+logger = logging.getLogger(__name__)
+
+# Prevent stacking concurrent summary regenerations (page load + save races).
+_summary_in_flight = False
+
+SAMPLE_POINTS = (
+    ("tap", "Tap (WC source)"),
+    ("raw", "Unfiltered / raw well"),
+    ("post_neutralizer", "Post-neutralizer"),
+    ("post_softener", "Post-softener"),
+    ("hose", "Hose"),
+    ("other", "Other"),
+)
+SAMPLE_POINT_LABELS = dict(SAMPLE_POINTS)
+VALID_SAMPLE_POINTS = set(SAMPLE_POINT_LABELS)
+
+WATER_BLENDS = (
+    ("", "Not specified"),
+    ("as_used", "As used for water changes"),
+    ("hard", "Hard only (no softener)"),
+    ("soft", "Soft only (fully softened)"),
+    ("mixed", "Mixed hard + soft"),
+    ("unknown", "Unknown"),
+)
+WATER_BLEND_LABELS = {k: v for k, v in WATER_BLENDS if k}
+VALID_WATER_BLENDS = set(WATER_BLEND_LABELS)
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+TEXT_EXTS = {".csv", ".txt", ".tsv", ".md", ".json"}
+PDF_EXTS = {".pdf"}
+
+LAB_EXTRACT_PROMPT = """You extract structured home/source water test data from a well or municipal lab report (or CSV export of such a report).
+
+This is for an aquarium tracking app. The keeper has a private well and may soften/neutralize water before water changes. Your job is to pull the sample date(s) and the key chemistry values we store, converted into aquarium kit units where needed.
+
+Return ONLY valid JSON (no markdown fences, no commentary):
+{
+  "readings": [
+    {
+      "timestamp": "YYYY-MM-DD HH:MM:SS",
+      "ph": null,
+      "gh": null,
+      "kh": null,
+      "ammonia": null,
+      "nitrite": null,
+      "nitrate": null,
+      "tds": null,
+      "temp": null,
+      "sample_point_guess": "tap",
+      "water_blend_guess": null,
+      "notes": "",
+      "flags": []
+    }
+  ],
+  "report_meta": {
+    "lab_name": null,
+    "report_id": null,
+    "sample_description": null
+  }
+}
+
+FIELD RULES:
+1. timestamp: Prefer the SAMPLE / COLLECTED date from the report (not "report printed" or "received" if those differ). Use 12:00:00 if only a date is given. Format YYYY-MM-DD HH:MM:SS.
+2. Multiple sample points or sample dates on one report → one readings[] entry each.
+3. pH: report pH as-is.
+4. gh (general hardness): store as °dGH / dGH (German degrees), NOT mg/L CaCO3.
+   - If report gives hardness as mg/L or ppm CaCO3 (total hardness), convert: dGH = CaCO3_mg_L / 17.86. Round to 1 decimal.
+   - If already in dGH / °dH / German degrees, keep as-is.
+   - Prefer total hardness (Ca+Mg). If only calcium hardness is given, use that and flag it.
+5. kh (carbonate hardness / alkalinity): store as °dKH.
+   - If alkalinity is mg/L or ppm as CaCO3, convert: dKH = alkalinity_mg_L_CaCO3 / 17.86. Round to 1 decimal.
+   - If already in dKH, keep as-is.
+6. nitrate: store as ppm of the nitrate ion (NO3-), matching aquarium API kits — NOT as nitrogen (NO3-N).
+   - Synonyms that MUST be mapped to nitrate: "Nitrate", "Nitrate (as N)", "Nitrate as N", "NO3-N", "NO3 as N",
+     "Nitrate-N", "Nitrate Nitrogen", SM 4500-NO3 methods.
+   - If "as N" / NO3-N: multiply by 4.427 and round to 1 decimal; flag "nitrate converted from as-N (×4.427)".
+   - If already as NO3 / NO3-: keep as-is.
+7. ammonia: only if the report actually lists it. Synonyms: "Ammonia", "Ammonia (as N)", "Ammonia as N",
+   "NH3-N", "NH3", "Ammonium", "Ammonium as N", "Total ammonia nitrogen", "TAN".
+   - If as N: store the numeric mg/L as N value and flag "ammonia as N (not converted)" — aquarium kits
+     are also usually read as total ammonia-N-ish; do not invent free NH3.
+   - If the analyte is ABSENT from the report entirely → null (do not invent 0).
+8. nitrite: CRITICAL — home well labs often list this even when ammonia is absent. You MUST extract it when present.
+   - Synonyms that MUST be mapped to nitrite: "Nitrite", "Nitrite (as N)", "Nitrite as N", "NO2-N", "NO2 as N",
+     "Nitrite-N", "Nitrite Nitrogen", SM 4500-NO2 methods.
+   - If "as N" / NO2-N: multiply by 3.29 and round to 2–3 decimals (e.g. 0.10 as N → 0.329 as NO2-); flag conversion.
+   - If already as NO2-: keep as-is.
+   - Non-detects: if the report shows ND, "< MDL", "<0.10", "Not Detected", etc. for nitrite (or nitrate/ammonia),
+     store 0 and flag "nitrite non-detect (treated as 0)" (same pattern for other analytes).
+9. tds: total dissolved solids in ppm/mg/L if present.
+10. temp: convert to °F if given in °C (F = C×9/5+32). Round to 1 decimal.
+11. sample_point_guess: only if the report clearly labels the sample (raw well, untreated, after softener, kitchen tap, etc.). Otherwise null — the user will set this. Values if used: tap | raw | post_neutralizer | post_softener | hose | other.
+12. water_blend_guess: almost always null (labs don't know softener mix). Only set if the report text explicitly says hard/soft/mixed.
+13. notes: short — lab method codes for key analytes (e.g. SM 4500-NO3 F), "as N converted…", original hardness units, anything useful. Include report sample ID if present.
+14. flags: human-readable warnings (unit conversion applied, non-detect→0, value near MCL, missing hardness, ambiguous date, etc.).
+15. Omit analytes not present on the report (use null). Do not invent values for missing analytes — but DO extract every nitrogen species that appears (nitrate AND nitrite are often both present; ammonia often is not).
+16. is_lab_test is always true for these — do not include it in JSON; the app sets it.
+17. Before finishing, re-scan the report for any line containing "nitrite" or "NO2" (case-insensitive). If found and nitrite is still null, you missed it — go back and fill it.
+
+USER-SUPPLIED CONTEXT (authoritative for sample type / blend when the report is silent):
+"""
+
+
+def _parse_float(value: Optional[str]) -> Optional[float]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    return float(s)
+
+
+def _normalize_sample_point(value: Optional[str]) -> str:
+    sp = (value or "tap").strip().lower()
+    return sp if sp in VALID_SAMPLE_POINTS else "tap"
+
+
+def _normalize_water_blend(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    vb = str(value).strip().lower()
+    if not vb or vb in ("none", "null", "not_specified"):
+        return None
+    return vb if vb in VALID_WATER_BLENDS else None
+
+
+def _parse_is_lab(value: Optional[str]) -> int:
+    if value is None:
+        return 0
+    return 1 if str(value).strip().lower() in ("1", "true", "on", "yes") else 0
+
+
+def latest_wc_source_test(conn) -> Optional[dict]:
+    """Latest reading suitable as water-change incoming water (tap / default)."""
+    return row_to_dict(conn.execute(
+        """SELECT * FROM home_water_tests
+           WHERE sample_point IS NULL OR sample_point = '' OR sample_point = 'tap'
+           ORDER BY timestamp DESC, id DESC LIMIT 1"""
+    ).fetchone())
+
+
+def latest_raw_water_test(conn) -> Optional[dict]:
+    """Latest unfiltered / raw well reading (horse / outdoor trough context)."""
+    return row_to_dict(conn.execute(
+        """SELECT * FROM home_water_tests
+           WHERE sample_point = 'raw'
+           ORDER BY timestamp DESC, id DESC LIMIT 1"""
+    ).fetchone())
+
+
+def _max_home_water_timestamp(conn) -> Optional[str]:
+    row = conn.execute("SELECT MAX(timestamp) FROM home_water_tests").fetchone()
+    return row[0] if row and row[0] else None
+
+
+def get_home_water_summary(conn) -> Optional[dict]:
+    return row_to_dict(conn.execute(
+        "SELECT * FROM home_water_summary WHERE id = 1"
+    ).fetchone())
+
+
+def home_water_summary_is_stale(conn) -> bool:
+    """True when tests exist and no summary, or max test date is newer than based_on."""
+    max_ts = _max_home_water_timestamp(conn)
+    if not max_ts:
+        return False
+    summary = get_home_water_summary(conn)
+    if not summary or not (summary.get("summary_text") or "").strip():
+        return True
+    based = (summary.get("based_on_timestamp") or "").strip()
+    if not based:
+        return True
+    return max_ts > based
+
+
+def should_refresh_home_water_summary_after_write(
+    conn,
+    *,
+    pre_max_ts: Optional[str],
+    written_ts: Optional[str] = None,
+    deleted: bool = False,
+) -> bool:
+    """Decide whether a write warrants regenerating the saved AI summary.
+
+    Refresh when:
+    - No summary yet (and tests exist), or
+    - The overall newest test date advanced past based_on_timestamp, or
+    - The write touched the current newest reading (content change of latest), or
+    - A delete may have removed/changed the basis for the current summary.
+    Older backfilled lab dates alone do not refresh.
+    """
+    post_max = _max_home_water_timestamp(conn)
+    if not post_max:
+        return False
+    summary = get_home_water_summary(conn)
+    if not summary or not (summary.get("based_on_timestamp") or "").strip():
+        return True
+    based = summary["based_on_timestamp"]
+    if post_max > based:
+        return True
+    if deleted:
+        # Newest date dropped or basis no longer current
+        return based > post_max or based != post_max
+    if written_ts and written_ts >= post_max:
+        # Edited or re-saved the newest reading (or tied for newest)
+        return True
+    # Pure older backfill: pre_max == post_max and written is older
+    if pre_max_ts and post_max == pre_max_ts:
+        return False
+    return False
+
+
+def build_home_water_summary_prompt(
+    tanks_ctx: list[dict],
+    latest_tap: Optional[dict],
+    recent_tap: list[dict],
+    latest_raw: Optional[dict],
+) -> str:
+    tank_blocks = []
+    for t in tanks_ctx:
+        inh = t.get("inhabitants") or "  (none listed)"
+        notes = (t.get("notes") or "").strip() or "(no tank notes)"
+        tank_blocks.append(
+            f"- {t['name']} ({t.get('water_type') or '?'} water, "
+            f"{t.get('volume_gallons') or '?'} gal)\n"
+            f"  Notes: {notes}\n"
+            f"  Inhabitants:\n{inh}"
+        )
+    tanks_text = "\n".join(tank_blocks) if tank_blocks else "  (no tanks)"
+
+    from routers.ai_analysis import _fmt_home_water
+    tap_block = _fmt_home_water([latest_tap] if latest_tap else [])
+    recent_block = _fmt_home_water(recent_tap) if recent_tap else "  (none)"
+    raw_block = _fmt_home_water([latest_raw] if latest_raw else [])
+
+    return f"""You write a short suitability assessment of household well/source water for an aquarium keeper.
+
+Do NOT restate numeric parameter values (no "GH is 7", no "nitrate 39 ppm"). The UI already shows numbers. Speak qualitatively: soft/hard, buffered or not, elevated nitrate, non-detect nitrite, etc., and what that means.
+
+ACTIVE TANKS (judge WC-source water against each tank's notes/targets/stock):
+{tanks_text}
+
+LATEST WC-SOURCE / TAP READING (what is normally used for water changes and household drinking after treatment):
+{tap_block}
+
+RECENT WC-SOURCE HISTORY (newest first; for trend only — do not dump history):
+{recent_block}
+
+LATEST RAW / UNFILTERED WELL READING (bypass softener/neutralizer — NOT the normal WC fill unless noted):
+{raw_block}
+
+Write plain text only (no markdown headers, no bullets with dashes if you can avoid them; short paragraphs are fine).
+
+Output format — plain text with exactly these two section markers (no JSON, no markdown).
+Write RAW_OUTDOOR first so it is never cut off, then WC_SOURCE. Keep the whole answer tight (about 200–350 words total).
+
+=== RAW_OUTDOOR ===
+1 short paragraph (3–5 sentences max) on the latest RAW well sample as drinking water for horses (barn/pasture troughs, outdoor stock tanks). Equine-focused only: nitrate is the main well-water concern for horses (pregnant mares and foals most sensitive); also note nitrite if relevant, and whether this raw stream is fine for routine horse watering vs caution/alternate source. If no raw sample exists, say so in one sentence. Do not restate numbers. Not aquarium advice.
+
+=== WC_SOURCE ===
+2 short paragraphs max: (1) suitability of the latest WC-source water for EACH named tank (shrimp vs fish targets, accepted KH baselines, etc.); (2) brief human drinking-water suitability of that same WC-source water (nitrate/nitrite/potability — no long disclaimers). Do not restate numbers.
+
+Rules:
+- Prefer tank notes accepted baselines over generic species norms.
+- WC-source and raw may differ a lot (softener/neutralizer); never conflate them.
+- Outdoor section is horse-specific (not poultry, dogs, or generic livestock).
+- If data is thin, say what's uncertain rather than inventing.
+- Plain text only — no JSON, no code fences, no bullet markdown.
+- Stay concise; finish both sections completely.
+"""
+
+
+async def run_home_water_summary(force: bool = False):
+    """Generate and persist the home-water suitability summary (singleton row)."""
+    global _summary_in_flight
+    if _summary_in_flight:
+        logger.info("Home water summary already in flight — skipping")
+        return
+    _summary_in_flight = True
+    try:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            logger.warning("ANTHROPIC_API_KEY not set, skipping home water summary")
+            return
+
+        with get_db() as conn:
+            max_ts = _max_home_water_timestamp(conn)
+            if not max_ts:
+                conn.execute("DELETE FROM home_water_summary WHERE id = 1")
+                logger.info("No home water tests — cleared summary")
+                return
+
+            if not force and not home_water_summary_is_stale(conn):
+                logger.info("Home water summary already current for %s", max_ts)
+                return
+
+            latest_tap = latest_wc_source_test(conn)
+            latest_raw = latest_raw_water_test(conn)
+            recent_tap = rows_to_list(conn.execute(
+                """SELECT * FROM home_water_tests
+                   WHERE sample_point IS NULL OR sample_point = '' OR sample_point = 'tap'
+                   ORDER BY timestamp DESC, id DESC LIMIT 5"""
+            ).fetchall())
+
+            tanks = rows_to_list(conn.execute(
+                """SELECT id, name, water_type, volume_gallons, notes, status
+                   FROM tanks
+                   WHERE COALESCE(status, 'active') = 'active'
+                   ORDER BY name"""
+            ).fetchall())
+
+            from routers.ai_analysis import _fmt_inhabitants
+            tanks_ctx = []
+            for t in tanks:
+                inhs = rows_to_list(conn.execute(
+                    """SELECT common_name, species, count FROM inhabitants
+                       WHERE tank_id = ? AND (count IS NULL OR count > 0)
+                       ORDER BY common_name, species""",
+                    (t["id"],),
+                ).fetchall())
+                tanks_ctx.append({
+                    **t,
+                    "inhabitants": _fmt_inhabitants(inhs),
+                })
+
+            prompt = build_home_water_summary_prompt(
+                tanks_ctx, latest_tap, recent_tap, latest_raw,
+            )
+
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        logger.info("Claude call: home_water_summary | based_on=%s", max_ts)
+        t0 = time.monotonic()
+        msg = await asyncio.to_thread(
+            client.messages.create,
+            model=CLAUDE_MODEL,
+            max_tokens=2500,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=90.0,
+        )
+        logger.info(
+            "Claude done: home_water_summary | in=%d out=%d elapsed=%.1fs stop=%s",
+            msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0,
+            getattr(msg, "stop_reason", None),
+        )
+        raw_text = ""
+        for block in msg.content:
+            btype = getattr(block, "type", None)
+            if btype == "text":
+                raw_text += getattr(block, "text", "") or ""
+            elif isinstance(block, dict) and block.get("type") == "text":
+                raw_text += block.get("text") or ""
+            elif isinstance(block, str):
+                raw_text += block
+        if not raw_text.strip() and msg.content:
+            # Last resort: string-coerce first block
+            raw_text = str(getattr(msg.content[0], "text", None) or msg.content[0] or "")
+
+        summary_text, raw_outdoor = _parse_summary_sections(raw_text)
+        if not summary_text:
+            logger.error("Home water summary empty after parse | raw=%r", raw_text[:500])
+            return
+
+        with get_db() as conn:
+            # Re-check max in case a newer test landed mid-call
+            max_ts_now = _max_home_water_timestamp(conn) or max_ts
+            latest_raw_now = latest_raw_water_test(conn)
+            based_raw = (latest_raw_now or {}).get("timestamp")
+            conn.execute(
+                """INSERT INTO home_water_summary
+                   (id, summary_text, raw_outdoor_text, based_on_timestamp,
+                    based_on_raw_timestamp, generated_at, updated_at)
+                   VALUES (1, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                   ON CONFLICT(id) DO UPDATE SET
+                     summary_text = excluded.summary_text,
+                     raw_outdoor_text = excluded.raw_outdoor_text,
+                     based_on_timestamp = excluded.based_on_timestamp,
+                     based_on_raw_timestamp = excluded.based_on_raw_timestamp,
+                     generated_at = excluded.generated_at,
+                     updated_at = datetime('now')""",
+                (summary_text, raw_outdoor, max_ts_now, based_raw),
+            )
+        logger.info("Home water summary saved | based_on=%s", max_ts_now)
+    except Exception as e:
+        logger.error("Home water summary failed: %s", e)
+    finally:
+        _summary_in_flight = False
+
+
+def _queue_summary_if_needed(
+    background_tasks: BackgroundTasks,
+    conn,
+    *,
+    pre_max_ts: Optional[str],
+    written_ts: Optional[str] = None,
+    deleted: bool = False,
+    force: bool = False,
+):
+    if force or should_refresh_home_water_summary_after_write(
+        conn, pre_max_ts=pre_max_ts, written_ts=written_ts, deleted=deleted,
+    ):
+        background_tasks.add_task(run_home_water_summary, True)
+        logger.info("Queued home water summary refresh")
+
+
+def _insert_home_water(
+    conn,
+    *,
+    ts: Optional[str],
+    ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+    sample_point: str,
+    water_blend: Optional[str],
+    is_lab: int,
+    notes: Optional[str],
+) -> int:
+    if ts:
+        cur = conn.execute(
+            """INSERT INTO home_water_tests
+               (timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+                sample_point, water_blend, is_lab_test, notes)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (ts, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+             sample_point, water_blend, is_lab, notes),
+        )
+    else:
+        cur = conn.execute(
+            """INSERT INTO home_water_tests
+               (ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+                sample_point, water_blend, is_lab_test, notes)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+             sample_point, water_blend, is_lab, notes),
+        )
+    return cur.lastrowid
+
+
+def _parse_summary_sections(raw: str) -> tuple[str, Optional[str]]:
+    """Split model output into WC_SOURCE and RAW_OUTDOOR sections."""
+    text = (raw or "").strip()
+    if not text:
+        return "", None
+    # Strip accidental fences
+    text = re.sub(r"^```(?:json|text)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text).strip()
+
+    wc_marker = "=== WC_SOURCE ==="
+    raw_marker = "=== RAW_OUTDOOR ==="
+
+    # JSON fallback (older prompt / model compliance)
+    if text.lstrip().startswith("{"):
+        try:
+            parsed = _parse_json_object(text)
+            return (
+                (parsed.get("summary_text") or "").strip(),
+                ((parsed.get("raw_outdoor_text") or "").strip() or None),
+            )
+        except (ValueError, json.JSONDecodeError):
+            pass
+
+    def _section_after(marker: str) -> str:
+        if marker not in text:
+            return ""
+        after = text.split(marker, 1)[1]
+        # Stop at the next known section marker if present
+        for other in (wc_marker, raw_marker):
+            if other != marker and other in after:
+                after = after.split(other, 1)[0]
+        return after.strip()
+
+    if wc_marker in text or raw_marker in text:
+        wc_part = _section_after(wc_marker)
+        raw_part = _section_after(raw_marker)
+        return wc_part, (raw_part or None)
+
+    # Unmarked plain text: treat entire body as WC summary
+    return text, None
+
+
+def _parse_json_object(raw: str) -> dict:
+    text = re.sub(r"```json\s*", "", raw or "")
+    text = re.sub(r"```\s*", "", text).strip()
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        raise ValueError("No JSON object in model response")
+    parsed = json.loads(match.group())
+    if not isinstance(parsed, dict):
+        raise ValueError("Expected JSON object")
+    return parsed
+
+
+def _coerce_reading(raw: dict, *, default_sp: str, default_blend: Optional[str]) -> dict:
+    """Normalize one extracted reading for the review UI / save path."""
+    def f(key):
+        v = raw.get(key)
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    sp = _normalize_sample_point(raw.get("sample_point") or raw.get("sample_point_guess") or default_sp)
+    blend = _normalize_water_blend(
+        raw.get("water_blend") if raw.get("water_blend") is not None
+        else (raw.get("water_blend_guess") if raw.get("water_blend_guess") is not None else default_blend)
+    )
+    notes = (raw.get("notes") or "").strip() or None
+    flags = raw.get("flags") or []
+    if isinstance(flags, str):
+        flags = [flags]
+    ts = (raw.get("timestamp") or "").strip() or None
+    if ts and len(ts) == 10:
+        ts = f"{ts} 12:00:00"
+    return {
+        "timestamp": ts,
+        "ph": f("ph"),
+        "gh": f("gh"),
+        "kh": f("kh"),
+        "ammonia": f("ammonia"),
+        "nitrite": f("nitrite"),
+        "nitrate": f("nitrate"),
+        "tds": f("tds"),
+        "temp": f("temp"),
+        "sample_point": sp,
+        "water_blend": blend,
+        "is_lab_test": 1,
+        "notes": notes,
+        "flags": [str(x) for x in flags if x],
+    }
+
+
+@router.get("", response_class=HTMLResponse)
+async def list_home_water(request: Request, background_tasks: BackgroundTasks):
+    with get_db() as conn:
+        tests = rows_to_list(conn.execute(
+            "SELECT * FROM home_water_tests ORDER BY timestamp DESC, id DESC LIMIT 100"
+        ).fetchall())
+        latest = row_to_dict(conn.execute(
+            "SELECT * FROM home_water_tests ORDER BY timestamp DESC, id DESC LIMIT 1"
+        ).fetchone())
+        latest_tap = latest_wc_source_test(conn)
+        latest_raw = latest_raw_water_test(conn)
+        summary = get_home_water_summary(conn)
+        # Backfill: first visit after feature ships, or newer tests landed offline
+        if home_water_summary_is_stale(conn):
+            background_tasks.add_task(run_home_water_summary, False)
+    return templates.TemplateResponse("home_water/list.html", {
+        "request": request,
+        "tests": tests,
+        "latest": latest,
+        "latest_tap": latest_tap,
+        "latest_raw": latest_raw,
+        "summary": summary,
+        "sample_points": SAMPLE_POINTS,
+        "sample_point_labels": SAMPLE_POINT_LABELS,
+        "water_blends": WATER_BLENDS,
+        "water_blend_labels": WATER_BLEND_LABELS,
+        "active": "home_water",
+    })
+
+
+@router.post("")
+async def add_home_water(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    timestamp: Optional[str] = Form(None),
+    ph: Optional[str] = Form(None),
+    gh: Optional[str] = Form(None),
+    kh: Optional[str] = Form(None),
+    ammonia: Optional[str] = Form(None),
+    nitrite: Optional[str] = Form(None),
+    nitrate: Optional[str] = Form(None),
+    tds: Optional[str] = Form(None),
+    temp: Optional[str] = Form(None),
+    sample_point: Optional[str] = Form("tap"),
+    water_blend: Optional[str] = Form(None),
+    is_lab_test: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    ts = timestamp.strip() if timestamp and timestamp.strip() else None
+    ph_v, gh_v, kh_v = _parse_float(ph), _parse_float(gh), _parse_float(kh)
+    ammonia_v, nitrite_v = _parse_float(ammonia), _parse_float(nitrite)
+    nitrate_v, tds_v, temp_v = _parse_float(nitrate), _parse_float(tds), _parse_float(temp)
+    sp = _normalize_sample_point(sample_point)
+    blend = _normalize_water_blend(water_blend)
+    lab = _parse_is_lab(is_lab_test)
+    notes_v = notes.strip() if notes and notes.strip() else None
+
+    with get_db() as conn:
+        pre_max = _max_home_water_timestamp(conn)
+        result_id = _insert_home_water(
+            conn,
+            ts=ts,
+            ph=ph_v, gh=gh_v, kh=kh_v, ammonia=ammonia_v, nitrite=nitrite_v,
+            nitrate=nitrate_v, tds=tds_v, temp=temp_v,
+            sample_point=sp, water_blend=blend, is_lab=lab, notes=notes_v,
+        )
+        written = row_to_dict(conn.execute(
+            "SELECT timestamp FROM home_water_tests WHERE id = ?", (result_id,),
+        ).fetchone())
+        written_ts = (written or {}).get("timestamp")
+        _queue_summary_if_needed(
+            background_tasks, conn, pre_max_ts=pre_max, written_ts=written_ts,
+        )
+
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse({"id": result_id, "status": "created"}, status_code=201)
+    return RedirectResponse(url="/home-water", status_code=303)
+
+
+@router.post("/{test_id}/update")
+async def update_home_water(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    test_id: int,
+    timestamp: Optional[str] = Form(None),
+    ph: Optional[str] = Form(None),
+    gh: Optional[str] = Form(None),
+    kh: Optional[str] = Form(None),
+    ammonia: Optional[str] = Form(None),
+    nitrite: Optional[str] = Form(None),
+    nitrate: Optional[str] = Form(None),
+    tds: Optional[str] = Form(None),
+    temp: Optional[str] = Form(None),
+    sample_point: Optional[str] = Form("tap"),
+    water_blend: Optional[str] = Form(None),
+    is_lab_test: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None),
+):
+    ts = timestamp.strip() if timestamp and timestamp.strip() else None
+    ph_v, gh_v, kh_v = _parse_float(ph), _parse_float(gh), _parse_float(kh)
+    ammonia_v, nitrite_v = _parse_float(ammonia), _parse_float(nitrite)
+    nitrate_v, tds_v, temp_v = _parse_float(nitrate), _parse_float(tds), _parse_float(temp)
+    sp = _normalize_sample_point(sample_point)
+    blend = _normalize_water_blend(water_blend)
+    lab = _parse_is_lab(is_lab_test)
+    notes_v = notes.strip() if notes and notes.strip() else None
+
+    with get_db() as conn:
+        pre_max = _max_home_water_timestamp(conn)
+        row = row_to_dict(conn.execute(
+            "SELECT id FROM home_water_tests WHERE id = ?", (test_id,),
+        ).fetchone())
+        if not row:
+            raise HTTPException(status_code=404, detail="Home water test not found")
+        if ts:
+            conn.execute(
+                """UPDATE home_water_tests SET
+                   timestamp=?, ph=?, gh=?, kh=?, ammonia=?, nitrite=?, nitrate=?,
+                   tds=?, temp=?, sample_point=?, water_blend=?, is_lab_test=?, notes=?,
+                   updated_at=datetime('now')
+                   WHERE id=?""",
+                (ts, ph_v, gh_v, kh_v, ammonia_v, nitrite_v, nitrate_v,
+                 tds_v, temp_v, sp, blend, lab, notes_v, test_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE home_water_tests SET
+                   ph=?, gh=?, kh=?, ammonia=?, nitrite=?, nitrate=?,
+                   tds=?, temp=?, sample_point=?, water_blend=?, is_lab_test=?, notes=?,
+                   updated_at=datetime('now')
+                   WHERE id=?""",
+                (ph_v, gh_v, kh_v, ammonia_v, nitrite_v, nitrate_v,
+                 tds_v, temp_v, sp, blend, lab, notes_v, test_id),
+            )
+        written = row_to_dict(conn.execute(
+            "SELECT timestamp FROM home_water_tests WHERE id = ?", (test_id,),
+        ).fetchone())
+        written_ts = (written or {}).get("timestamp")
+        _queue_summary_if_needed(
+            background_tasks, conn, pre_max_ts=pre_max, written_ts=written_ts,
+        )
+
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse({"id": test_id, "status": "updated"})
+    return RedirectResponse(url="/home-water", status_code=303)
+
+
+@router.post("/{test_id}/delete")
+async def delete_home_water(request: Request, background_tasks: BackgroundTasks, test_id: int):
+    with get_db() as conn:
+        pre_max = _max_home_water_timestamp(conn)
+        row = row_to_dict(conn.execute(
+            "SELECT id, timestamp FROM home_water_tests WHERE id = ?", (test_id,),
+        ).fetchone())
+        if not row:
+            raise HTTPException(status_code=404, detail="Home water test not found")
+        conn.execute("DELETE FROM home_water_tests WHERE id = ?", (test_id,))
+        _queue_summary_if_needed(
+            background_tasks, conn, pre_max_ts=pre_max, deleted=True,
+        )
+
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse({"status": "deleted"})
+    return RedirectResponse(url="/home-water", status_code=303)
+
+
+@router.post("/extract")
+async def extract_lab_report(
+    file: UploadFile = File(...),
+    sample_point: Optional[str] = Form("tap"),
+    water_blend: Optional[str] = Form(None),
+    user_notes: Optional[str] = Form(None),
+):
+    """LLM-extract home water readings from a lab PDF or CSV/text file.
+
+    User-supplied sample_point and water_blend are the defaults applied when the
+    report does not state sample type / softener mix (usual for lab PDFs).
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File too large (max 20 MB)")
+
+    filename = file.filename or "upload"
+    ext = Path(filename).suffix.lower()
+    default_sp = _normalize_sample_point(sample_point)
+    default_blend = _normalize_water_blend(water_blend)
+    extra_notes = (user_notes or "").strip()
+
+    context_block = (
+        f"- Default sample_point (user): {default_sp} "
+        f"({SAMPLE_POINT_LABELS.get(default_sp, default_sp)})\n"
+        f"- Default water_blend (user): {default_blend or 'not specified'} "
+        f"({WATER_BLEND_LABELS.get(default_blend or '', 'not specified')})\n"
+        f"- User notes: {extra_notes or '(none)'}\n"
+        f"- Filename: {filename}\n"
+        "Apply the user's sample_point and water_blend to every reading unless the "
+        "report clearly describes a different sample stream for that row.\n"
+    )
+    prompt = LAB_EXTRACT_PROMPT + context_block
+
+    try:
+        import anthropic
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail="anthropic SDK not installed") from e
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    if ext in PDF_EXTS or (file.content_type or "").startswith("application/pdf"):
+        b64 = base64.standard_b64encode(raw).decode("ascii")
+        content_blocks: list[Any] = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": b64,
+                },
+            },
+            {"type": "text", "text": prompt},
+        ]
+    elif ext in TEXT_EXTS or (file.content_type or "").startswith("text/"):
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1", errors="replace")
+        if len(text) > 100_000:
+            text = text[:100_000] + "\n...[truncated]"
+        content_blocks = [{"type": "text", "text": prompt + "\n\n--- REPORT TEXT ---\n" + text}]
+    else:
+        # Sniff PDF magic
+        if raw[:4] == b"%PDF":
+            b64 = base64.standard_b64encode(raw).decode("ascii")
+            content_blocks = [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": b64,
+                    },
+                },
+                {"type": "text", "text": prompt},
+            ]
+        else:
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unsupported file type. Upload a PDF, CSV, or plain text lab report.",
+                )
+            content_blocks = [{"type": "text", "text": prompt + "\n\n--- REPORT TEXT ---\n" + text}]
+
+    logger.info("Claude call: home_water_lab_extract | file=%s bytes=%d", filename, len(raw))
+    t0 = time.monotonic()
+    try:
+        msg = await asyncio.to_thread(
+            client.messages.create,
+            model=CLAUDE_MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": content_blocks}],
+            timeout=120.0,
+        )
+    except Exception as e:
+        logger.error("Lab extract failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"AI extraction failed: {e}") from e
+
+    logger.info(
+        "Claude done: home_water_lab_extract | in=%d out=%d elapsed=%.1fs",
+        msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0,
+    )
+
+    # Collect text blocks from the response
+    text_out = ""
+    for block in msg.content:
+        if getattr(block, "type", None) == "text":
+            text_out += block.text
+    if not text_out.strip():
+        raise HTTPException(status_code=502, detail="AI returned empty extraction")
+
+    try:
+        parsed = _parse_json_object(text_out)
+    except (ValueError, json.JSONDecodeError) as e:
+        logger.error("Lab extract JSON parse failed: %s | raw=%s", e, text_out[:500])
+        raise HTTPException(status_code=502, detail="Could not parse AI extraction as JSON") from e
+
+    raw_readings = parsed.get("readings") or []
+    if not isinstance(raw_readings, list) or not raw_readings:
+        raise HTTPException(status_code=422, detail="No readings found in the lab report")
+
+    readings = [
+        _coerce_reading(r if isinstance(r, dict) else {}, default_sp=default_sp, default_blend=default_blend)
+        for r in raw_readings
+    ]
+
+    # Attach user notes / filename into each reading notes if useful
+    meta = parsed.get("report_meta") if isinstance(parsed.get("report_meta"), dict) else {}
+    meta_bits = []
+    if meta.get("lab_name"):
+        meta_bits.append(str(meta["lab_name"]))
+    if meta.get("report_id"):
+        meta_bits.append(f"report {meta['report_id']}")
+    if filename:
+        meta_bits.append(f"file: {filename}")
+    meta_prefix = "; ".join(meta_bits)
+
+    for r in readings:
+        parts = [p for p in (meta_prefix, r.get("notes"), extra_notes) if p]
+        r["notes"] = " | ".join(parts) if parts else None
+        r["is_lab_test"] = 1
+
+    return JSONResponse({
+        "readings": readings,
+        "report_meta": meta,
+        "filename": filename,
+    })
+
+
+class BulkReading(BaseModel):
+    timestamp: Optional[str] = None
+    ph: Optional[float] = None
+    gh: Optional[float] = None
+    kh: Optional[float] = None
+    ammonia: Optional[float] = None
+    nitrite: Optional[float] = None
+    nitrate: Optional[float] = None
+    tds: Optional[float] = None
+    temp: Optional[float] = None
+    sample_point: Optional[str] = "tap"
+    water_blend: Optional[str] = None
+    is_lab_test: Optional[int] = 1
+    notes: Optional[str] = None
+
+
+class BulkSaveBody(BaseModel):
+    readings: list[BulkReading] = Field(default_factory=list)
+
+
+@router.post("/bulk")
+async def bulk_save_home_water(body: BulkSaveBody, background_tasks: BackgroundTasks):
+    """Save one or more reviewed lab-extracted readings."""
+    if not body.readings:
+        raise HTTPException(status_code=400, detail="No readings to save")
+
+    ids = []
+    with get_db() as conn:
+        pre_max = _max_home_water_timestamp(conn)
+        newest_written = None
+        for r in body.readings:
+            ts = (r.timestamp or "").strip() or None
+            if ts and len(ts) == 10:
+                ts = f"{ts} 12:00:00"
+            sp = _normalize_sample_point(r.sample_point)
+            blend = _normalize_water_blend(r.water_blend)
+            lab = 1 if (r.is_lab_test is None or r.is_lab_test) else 0
+            notes = (r.notes or "").strip() or None
+            rid = _insert_home_water(
+                conn,
+                ts=ts,
+                ph=r.ph, gh=r.gh, kh=r.kh, ammonia=r.ammonia, nitrite=r.nitrite,
+                nitrate=r.nitrate, tds=r.tds, temp=r.temp,
+                sample_point=sp, water_blend=blend, is_lab=lab, notes=notes,
+            )
+            ids.append(rid)
+            written = row_to_dict(conn.execute(
+                "SELECT timestamp FROM home_water_tests WHERE id = ?", (rid,),
+            ).fetchone())
+            wts = (written or {}).get("timestamp")
+            if wts and (newest_written is None or wts > newest_written):
+                newest_written = wts
+        _queue_summary_if_needed(
+            background_tasks, conn, pre_max_ts=pre_max, written_ts=newest_written,
+        )
+
+    return JSONResponse({"ids": ids, "status": "created", "count": len(ids)}, status_code=201)

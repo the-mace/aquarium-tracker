@@ -85,6 +85,28 @@
   </div>
   {% endif %}
 
+  {% if latest_home_water %}
+  <div class="stat-card">
+    <div class="stat-card-title">Home Water (tap)</div>
+    <div class="param-grid">
+      {% if latest_home_water.gh is not none %}<div class="param-item"><span class="param-label">GH</span><span class="param-value">{{ latest_home_water.gh }}</span></div>{% endif %}
+      {% if latest_home_water.kh is not none %}<div class="param-item"><span class="param-label">KH</span><span class="param-value">{{ latest_home_water.kh }}</span></div>{% endif %}
+      {% if latest_home_water.ph is not none %}<div class="param-item"><span class="param-label">pH</span><span class="param-value">{{ latest_home_water.ph }}</span></div>{% endif %}
+      {% if latest_home_water.tds is not none %}<div class="param-item"><span class="param-label">TDS</span><span class="param-value">{{ latest_home_water.tds }}</span></div>{% endif %}
+    </div>
+    <div class="stat-card-footer">
+      <span class="ts-local" data-utc="{{ latest_home_water.timestamp }}">{{ latest_home_water.timestamp }}</span>
+      · <a href="/home-water" class="link-sm">History →</a>
+    </div>
+  </div>
+  {% else %}
+  <div class="stat-card stat-card-empty">
+    <div class="stat-card-title">Home Water</div>
+    <p class="muted">No source-water readings yet. Used as incoming water for WC analysis.</p>
+    <a href="/home-water" class="btn btn-sm btn-primary">Log Home Water</a>
+  </div>
+  {% endif %}
+
   <div class="stat-card">
     <div class="stat-card-title">Inhabitants ({{ inhabitants|length }} species)</div>
     {% if inhabitants %}
