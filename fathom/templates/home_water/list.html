@@ -24,9 +24,9 @@
   <p class="summary-text">{{ summary.summary_text }}</p>
   {% if summary.based_on_timestamp %}
   <p class="muted" style="font-size:.8rem;margin:0.5rem 0 0">
-    Based on newest reading
+    Based on latest WC source (tap/filtered) reading
     <span class="ts-local" data-utc="{{ summary.based_on_timestamp }}">{{ summary.based_on_timestamp }}</span>
-    — regenerates only when a newer-dated test is saved.
+    — regenerates when a newer tap or raw basis reading is saved.
   </p>
   {% endif %}
 </div>
@@ -40,6 +40,12 @@
     {% endif %}
   </div>
   <p class="summary-text">{{ summary.raw_outdoor_text }}</p>
+  {% if summary.based_on_raw_timestamp %}
+  <p class="muted" style="font-size:.8rem;margin:0.5rem 0 0">
+    Based on latest raw / unfiltered reading
+    <span class="ts-local" data-utc="{{ summary.based_on_raw_timestamp }}">{{ summary.based_on_raw_timestamp }}</span>
+  </p>
+  {% endif %}
 </div>
 {% endif %}
 {% elif tests %}

@@ -392,9 +392,9 @@ def test_summary_stale_logic_older_backfill_does_not_refresh(client):
     with get_db() as conn:
         conn.execute(
             """INSERT INTO home_water_summary
-               (id, summary_text, raw_outdoor_text, based_on_timestamp, generated_at)
-               VALUES (1, 'Current suitability text.', 'Raw outdoor text.',
-                       '2025-01-01 12:00:00', datetime('now'))"""
+               (id, summary_text, raw_outdoor_text, based_on_timestamp, based_on_raw_timestamp, generated_at)
+               VALUES (1, 'Current suitability text.', NULL,
+                       '2025-01-01 12:00:00', NULL, datetime('now'))"""
         )
         assert home_water_summary_is_stale(conn) is False
         pre = "2025-01-01 12:00:00"
@@ -408,7 +408,7 @@ def test_summary_stale_logic_older_backfill_does_not_refresh(client):
         assert home_water_summary_is_stale(conn) is False
 
 
-def test_summary_stale_when_newer_test_added(client):
+def test_summary_stale_when_newer_tap_added(client):
     client.post(
         "/home-water",
         data={"gh": "8", "sample_point": "tap", "timestamp": "2025-01-01 12:00:00"},
@@ -417,8 +417,8 @@ def test_summary_stale_when_newer_test_added(client):
     with get_db() as conn:
         conn.execute(
             """INSERT INTO home_water_summary
-               (id, summary_text, based_on_timestamp)
-               VALUES (1, 'old', '2025-01-01 12:00:00')"""
+               (id, summary_text, based_on_timestamp, based_on_raw_timestamp)
+               VALUES (1, 'old', '2025-01-01 12:00:00', NULL)"""
         )
         pre = "2025-01-01 12:00:00"
         conn.execute(
@@ -429,6 +429,36 @@ def test_summary_stale_when_newer_test_added(client):
         assert should_refresh_home_water_summary_after_write(
             conn, pre_max_ts=pre, written_ts="2026-06-01 12:00:00",
         ) is True
+
+
+def test_summary_based_on_tap_not_newer_raw(client):
+    """WC section basis is latest tap; a newer raw sample must not become based_on_timestamp."""
+    client.post(
+        "/home-water",
+        data={"gh": "8", "sample_point": "tap", "timestamp": "2026-02-04 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    client.post(
+        "/home-water",
+        data={"gh": "5", "sample_point": "raw", "timestamp": "2026-04-20 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    with get_db() as conn:
+        # Wrong legacy basis (global max = raw) should look stale
+        conn.execute(
+            """INSERT INTO home_water_summary
+               (id, summary_text, raw_outdoor_text, based_on_timestamp, based_on_raw_timestamp)
+               VALUES (1, 'wc text', 'horse text',
+                       '2026-04-20 12:00:00', '2026-04-20 12:00:00')"""
+        )
+        assert home_water_summary_is_stale(conn) is True
+        # Correct dual basis is not stale
+        conn.execute(
+            """UPDATE home_water_summary SET
+               based_on_timestamp = '2026-02-04 12:00:00',
+               based_on_raw_timestamp = '2026-04-20 12:00:00'"""
+        )
+        assert home_water_summary_is_stale(conn) is False
 
 
 def test_page_shows_saved_summary(client):
@@ -451,7 +481,8 @@ def test_page_shows_saved_summary(client):
     assert "Shrimp tank WC source looks fine" in r.text
     assert "Raw well — horses" in r.text
     assert "horse trough" in r.text
-    assert "regenerates only when a newer-dated test" in r.text
+    assert "WC source (tap/filtered)" in r.text
+    assert "raw / unfiltered" in r.text
 
 
 def test_parse_summary_sections_markers():
@@ -568,4 +599,6 @@ def test_run_home_water_summary_persists(client, monkeypatch):
     assert row is not None
     assert "suits the tanks" in row["summary_text"]
     assert "horses" in row["raw_outdoor_text"]
-    assert row["based_on_timestamp"] is not None
+    # based_on_timestamp is latest tap, not the newer raw
+    assert row["based_on_timestamp"] == "2025-03-01 12:00:00"
+    assert row["based_on_raw_timestamp"] == "2025-04-01 12:00:00"

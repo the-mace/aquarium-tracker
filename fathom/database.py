@@ -303,8 +303,10 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_home_water_tests_ts
                 ON home_water_tests(timestamp DESC);
 
-            -- Singleton AI suitability summary for home/source water (regenerated only
-            -- when a newer home_water_tests.timestamp appears than based_on_timestamp).
+            -- Singleton AI suitability summary for home/source water.
+            -- based_on_timestamp = latest WC-source/tap reading (not global max).
+            -- based_on_raw_timestamp = latest raw reading (horse section).
+            -- Regenerated when either basis drifts from those latest rows.
             CREATE TABLE IF NOT EXISTS home_water_summary (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 summary_text TEXT NOT NULL,

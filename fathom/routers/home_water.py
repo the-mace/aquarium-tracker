@@ -177,6 +177,7 @@ def latest_raw_water_test(conn) -> Optional[dict]:
 
 
 def _max_home_water_timestamp(conn) -> Optional[str]:
+    """Overall newest reading (any sample point). Used rarely; prefer tap/raw helpers."""
     row = conn.execute("SELECT MAX(timestamp) FROM home_water_tests").fetchone()
     return row[0] if row and row[0] else None
 
@@ -187,54 +188,59 @@ def get_home_water_summary(conn) -> Optional[dict]:
     ).fetchone())
 
 
+def _basis_timestamps(conn) -> tuple[Optional[str], Optional[str]]:
+    """Return (latest_tap_ts, latest_raw_ts) for summary basis tracking."""
+    tap = latest_wc_source_test(conn)
+    raw = latest_raw_water_test(conn)
+    return (
+        (tap or {}).get("timestamp"),
+        (raw or {}).get("timestamp"),
+    )
+
+
 def home_water_summary_is_stale(conn) -> bool:
-    """True when tests exist and no summary, or max test date is newer than based_on."""
-    max_ts = _max_home_water_timestamp(conn)
-    if not max_ts:
+    """True when WC-source and/or raw basis no longer match the saved summary.
+
+    based_on_timestamp = latest *tap/WC-source* reading (not global max — raw may be newer).
+    based_on_raw_timestamp = latest *raw* reading for the horse section.
+    """
+    tap_ts, raw_ts = _basis_timestamps(conn)
+    if not tap_ts and not raw_ts:
         return False
     summary = get_home_water_summary(conn)
     if not summary or not (summary.get("summary_text") or "").strip():
         return True
-    based = (summary.get("based_on_timestamp") or "").strip()
-    if not based:
+    based_tap = (summary.get("based_on_timestamp") or "").strip() or None
+    based_raw = (summary.get("based_on_raw_timestamp") or "").strip() or None
+    # Mismatch (wrong basis, newer, or missing) on either stream
+    if (tap_ts or None) != based_tap:
         return True
-    return max_ts > based
+    if (raw_ts or None) != based_raw:
+        return True
+    return False
 
 
 def should_refresh_home_water_summary_after_write(
     conn,
     *,
-    pre_max_ts: Optional[str],
+    pre_max_ts: Optional[str] = None,
     written_ts: Optional[str] = None,
     deleted: bool = False,
 ) -> bool:
     """Decide whether a write warrants regenerating the saved AI summary.
 
-    Refresh when:
-    - No summary yet (and tests exist), or
-    - The overall newest test date advanced past based_on_timestamp, or
-    - The write touched the current newest reading (content change of latest), or
-    - A delete may have removed/changed the basis for the current summary.
-    Older backfilled lab dates alone do not refresh.
+    Refresh when the latest WC-source (tap) or latest raw basis changes, or when
+    the write edits the current latest tap/raw row. Older backfills alone do not.
+    pre_max_ts is ignored (kept for call-site compatibility).
     """
-    post_max = _max_home_water_timestamp(conn)
-    if not post_max:
+    tap_ts, raw_ts = _basis_timestamps(conn)
+    if not tap_ts and not raw_ts:
         return False
-    summary = get_home_water_summary(conn)
-    if not summary or not (summary.get("based_on_timestamp") or "").strip():
+    if home_water_summary_is_stale(conn):
         return True
-    based = summary["based_on_timestamp"]
-    if post_max > based:
+    # Content change of the current basis rows (same timestamps, new values)
+    if written_ts and written_ts in (tap_ts, raw_ts):
         return True
-    if deleted:
-        # Newest date dropped or basis no longer current
-        return based > post_max or based != post_max
-    if written_ts and written_ts >= post_max:
-        # Edited or re-saved the newest reading (or tied for newest)
-        return True
-    # Pure older backfill: pre_max == post_max and written is older
-    if pre_max_ts and post_max == pre_max_ts:
-        return False
     return False
 
 
@@ -330,14 +336,17 @@ async def run_home_water_summary(force: bool = False):
             return
 
         with get_db() as conn:
-            max_ts = _max_home_water_timestamp(conn)
-            if not max_ts:
+            tap_ts, raw_ts = _basis_timestamps(conn)
+            if not tap_ts and not raw_ts:
                 conn.execute("DELETE FROM home_water_summary WHERE id = 1")
                 logger.info("No home water tests — cleared summary")
                 return
 
             if not force and not home_water_summary_is_stale(conn):
-                logger.info("Home water summary already current for %s", max_ts)
+                logger.info(
+                    "Home water summary already current | tap=%s raw=%s",
+                    tap_ts, raw_ts,
+                )
                 return
 
             latest_tap = latest_wc_source_test(conn)
@@ -375,7 +384,10 @@ async def run_home_water_summary(force: bool = False):
 
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
-        logger.info("Claude call: home_water_summary | based_on=%s", max_ts)
+        logger.info(
+            "Claude call: home_water_summary | based_on_tap=%s based_on_raw=%s",
+            tap_ts, raw_ts,
+        )
         t0 = time.monotonic()
         msg = await asyncio.to_thread(
             client.messages.create,
@@ -403,15 +415,16 @@ async def run_home_water_summary(force: bool = False):
             raw_text = str(getattr(msg.content[0], "text", None) or msg.content[0] or "")
 
         summary_text, raw_outdoor = _parse_summary_sections(raw_text)
-        if not summary_text:
+        # Allow raw-only households (no tap yet) if horse section has text
+        if not summary_text and not raw_outdoor:
             logger.error("Home water summary empty after parse | raw=%r", raw_text[:500])
             return
+        if not summary_text:
+            summary_text = "(No WC-source / tap reading on file yet.)"
 
         with get_db() as conn:
-            # Re-check max in case a newer test landed mid-call
-            max_ts_now = _max_home_water_timestamp(conn) or max_ts
-            latest_raw_now = latest_raw_water_test(conn)
-            based_raw = (latest_raw_now or {}).get("timestamp")
+            # Re-check basis in case a newer tap/raw landed mid-call
+            based_tap, based_raw = _basis_timestamps(conn)
             conn.execute(
                 """INSERT INTO home_water_summary
                    (id, summary_text, raw_outdoor_text, based_on_timestamp,
@@ -424,9 +437,12 @@ async def run_home_water_summary(force: bool = False):
                      based_on_raw_timestamp = excluded.based_on_raw_timestamp,
                      generated_at = excluded.generated_at,
                      updated_at = datetime('now')""",
-                (summary_text, raw_outdoor, max_ts_now, based_raw),
+                (summary_text, raw_outdoor, based_tap, based_raw),
             )
-        logger.info("Home water summary saved | based_on=%s", max_ts_now)
+        logger.info(
+            "Home water summary saved | based_on_tap=%s based_on_raw=%s",
+            based_tap, based_raw,
+        )
     except Exception as e:
         logger.error("Home water summary failed: %s", e)
     finally:
