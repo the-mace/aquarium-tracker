@@ -44,6 +44,12 @@
         <a href="/tanks/{{ tank.id }}/schedule" class="sidebar-link {% if active == 'schedule' %}active{% endif %}">Schedule</a>
         <a href="/tanks/{{ tank.id }}/import-page" class="sidebar-link {% if active == 'import' %}active{% endif %}">Import Data</a>
       </div>
+      <div class="sidebar-section" id="chat-nav-section">
+        <span class="sidebar-label">Ask AI</span>
+        <a href="/tanks/{{ tank.id }}/chat/new" class="sidebar-link {% if active == 'chat' and not active_conversation_id %}active{% endif %}">+ New conversation</a>
+        <div id="chat-conv-list" class="chat-conv-list"
+             {% if active_conversation_id is defined and active_conversation_id %}data-active-id="{{ active_conversation_id }}"{% endif %}></div>
+      </div>
       {% endif %}
       <div class="sidebar-section">
         <span class="sidebar-label">Tanks</span>
@@ -59,6 +65,27 @@
       {% block content %}{% endblock %}
     </div>
   </main>
+
+  {% if tank is defined and tank %}
+  <!-- Chat Panel (available on all tank pages) -->
+  <div id="chat-panel" class="chat-panel" style="display:none">
+    <div class="chat-header">
+      <span id="chat-panel-title">Ask AI about {{ tank.name }}</span>
+      <button type="button" class="modal-close" onclick="closeChatPanel()" aria-label="Close chat">×</button>
+    </div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Ask anything about this tank…" onkeydown="if(event.key==='Enter')sendChat()">
+      <button type="button" class="btn btn-primary" onclick="sendChat()">Send</button>
+    </div>
+    <div class="chat-footer">
+      <button type="button" class="btn btn-ghost btn-xs" onclick="startNewChat()">New conversation</button>
+      <button type="button" class="btn btn-ghost btn-xs btn-danger-text" id="chat-delete-btn" style="display:none" onclick="deleteActiveChat()">Delete conversation</button>
+    </div>
+  </div>
+  <div id="chat-overlay" class="chat-overlay" style="display:none" onclick="closeChatPanel()"></div>
+  <script>const TANK_ID = {{ tank.id }}; const TANK_NAME = {{ tank.name|tojson }};</script>
+  {% endif %}
 
   <script src="/static/js/app.js"></script>
   {% block scripts %}{% endblock %}

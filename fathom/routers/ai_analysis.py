@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from database import get_db, rows_to_list, row_to_dict
+from ai_config import CLAUDE_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -408,7 +409,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         t0 = time.monotonic()
         msg = await asyncio.to_thread(
             client.messages.create,
-            model="claude-sonnet-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=1536,
             messages=[{"role": "user", "content": analysis_prompt}],
             timeout=60.0,
@@ -426,7 +427,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             t_ir = time.monotonic()
             issue_msg = await asyncio.to_thread(
                 client.messages.create,
-                model="claude-sonnet-4-6",
+                model=CLAUDE_MODEL,
                 max_tokens=768,
                 messages=[{"role": "user", "content": issue_review_prompt}],
                 timeout=60.0,
@@ -479,7 +480,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         t1 = time.monotonic()
         sum_msg = await asyncio.to_thread(
             client.messages.create,
-            model="claude-sonnet-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=1024,
             messages=[{"role": "user", "content": summary_prompt}],
             timeout=60.0,
@@ -535,7 +536,7 @@ async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows,
     try:
         msg = await asyncio.to_thread(
             client.messages.create,
-            model="claude-sonnet-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
             timeout=60.0,
@@ -623,7 +624,7 @@ async def run_test_recommendation(tank_id: int, result_id: int):
         t0 = time.monotonic()
         msg = await asyncio.to_thread(
             client.messages.create,
-            model="claude-sonnet-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
             timeout=60.0,

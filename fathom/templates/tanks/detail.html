@@ -14,7 +14,7 @@
     </div>
   </div>
   <div class="header-actions">
-    <button class="btn btn-ghost" onclick="openChatPanel()">Ask AI</button>
+    <button class="btn btn-ghost" onclick="startNewChat()">Ask AI</button>
     <a href="/tanks/{{ tank.id }}/edit" class="btn btn-ghost">Edit</a>
   </div>
 </div>
@@ -512,30 +512,12 @@
   </div>
 </div>
 
-<!-- Chat Panel -->
-<div id="chat-panel" class="chat-panel" style="display:none">
-  <div class="chat-header">
-    <span>Ask AI about {{ tank.name }}</span>
-    <button class="modal-close" onclick="closeChatPanel()">×</button>
-  </div>
-  <div id="chat-messages" class="chat-messages"></div>
-  <div class="chat-input-row">
-    <input type="text" id="chat-input" placeholder="Ask anything about this tank…" onkeydown="if(event.key==='Enter')sendChat()">
-    <button class="btn btn-primary" onclick="sendChat()">Send</button>
-  </div>
-  <div class="chat-footer">
-    <button class="btn btn-ghost btn-xs" onclick="clearChat()">Clear conversation</button>
-  </div>
-</div>
-<div id="chat-overlay" class="chat-overlay" style="display:none" onclick="closeChatPanel()"></div>
-
 <!-- Import Page Link -->
 <a href="/tanks/{{ tank.id }}/import-page" style="display:none" id="import-page-link"></a>
 {% endblock %}
 
 {% block scripts %}
 <script>
-const TANK_ID = {{ tank.id }};
 initDashboard(TANK_ID);
 
 function checkConfirm(form, expected, errId) {

@@ -20,7 +20,7 @@ TANK_TABLES = [
     "test_results", "events", "inhabitants", "population_events",
     "purchases", "observations", "issues", "tank_state_summary",
     "plants", "hardscape", "tank_equipment", "recurring_schedule",
-    "tank_notes_proposals",
+    "tank_notes_proposals", "chat_conversations",
 ]
 
 

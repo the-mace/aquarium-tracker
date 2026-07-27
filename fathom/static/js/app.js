@@ -30,12 +30,46 @@ document.addEventListener('keydown', e => {
   }
 });
 
-/* ── Chat Panel ─────────────────────────────────────────────────────────── */
-function openChatPanel() {
-  document.getElementById('chat-panel').style.display = 'flex';
-  document.getElementById('chat-overlay').style.display = 'block';
-  document.getElementById('chat-input').focus();
+/* ── Chat (popup panel + full page) ─────────────────────────────────────── */
+let activeConversationId = null;
+let chatMsgCounter = 0;
+let chatSending = false;
+
+function isChatPage() {
+  return !!document.getElementById('chat-page');
 }
+
+/** Prefer full-page chat UI when present; otherwise the right-side popup. */
+function chatEls() {
+  if (isChatPage()) {
+    return {
+      messages: document.getElementById('chat-page-messages'),
+      input: document.getElementById('chat-page-input'),
+      title: document.getElementById('chat-page-title'),
+      deleteBtn: document.getElementById('chat-page-delete-btn'),
+      isPage: true,
+    };
+  }
+  return {
+    messages: document.getElementById('chat-messages'),
+    input: document.getElementById('chat-input'),
+    title: document.getElementById('chat-panel-title'),
+    deleteBtn: document.getElementById('chat-delete-btn'),
+    isPage: false,
+  };
+}
+
+function openChatPanel() {
+  if (isChatPage()) return; // full page is already the chat surface
+  const p = document.getElementById('chat-panel');
+  const o = document.getElementById('chat-overlay');
+  if (!p) return;
+  p.style.display = 'flex';
+  if (o) o.style.display = 'block';
+  document.getElementById('chat-input')?.focus();
+  _updateChatChrome();
+}
+
 function closeChatPanel() {
   const p = document.getElementById('chat-panel');
   const o = document.getElementById('chat-overlay');
@@ -43,54 +77,185 @@ function closeChatPanel() {
   if (o) o.style.display = 'none';
 }
 
-async function sendChat() {
-  const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
-  if (!msg) return;
-  input.value = '';
-  appendChatMsg('user', msg);
+function _updateChatChrome() {
+  const { title, deleteBtn, isPage } = chatEls();
+  if (!isPage && title) {
+    const tankLabel = (typeof TANK_NAME !== 'undefined' && TANK_NAME) ? TANK_NAME : 'this tank';
+    title.textContent = activeConversationId
+      ? (title.dataset.convTitle || `Ask AI about ${tankLabel}`)
+      : `Ask AI about ${tankLabel}`;
+  }
+  if (deleteBtn) deleteBtn.style.display = activeConversationId ? '' : 'none';
+  document.querySelectorAll('.chat-conv-item').forEach(el => {
+    el.classList.toggle('active', Number(el.dataset.id) === activeConversationId);
+  });
+}
 
-  const typingId = appendChatMsg('ai', '…');
+/** Dashboard "Ask AI" button — opens the right-side popup for a quick new chat. */
+function startNewChat() {
+  if (typeof TANK_ID === 'undefined') return;
+  if (isChatPage()) {
+    window.location.href = `/tanks/${TANK_ID}/chat/new`;
+    return;
+  }
+  activeConversationId = null;
+  const msgs = document.getElementById('chat-messages');
+  if (msgs) msgs.innerHTML = '';
+  const titleEl = document.getElementById('chat-panel-title');
+  if (titleEl) delete titleEl.dataset.convTitle;
+  openChatPanel();
+  closeSidebar();
+}
+
+async function deleteActiveChat() {
+  if (!activeConversationId || typeof TANK_ID === 'undefined') return;
+  if (!confirm('Delete this conversation? This cannot be undone.')) return;
+  await deleteConversation(activeConversationId);
+}
+
+async function deleteConversation(conversationId, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  if (typeof TANK_ID === 'undefined') return;
+  if (event && !confirm('Delete this conversation? This cannot be undone.')) return;
   try {
-    const res = await fetch(`/tanks/${TANK_ID}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg }),
+    const res = await fetch(`/tanks/${TANK_ID}/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Error');
-    updateChatMsg(typingId, data.reply);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Delete failed');
+    }
+    if (activeConversationId === conversationId) {
+      if (isChatPage()) {
+        window.location.href = `/tanks/${TANK_ID}/chat/new`;
+        return;
+      }
+      activeConversationId = null;
+      const msgs = document.getElementById('chat-messages');
+      if (msgs) msgs.innerHTML = '';
+      const titleEl = document.getElementById('chat-panel-title');
+      if (titleEl) delete titleEl.dataset.convTitle;
+      closeChatPanel();
+    }
+    await loadConversations();
   } catch (e) {
-    updateChatMsg(typingId, `Error: ${e.message}`);
+    alert(`Could not delete conversation: ${e.message}`);
   }
 }
 
-async function clearChat() {
-  await fetch(`/tanks/${TANK_ID}/chat`, { method: 'DELETE' });
-  document.getElementById('chat-messages').innerHTML = '';
+async function sendChat() {
+  if (typeof TANK_ID === 'undefined' || chatSending) return;
+  const ui = chatEls();
+  const input = ui.input;
+  const msg = input?.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  // Remove empty-state placeholder on first message (full page)
+  document.getElementById('chat-page-empty')?.remove();
+
+  appendChatMsg('user', msg);
+
+  chatSending = true;
+  const typingId = appendChatMsg('ai', '…');
+  try {
+    const payload = { message: msg };
+    if (activeConversationId) payload.conversation_id = activeConversationId;
+    const res = await fetch(`/tanks/${TANK_ID}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Error');
+    updateChatMsg(typingId, data.reply);
+    const wasNew = !activeConversationId;
+    activeConversationId = data.conversation_id;
+
+    if (ui.title && data.title) {
+      if (!ui.isPage) ui.title.dataset.convTitle = data.title;
+      ui.title.textContent = data.title;
+    }
+    // Full-page new chat: update URL + show delete once we have an id
+    if (ui.isPage && wasNew && data.conversation_id) {
+      history.replaceState({}, '', `/tanks/${TANK_ID}/chat/c/${data.conversation_id}`);
+      const pageRoot = document.getElementById('chat-page');
+      if (pageRoot) pageRoot.dataset.conversationId = String(data.conversation_id);
+      document.title = `${data.title} — ${typeof TANK_NAME !== 'undefined' ? TANK_NAME : 'Fathom'} — Fathom`;
+    }
+    _updateChatChrome();
+    await loadConversations();
+  } catch (e) {
+    updateChatMsg(typingId, `Error: ${e.message}`);
+  } finally {
+    chatSending = false;
+  }
 }
 
-let chatMsgCounter = 0;
+function _currentConversationId() {
+  if (activeConversationId) return activeConversationId;
+  const list = document.getElementById('chat-conv-list');
+  if (list?.dataset.activeId) return Number(list.dataset.activeId);
+  const m = location.pathname.match(/\/chat\/c\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+async function loadConversations() {
+  if (typeof TANK_ID === 'undefined') return;
+  const list = document.getElementById('chat-conv-list');
+  if (!list) return;
+  const currentId = _currentConversationId();
+  try {
+    const res = await fetch(`/tanks/${TANK_ID}/chat/conversations`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const convs = data.conversations || [];
+    if (!convs.length) {
+      list.innerHTML = '<div class="chat-conv-empty">No conversations yet</div>';
+      return;
+    }
+    list.innerHTML = convs.map(c => {
+      const active = Number(c.id) === currentId ? ' active' : '';
+      const title = escHtml(c.title || 'Conversation');
+      return `<a href="/tanks/${TANK_ID}/chat/c/${c.id}" class="chat-conv-item${active}" data-id="${c.id}" title="${title}">
+        <span class="chat-conv-title">${title}</span>
+        <button type="button" class="chat-conv-delete" onclick="deleteConversation(${c.id}, event)" title="Delete" aria-label="Delete conversation">×</button>
+      </a>`;
+    }).join('');
+  } catch (_) {
+    /* ignore list load errors */
+  }
+}
+
 function appendChatMsg(role, text) {
   const id = `chat-msg-${++chatMsgCounter}`;
   const el = document.createElement('div');
   el.id = id;
   el.className = `chat-msg chat-msg-${role}`;
   el.innerHTML = `<div class="chat-bubble">${escHtml(text)}</div>`;
-  const container = document.getElementById('chat-messages');
-  container.appendChild(el);
-  container.scrollTop = container.scrollHeight;
+  const container = chatEls().messages;
+  if (container) {
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+  }
   return id;
 }
 function updateChatMsg(id, text) {
   const el = document.getElementById(id);
   if (el) el.querySelector('.chat-bubble').textContent = text;
-  const container = document.getElementById('chat-messages');
-  container.scrollTop = container.scrollHeight;
+  const container = chatEls().messages;
+  if (container) container.scrollTop = container.scrollHeight;
 }
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof TANK_ID !== 'undefined') loadConversations();
+});
 
 /* ── Dashboard init ─────────────────────────────────────────────────────── */
 function initDashboard(tankId) {

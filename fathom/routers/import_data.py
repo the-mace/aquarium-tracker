@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Request, UploadFile, File, HTTPE
 from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from database import get_db, row_to_dict, rows_to_list
+from ai_config import CLAUDE_MODEL
 from routers.reference_info import maybe_fetch_reference_info, maybe_fetch_tank_dimensions, _canonical
 
 router = APIRouter(tags=["import"])
@@ -299,7 +300,7 @@ async def _extraction_sse_stream(content: str, api_key: str, existing_inhabitant
             logger.info("Claude call: import | chunk=%d/%d chars=%d", i + 1, n_chunks, len(chunk))
             t_chunk = time.monotonic()
             async with client.messages.stream(
-                model="claude-sonnet-4-6",
+                model=CLAUDE_MODEL,
                 max_tokens=32000,
                 messages=[{"role": "user", "content": IMPORT_PROMPT + existing_inh_ctx + chunk_header + chunk}],
             ) as stream:

@@ -9,6 +9,7 @@ import urllib.parse
 from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from database import get_db, get_ref_db, row_to_dict
+from ai_config import CLAUDE_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
         logger.info("Claude call: tank-dims | tank=%d | %s", tank_id, product_label)
         t0 = time.monotonic()
         msg = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=1024,
             tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}],
             messages=[{"role": "user", "content": prompt}],
@@ -300,7 +301,7 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
         logger.info("Claude call: ref-text | %s/%s", entity_type, entity_name)
         t0 = time.monotonic()
         text_msg = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=CLAUDE_MODEL,
             max_tokens=512,
             messages=[{"role": "user", "content": text_prompt}],
             timeout=30.0,

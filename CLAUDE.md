@@ -12,7 +12,7 @@ Fathom is a personal aquarium tracking web app with AI-powered analysis. Single 
 - **Database**: SQLite at `fathom/data/fathom.db` (gitignored)
 - **Templates**: Jinja2, plain HTML/CSS/JS
 - **Charts**: Chart.js 4.4.0 via CDN
-- **AI**: Anthropic Python SDK `0.115.0`, model `claude-sonnet-4-6`
+- **AI**: Anthropic Python SDK `0.115.0`, model `claude-sonnet-5` (see `fathom/ai_config.py` + "AI model strategy" below)
 - **Env**: python-dotenv, `.env` at repo root (gitignored)
 
 ## How to run
@@ -116,7 +116,7 @@ All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
 Triggered as FastAPI `BackgroundTask` after every test_result or event save. Fetches last 10 tests, open issues, 30-day events, and inhabitants. Calls Claude, stores result as an `observations` row (source=auto) and upserts `tank_state_summary`.
 
 ### Reference Info (`reference_info.py`)
-Background task triggered when inhabitants, plants, or hardscape items are added (or imported). Checks if a `reference_info` row already exists for that entity; if not, inserts a placeholder and queues `fetch_reference_info_bg`. That sync background task calls `claude-sonnet-4-6` with `web_search_20260209` (server-side tool — no client tool loop needed) to fetch: description, care notes, and a Wikimedia Commons image URL. Result stored with `ON CONFLICT … DO UPDATE`.
+Background task triggered when inhabitants, plants, or hardscape items are added (or imported). Checks if a `reference_info` row already exists for that entity; if not, inserts a placeholder and queues `fetch_reference_info_bg`. That sync background task calls Claude (`CLAUDE_MODEL` in `ai_config.py`) with `web_search_20260209` (server-side tool — no client tool loop needed) to fetch: description, care notes, and a Wikimedia Commons image URL. Result stored with `ON CONFLICT … DO UPDATE`.
 
 List views (`/inhabitants`, `/plants`) also trigger auto-queue on first load for any entity not yet in `reference_info`. The list query does a LEFT JOIN on `reference_info` to pass data to templates.
 
@@ -137,6 +137,15 @@ Web search tool requires anthropic SDK ≥ 0.115.0.
 `POST /tanks/{id}/import` — uploads a file (HTML or plain text/markdown), strips HTML if needed, sends to Claude for structured extraction, returns JSON preview. `POST /tanks/{id}/import/confirm` bulk-inserts the confirmed preview. Claude extracts: test_results, events, purchases, inhabitants, equipment.
 
 Import robustness: strips markdown code fences, falls back to regex `{...}` extraction if direct JSON parse fails. `max_tokens=8192`.
+
+### AI model strategy
+
+- **Single provider**: Anthropic Claude only. Dual-provider (e.g. Claude + Grok) was considered and rejected for maintenance cost — import/extraction, analysis, chat, and reference-info all share one client, one mock surface in tests, and one set of prompt calibrations. Switching providers later is non-trivial (SDK, web_search tool shape, response parsing, test fakes).
+- **Mass-class Sonnet only**: use the current Sonnet generation (not Opus/Fable — overkill and pricier for aquarium judgment prompts; not Haiku or other light models — quality-first for analysis and Ask AI). Model id is centralized in `fathom/ai_config.py` as `CLAUDE_MODEL` and imported by every call site.
+- **Current model**: `claude-sonnet-5` (bumped from `claude-sonnet-4-6` in 2026-07). When a new Sonnet ships, bump `CLAUDE_MODEL` after a smoke-test on analysis + chat (over-flagging, issue-review JSON, `query_db` tool loop). Import is largely "done" and rarely re-run at scale (Quick Log still uses the same model); no special freeze — one model id for everything keeps maintenance simple.
+- **Quality over cost**: do not tier models by call type to save money at single-user volume. Prefer better judgment on water-test analysis and Ask AI; those paths are still actively tuned. Cost is expected to stay similar across Sonnet generations (Sonnet 5 intro pricing was $2/$10 through 2026-08-31, then standard $3/$15 — same band as 4.6).
+- **Grok / xAI**: not in use. May revisit only if a future mass-class peer clearly beats Sonnet on analysis quality or chat latency *and* the migration cost is worth it; until then stay single-provider.
+- **Prompt caching**: still not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user.
 
 ## Key decisions & gotchas
 
@@ -268,7 +277,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 - **Deployed to Mac mini for the first time on 2026-07-03** — see twelfth-session notes below. Running live at `192.168.50.205:8000`, reachable from the whole LAN (`http://192.168.50.205:8000`, or `http://mini:8000` if you've added a `/etc/hosts` alias on that particular machine). S3 backup cron is live — bucket `lpf-fathom-backups`, 30-day retention, dedicated least-privilege IAM user.
 - **The mini now holds real, independent production data** (as of 2026-07-04, Rob has already added tanks directly on the mini) — see "Production data" section above. It is *not* a mirror of local dev's DB and the two are expected to diverge permanently; do not assume one reflects the other.
 - Ongoing: deploy future commits with `bin/deploy-mini` (backs up, pulls, restarts, health-checks, auto-rolls-back on failure — see "Deployment scripts" above). Check mini logs with `bin/mini-logs`.
-- **Prompt caching**: not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user
+- **Prompt caching**: not implemented (see "AI model strategy" above)
 
 ## Testing
 

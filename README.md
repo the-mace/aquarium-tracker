@@ -8,7 +8,7 @@ Smart aquarium tracking with AI-powered analysis.
 - **Database**: SQLite (`fathom/data/fathom.db`)
 - **Frontend**: Plain HTML/CSS/JS + Chart.js
 - **Templates**: Jinja2
-- **AI**: Anthropic claude-sonnet-4-6
+- **AI**: Anthropic claude-sonnet-5
 
 ## Setup
 
@@ -42,7 +42,7 @@ Open `http://localhost:8000`.
 
 - **Dashboard** per tank: latest water parameters, inhabitants, open issues, AI summary, Chart.js charts
 - **Water test logging**: pH, GH, KH, ammonia, nitrite, nitrate, TDS, temperature
-- **AI analysis**: automatic background analysis triggered on each test/event save (claude-sonnet-4-6)
+- **AI analysis**: automatic background analysis triggered on each test/event save (claude-sonnet-5)
 - **AI chat**: ask questions about a tank with full context injection
 - **Import**: upload Apple Notes HTML or plain text exports; Claude extracts structured data for preview before inserting
 - **Population tracking**: per-species counts with event log (added/died/removed/born)
