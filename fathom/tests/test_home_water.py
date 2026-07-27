@@ -473,7 +473,7 @@ def test_page_shows_saved_summary(client):
                (id, summary_text, raw_outdoor_text, based_on_timestamp, based_on_raw_timestamp)
                VALUES (1, 'Shrimp tank WC source looks fine for targets.',
                        'Raw well is acceptable for horse trough water.',
-                       '2025-06-01 12:00:00', '2025-04-01 12:00:00')"""
+                       '2025-06-01 12:00:00', NULL)"""
         )
     r = client.get("/home-water")
     assert r.status_code == 200
@@ -482,7 +482,38 @@ def test_page_shows_saved_summary(client):
     assert "Raw well — horses" in r.text
     assert "horse trough" in r.text
     assert "WC source (tap/filtered)" in r.text
-    assert "raw / unfiltered" in r.text
+    assert "being updated" not in r.text
+
+
+def test_stale_summary_cleared_and_refresh_message_shown(client):
+    """After a newer basis reading, old notes are wiped and the page says to reload."""
+    client.post(
+        "/home-water",
+        data={"gh": "8", "sample_point": "tap", "timestamp": "2025-01-01 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO home_water_summary
+               (id, summary_text, based_on_timestamp, based_on_raw_timestamp)
+               VALUES (1, 'OLD STALE NOTES about previous water.',
+                       '2025-01-01 12:00:00', NULL)"""
+        )
+    # Newer tap → write path clears + queues
+    client.post(
+        "/home-water",
+        data={"gh": "9", "sample_point": "tap", "timestamp": "2026-06-01 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM home_water_summary WHERE id=1").fetchone()
+        assert row is None  # cleared pending regen
+
+    r = client.get("/home-water")
+    assert r.status_code == 200
+    assert "OLD STALE NOTES" not in r.text
+    assert "being updated" in r.text or "refreshing" in r.text.lower()
+    assert "reload" in r.text.lower()
 
 
 def test_parse_summary_sections_markers():

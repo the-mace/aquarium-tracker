@@ -188,6 +188,11 @@ def get_home_water_summary(conn) -> Optional[dict]:
     ).fetchone())
 
 
+def clear_home_water_summary(conn) -> None:
+    """Drop saved suitability text so the UI never shows notes for a stale basis."""
+    conn.execute("DELETE FROM home_water_summary WHERE id = 1")
+
+
 def _basis_timestamps(conn) -> tuple[Optional[str], Optional[str]]:
     """Return (latest_tap_ts, latest_raw_ts) for summary basis tracking."""
     tap = latest_wc_source_test(conn)
@@ -457,12 +462,19 @@ def _queue_summary_if_needed(
     written_ts: Optional[str] = None,
     deleted: bool = False,
     force: bool = False,
-):
+) -> bool:
+    """Queue AI regen if needed. Clears old summary first so UI never shows stale notes.
+
+    Returns True if a refresh was queued (caller can redirect to a page without old text).
+    """
     if force or should_refresh_home_water_summary_after_write(
         conn, pre_max_ts=pre_max_ts, written_ts=written_ts, deleted=deleted,
     ):
+        clear_home_water_summary(conn)
         background_tasks.add_task(run_home_water_summary, True)
-        logger.info("Queued home water summary refresh")
+        logger.info("Cleared stale home water summary and queued refresh")
+        return True
+    return False
 
 
 def _insert_home_water(
@@ -608,16 +620,23 @@ async def list_home_water(request: Request, background_tasks: BackgroundTasks):
         ).fetchone())
         latest_tap = latest_wc_source_test(conn)
         latest_raw = latest_raw_water_test(conn)
+        summary_refreshing = False
         summary = get_home_water_summary(conn)
-        # Backfill: first visit after feature ships, or newer tests landed offline
-        if home_water_summary_is_stale(conn):
-            background_tasks.add_task(run_home_water_summary, False)
+        # Stale or missing: wipe old notes so we never show them next to a new basis,
+        # then regenerate in the background.
+        if tests and home_water_summary_is_stale(conn):
+            clear_home_water_summary(conn)
+            background_tasks.add_task(run_home_water_summary, True)
+            summary = None
+            summary_refreshing = True
+            logger.info("Home water page: cleared stale summary and queued refresh")
     return templates.TemplateResponse(request, "home_water/list.html", {
         "tests": tests,
         "latest": latest,
         "latest_tap": latest_tap,
         "latest_raw": latest_raw,
         "summary": summary,
+        "summary_refreshing": summary_refreshing,
         "sample_points": SAMPLE_POINTS,
         "sample_point_labels": SAMPLE_POINT_LABELS,
         "water_blends": WATER_BLENDS,

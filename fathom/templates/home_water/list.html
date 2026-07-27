@@ -14,7 +14,21 @@
   metrics are extracted by AI; you set whether it was regular WC water (hard/soft mix) or unfiltered.
 </p>
 
-{% if summary and summary.summary_text %}
+{% if summary_refreshing or (tests and not (summary and summary.summary_text)) %}
+<div class="summary-card" style="margin-bottom:1.25rem">
+  <div class="summary-header">
+    <span class="summary-icon">✦</span>
+    <span>Suitability notes refreshing</span>
+  </div>
+  <p class="summary-text">
+    Suitability notes are being updated for the latest home-water reading(s).
+    This usually takes about a minute — <strong>reload this page</strong> shortly to see the new assessment.
+  </p>
+  <p class="muted" style="font-size:.85rem;margin:0.5rem 0 0">
+    Previous notes were cleared so they are not shown next to newer test data.
+  </p>
+</div>
+{% elif summary and summary.summary_text %}
 <div class="summary-card" style="margin-bottom:1rem">
   <div class="summary-header">
     <span class="summary-icon">✦</span>
@@ -48,14 +62,6 @@
   {% endif %}
 </div>
 {% endif %}
-{% elif tests %}
-<div class="summary-card" style="margin-bottom:1.25rem">
-  <div class="summary-header">
-    <span class="summary-icon">✦</span>
-    <span>Suitability summary</span>
-  </div>
-  <p class="summary-text muted">Generating AI suitability assessment… refresh in a moment.</p>
-</div>
 {% endif %}
 
 {% if latest_tap %}
