@@ -2,6 +2,24 @@
 
 Project context for AI-assisted development sessions.
 
+## Before starting any work
+
+**Always pull the latest `main` before beginning a session or starting a new task.** Dependabot is enabled and **auto-merges** its PRs (see `.github/dependabot.yml` + `.github/workflows/dependabot-automerge.yml`), so `origin/main` can move while you're idle — dependency bumps, security fixes, and Actions updates may already be on remote without any local commit from Rob.
+
+```bash
+git checkout main
+git pull --ff-only origin main
+```
+
+If `requirements.txt` changed in the pull, reinstall:
+
+```bash
+source .venv/bin/activate   # from repo root; or ../.venv from fathom/
+pip install -r requirements.txt
+```
+
+Do **not** assume a clean `git status` means you're current with remote. Prefer `git pull --ff-only` (or `git fetch` + compare to `origin/main`) at session start, before creating branches, and before committing/pushing. If local work has diverged from an auto-merged Dependabot commit, rebase or merge `main` rather than force-pushing over remote history.
+
 ## What this is
 
 Fathom is a personal aquarium tracking web app with AI-powered analysis. Single user, self-hosted. No auth, no multi-tenancy.
