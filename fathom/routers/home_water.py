@@ -32,7 +32,12 @@ logger = logging.getLogger(__name__)
 _summary_in_flight = False
 
 SAMPLE_POINTS = (
+    # Fill-water sources — only these are injected into tank AI / WC analysis
     ("tap", "Tap (WC source)"),
+    ("bottled_spring", "Bottled spring"),
+    ("bottled_distilled", "Bottled distilled"),
+    ("bottled", "Bottled (other)"),
+    # Diagnostic / non-fill — home-water page + suitability only, never tank AI
     ("raw", "Unfiltered / raw well"),
     ("post_neutralizer", "Post-neutralizer"),
     ("post_softener", "Post-softener"),
@@ -41,6 +46,11 @@ SAMPLE_POINTS = (
 )
 SAMPLE_POINT_LABELS = dict(SAMPLE_POINTS)
 VALID_SAMPLE_POINTS = set(SAMPLE_POINT_LABELS)
+
+# Sources that can go into a tank water change (tap system or bottled)
+FILL_WATER_SAMPLE_POINTS = frozenset({
+    "tap", "bottled_spring", "bottled_distilled", "bottled",
+})
 
 WATER_BLENDS = (
     ("", "Not specified"),
@@ -117,7 +127,7 @@ FIELD RULES:
      store 0 and flag "nitrite non-detect (treated as 0)" (same pattern for other analytes).
 9. tds: total dissolved solids in ppm/mg/L if present.
 10. temp: convert to °F if given in °C (F = C×9/5+32). Round to 1 decimal.
-11. sample_point_guess: only if the report clearly labels the sample (raw well, untreated, after softener, kitchen tap, etc.). Otherwise null — the user will set this. Values if used: tap | raw | post_neutralizer | post_softener | hose | other.
+11. sample_point_guess: only if the report clearly labels the sample (raw well, untreated, after softener, kitchen tap, bottled spring/distilled, etc.). Otherwise null — the user will set this. Values if used: tap | bottled_spring | bottled_distilled | bottled | raw | post_neutralizer | post_softener | hose | other.
 12. water_blend_guess: almost always null (labs don't know softener mix). Only set if the report text explicitly says hard/soft/mixed.
 13. notes: short — lab method codes for key analytes (e.g. SM 4500-NO3 F), "as N converted…", original hardness units, anything useful. Include report sample ID if present.
 14. flags: human-readable warnings (unit conversion applied, non-detect→0, value near MCL, missing hardness, ambiguous date, etc.).
@@ -660,7 +670,6 @@ async def add_home_water(
     temp: Optional[str] = Form(None),
     sample_point: Optional[str] = Form("tap"),
     water_blend: Optional[str] = Form(None),
-    is_lab_test: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
     ts = timestamp.strip() if timestamp and timestamp.strip() else None
@@ -669,8 +678,8 @@ async def add_home_water(
     nitrate_v, tds_v, temp_v = _parse_float(nitrate), _parse_float(tds), _parse_float(temp)
     sp = _normalize_sample_point(sample_point)
     blend = _normalize_water_blend(water_blend)
-    lab = _parse_is_lab(is_lab_test)
     notes_v = notes.strip() if notes and notes.strip() else None
+    # Manual entry is always a kit/home reading. Lab flag is set only via PDF/CSV import.
 
     with get_db() as conn:
         pre_max = _max_home_water_timestamp(conn)
@@ -679,7 +688,7 @@ async def add_home_water(
             ts=ts,
             ph=ph_v, gh=gh_v, kh=kh_v, ammonia=ammonia_v, nitrite=nitrite_v,
             nitrate=nitrate_v, tds=tds_v, temp=temp_v,
-            sample_point=sp, water_blend=blend, is_lab=lab, notes=notes_v,
+            sample_point=sp, water_blend=blend, is_lab=0, notes=notes_v,
         )
         written = row_to_dict(conn.execute(
             "SELECT timestamp FROM home_water_tests WHERE id = ?", (result_id,),
@@ -711,7 +720,6 @@ async def update_home_water(
     temp: Optional[str] = Form(None),
     sample_point: Optional[str] = Form("tap"),
     water_blend: Optional[str] = Form(None),
-    is_lab_test: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
     ts = timestamp.strip() if timestamp and timestamp.strip() else None
@@ -720,16 +728,17 @@ async def update_home_water(
     nitrate_v, tds_v, temp_v = _parse_float(nitrate), _parse_float(tds), _parse_float(temp)
     sp = _normalize_sample_point(sample_point)
     blend = _normalize_water_blend(water_blend)
-    lab = _parse_is_lab(is_lab_test)
     notes_v = notes.strip() if notes and notes.strip() else None
+    # Preserve is_lab_test from the existing row (set only by lab PDF/CSV import).
 
     with get_db() as conn:
         pre_max = _max_home_water_timestamp(conn)
         row = row_to_dict(conn.execute(
-            "SELECT id FROM home_water_tests WHERE id = ?", (test_id,),
+            "SELECT id, is_lab_test FROM home_water_tests WHERE id = ?", (test_id,),
         ).fetchone())
         if not row:
             raise HTTPException(status_code=404, detail="Home water test not found")
+        lab = 1 if row.get("is_lab_test") else 0
         if ts:
             conn.execute(
                 """UPDATE home_water_tests SET

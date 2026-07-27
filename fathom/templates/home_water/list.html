@@ -9,9 +9,11 @@
 </div>
 
 <p class="muted" style="margin-top:-.5rem;margin-bottom:1.25rem;max-width:44rem">
-  Source water for water changes (shared across all tanks). Kit readings are usually
-  flushed WC-source tap with GH &amp; KH. Lab PDFs/CSVs can be uploaded — sample date and
-  metrics are extracted by AI; you set whether it was regular WC water (hard/soft mix) or unfiltered.
+  Source water for water changes and home diagnostics. <strong>Tap (WC source)</strong> and
+  <strong>bottled</strong> (spring / distilled / other) can be used for tank water changes and
+  are what tank AI considers. Raw, post-treatment, hose, etc. are diagnostic only (e.g. horse
+  trough / treatment checks) and never feed tank analysis. Kit readings are usually flushed
+  tap GH &amp; KH; put brand/vendor in notes for bottled water. Lab PDFs/CSVs can be uploaded.
 </p>
 
 {% if summary_refreshing or (tests and not (summary and summary.summary_text)) %}
@@ -135,7 +137,6 @@
                   data-temp="{{ t.temp if t.temp is not none else '' }}"
                   data-sample-point="{{ t.sample_point or 'tap' }}"
                   data-water-blend="{{ t.water_blend or '' }}"
-                  data-is-lab="{{ t.is_lab_test or 0 }}"
                   data-notes="{{ (t.notes or '')|e }}">Edit</button>
           <form method="post" action="/home-water/{{ t.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Delete this home water reading?')">
@@ -205,11 +206,6 @@
               <option value="{{ value }}">{{ label }}</option>
               {% endfor %}
             </select>
-          </div>
-          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:.35rem">
-            <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
-              <input type="checkbox" name="is_lab_test" value="1"> Lab panel
-            </label>
           </div>
         </div>
         <div class="form-group">
@@ -317,11 +313,6 @@
             <option value="{{ value }}">{{ label }}</option>
             {% endfor %}
           </select>
-        </div>
-        <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:.35rem">
-          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer;font-weight:400">
-            <input type="checkbox" name="is_lab_test" value="1" id="edit-home-water-lab"> Lab panel
-          </label>
         </div>
       </div>
       <div class="form-group">
@@ -544,7 +535,6 @@ function openEditHomeWater(btn) {
   document.getElementById('edit-home-water-temp').value = d.temp;
   document.getElementById('edit-home-water-sample').value = d.samplePoint || 'tap';
   document.getElementById('edit-home-water-blend').value = d.waterBlend || '';
-  document.getElementById('edit-home-water-lab').checked = d.isLab === '1' || d.isLab === 'true';
   document.getElementById('edit-home-water-notes').value = d.notes || '';
   openModal('modal-edit-home-water');
 }

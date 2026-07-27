@@ -53,7 +53,10 @@ def _fmt_test_results(rows):
 
 
 _HOME_WATER_SAMPLE_LABELS = {
-    "tap": "tap",
+    "tap": "tap_WC_source",
+    "bottled_spring": "bottled_spring",
+    "bottled_distilled": "bottled_distilled",
+    "bottled": "bottled_other",
     "raw": "raw",
     "post_neutralizer": "post_neutralizer",
     "post_softener": "post_softener",
@@ -61,19 +64,33 @@ _HOME_WATER_SAMPLE_LABELS = {
     "other": "other",
 }
 
+# Only these sample points may be considered as tank fill / water-change water.
+# Raw, post-treatment diagnostics, hose, etc. are never injected into tank AI.
+FILL_WATER_SAMPLE_POINTS = frozenset({
+    "tap", "bottled_spring", "bottled_distilled", "bottled",
+})
+
 _HOME_WATER_PROMPT_RULE = (
-    "Home/source water readings above are SHARED across all tanks (not tank chemistry). "
-    "For water-change advice, treat the latest tap (WC source) reading as the INCOMING water "
-    "and compare it to current tank parameters (e.g. how a % change will pull GH/KH toward "
-    "home-water values). Do NOT flag home-water GH/KH as tank out-of-range. Sample points other "
-    "than tap (raw, post-neutralizer, hose, lab panels, etc.) are diagnostic context only — "
-    "not the fill water — unless tank notes/schedule explicitly say that stream is used for changes. "
+    "Fill-water / source readings above are SHARED across tanks (not tank chemistry). "
+    "ONLY tap (home WC source) and bottled water (spring/distilled/other) appear here — "
+    "these are the only streams that may be used for water changes. "
+    "Never invent or assume raw well, post-neutralizer, post-softener, hose, or other "
+    "diagnostic home-water samples as tank fill; those are tracked separately and are "
+    "irrelevant to tank water-change advice. "
+    "For water-change advice: the newest reading that matches what the keeper actually "
+    "uses for fills is the INCOMING water. Default is latest tap (home WC source). If a "
+    "newer bottled-spring / bottled-distilled / bottled reading is present, treat that as "
+    "a candidate fill source when it is the newest fill-water row or when schedule/events/"
+    "notes indicate bottled water was used for changes. Compare tank parameters to that "
+    "incoming water (e.g. how a % change pulls GH/KH). Do NOT flag source GH/KH as tank "
+    "out-of-range. "
     "Kit nitrate near ~40–50 ppm is expected from this well (API chart colors are subjective; "
     "consistent color band is enough — do not over-precise or repeatedly flag stable ~40–50 "
-    "source nitrate as a new crisis). Softener/neutralizer do not remove nitrate, so WCs cannot "
-    "dilute tank nitrate below source. Household context: no infants or pregnancy; horses are "
-    "all healthy adults (3+ years), no foaling — do not hedge drinking/horse advice for "
-    "infants, pregnant people, mares, or foals."
+    "source nitrate as a new crisis). Softener/neutralizer do not remove nitrate, so WCs from "
+    "tap cannot dilute tank nitrate below source. Bottled distilled is essentially zero minerals "
+    "unless remineralized; spring varies by brand — use notes/vendor when present. "
+    "Household context: no infants or pregnancy; horses are all healthy adults (3+ years), "
+    "no foaling — do not hedge for infants, pregnant people, mares, or foals."
 )
 
 
@@ -115,10 +132,19 @@ def _fmt_home_water(rows):
 
 
 def load_home_water_tests(conn, limit=8):
-    """Load recent home water readings (newest first) for AI context."""
+    """Load recent *fill-water* home readings for tank AI (tap + bottled only).
+
+    Raw / post-treatment / hose / other diagnostic samples are excluded — they are
+    for home-water suitability and history, not tank water-change analysis.
+    """
+    placeholders = ",".join("?" * len(FILL_WATER_SAMPLE_POINTS))
     return rows_to_list(conn.execute(
-        "SELECT * FROM home_water_tests ORDER BY timestamp DESC, id DESC LIMIT ?",
-        (limit,),
+        f"""SELECT * FROM home_water_tests
+            WHERE sample_point IN ({placeholders})
+               OR sample_point IS NULL
+               OR sample_point = ''
+            ORDER BY timestamp DESC, id DESC LIMIT ?""",
+        (*FILL_WATER_SAMPLE_POINTS, limit),
     ).fetchall())
 
 
@@ -219,7 +245,7 @@ Recurring feeding/dosing/maintenance schedule:
 Tank activity over the last 4 weeks (newest first):
 {_fmt_timeline_rows(timeline_rows)}
 
-Home / source water (shared across all tanks — incoming water for water changes; newest first):
+Fill water for water changes (tap WC source and/or bottled only — newest first; NOT raw/diagnostic):
 {_fmt_home_water(home_water_tests)}
 {_HOME_WATER_PROMPT_RULE}
 
@@ -254,7 +280,7 @@ Hardscape:
 Recent Test Results (newest first):
 {_fmt_test_results(test_results)}
 
-Home / source water (shared across all tanks — incoming water for water changes; newest first):
+Fill water for water changes (tap WC source and/or bottled only — newest first; NOT raw/diagnostic):
 {_fmt_home_water(home_water_tests)}
 {_HOME_WATER_PROMPT_RULE}
 
@@ -270,7 +296,7 @@ Recent Events (last 30 days — evidence of actual practices, including water so
 {_CURRENT_PRACTICES_RULE}
 
 Please provide:
-1. A brief analysis of the water chemistry trends (include how tank parameters relate to home/source water when relevant, especially after water changes)
+1. A brief analysis of the water chemistry trends (include how tank parameters relate to fill/source water when relevant, especially after water changes)
 2. Any flags or concerns about parameters outside the *safe tolerance* range for this tank's inhabitants — use precise, species-specific ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary.
 3. Specific actionable recommendations
 4. For each open issue, suggest whether it should remain open, move to monitoring, or be resolved
@@ -300,7 +326,7 @@ Hardscape:
 Latest Water Parameters:
 {_fmt_test_results(test_results[:1])}
 
-Home / source water (shared — incoming water for water changes; newest first):
+Fill water for water changes (tap WC source and/or bottled only — newest first; NOT raw/diagnostic):
 {_fmt_home_water(home_water_tests)}
 {_HOME_WATER_PROMPT_RULE}
 
@@ -338,7 +364,7 @@ Active recurring schedule (authoritative for planned maintenance/dosing/feeding)
 Recent events (last 30 days — evidence of actual water source and dosing):
 {_fmt_events(events)}
 
-Home / source water readings (shared measured incoming water; prefer these over free-text guesses for GH/KH of tap):
+Fill water readings (tap WC source and/or bottled only — measured incoming water for changes; prefer over free-text guesses):
 {_fmt_home_water(home_water_tests)}
 
 Recent test results with notes (newest first; may record accepted parameter baselines):

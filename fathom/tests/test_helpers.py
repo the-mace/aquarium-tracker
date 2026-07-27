@@ -91,17 +91,17 @@ def test_fmt_home_water_formats_sample_and_lab():
         "tds": None, "temp": None, "sample_point": "tap", "is_lab_test": 0,
         "water_blend": "mixed", "notes": None,
     }, {
-        "timestamp": "2026-03-01 12:00:00", "gh": 12.0, "kh": 14.0,
+        "timestamp": "2026-03-01 12:00:00", "gh": 1.0, "kh": 0.5,
         "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
-        "tds": 280, "temp": None, "sample_point": "raw", "is_lab_test": 1,
-        "water_blend": "hard", "notes": "municipal report",
+        "tds": 10, "temp": None, "sample_point": "bottled_distilled", "is_lab_test": 0,
+        "water_blend": None, "notes": "store brand",
     }]
     result = _fmt_home_water(rows)
-    assert "[tap, mixed_hard_soft]" in result
+    assert "[tap_WC_source, mixed_hard_soft]" in result
     assert "GH=8.0" in result
-    assert "[raw, lab, hard_only]" in result
-    assert "TDS=280" in result
-    assert "municipal report" in result
+    assert "[bottled_distilled]" in result
+    assert "TDS=10" in result
+    assert "store brand" in result
 
 
 def test_build_recommendation_prompt_includes_home_water():
@@ -113,11 +113,41 @@ def test_build_recommendation_prompt_includes_home_water():
              "tds": None, "temp": None, "notes": None}]
     prompt = build_recommendation_prompt(tank, test_result, [test_result], [], [], [], [],
                                          home_water_tests=home)
-    assert "Home / source water" in prompt
+    assert "Fill water" in prompt
     assert "GH=8.0" in prompt
     assert "INCOMING" in prompt or "incoming" in prompt
+    assert "bottled" in prompt.lower()
     assert "infants" in prompt.lower()
     assert "adult" in prompt.lower() or "3+" in prompt
+
+
+def test_load_home_water_tests_excludes_raw_includes_bottled(tmp_path, monkeypatch):
+    import database as _db
+    from database import init_db, get_db
+    from routers.ai_analysis import load_home_water_tests
+
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "hw_fill.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO home_water_tests (timestamp, gh, sample_point) VALUES (?,?,?)",
+            ("2026-04-20 12:00:00", 5.0, "raw"),
+        )
+        conn.execute(
+            "INSERT INTO home_water_tests (timestamp, gh, sample_point) VALUES (?,?,?)",
+            ("2026-02-04 12:00:00", 8.0, "tap"),
+        )
+        conn.execute(
+            "INSERT INTO home_water_tests (timestamp, gh, sample_point, notes) VALUES (?,?,?,?)",
+            ("2026-03-01 12:00:00", 1.0, "bottled_spring", "Poland Spring"),
+        )
+        rows = load_home_water_tests(conn, limit=8)
+    points = {r["sample_point"] for r in rows}
+    assert "raw" not in points
+    assert "tap" in points
+    assert "bottled_spring" in points
+    assert all(r["sample_point"] in ("tap", "bottled_spring", "bottled_distilled", "bottled")
+               or not r["sample_point"] for r in rows)
 
 
 def test_build_analysis_prompt_includes_home_water():
@@ -126,7 +156,7 @@ def test_build_analysis_prompt_includes_home_water():
              "is_lab_test": 0, "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
              "tds": None, "temp": None, "notes": None}]
     prompt = build_analysis_prompt(tank, [], [], [], [], [], [], home_water_tests=home)
-    assert "Home / source water" in prompt
+    assert "Fill water" in prompt
     assert "GH=8.0" in prompt
 
 
@@ -136,7 +166,7 @@ def test_build_summary_prompt_includes_home_water():
              "is_lab_test": 0, "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
              "tds": None, "temp": None, "notes": None}]
     prompt = build_summary_prompt(tank, [], [], [], [], [], "analysis", home_water_tests=home)
-    assert "Home / source water" in prompt
+    assert "Fill water" in prompt
     assert "KH=10.0" in prompt
 
 

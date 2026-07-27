@@ -287,7 +287,8 @@ def init_db():
                 temp REAL,
                 sample_point TEXT DEFAULT 'tap'
                     CHECK(sample_point IN (
-                        'tap','raw','post_neutralizer','post_softener','hose','other'
+                        'tap','bottled_spring','bottled_distilled','bottled',
+                        'raw','post_neutralizer','post_softener','hose','other'
                     )),
                 -- Softener/blend context for well systems that mix hard + soft water.
                 -- null = not specified; 'as_used' = normal WC blend; hard/soft/mixed explicit.
@@ -407,6 +408,51 @@ def init_db():
         hw_cols = {row[1] for row in conn.execute("PRAGMA table_info(home_water_tests)").fetchall()}
         if hw_cols and "water_blend" not in hw_cols:
             conn.execute("ALTER TABLE home_water_tests ADD COLUMN water_blend TEXT")
+
+        # Migration: expand home_water_tests.sample_point CHECK to allow bottled fill sources.
+        # SQLite cannot ALTER a CHECK constraint in place — rebuild the table when needed.
+        hw_sql_row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='home_water_tests'"
+        ).fetchone()
+        hw_sql = (hw_sql_row[0] or "") if hw_sql_row else ""
+        if hw_sql and "bottled_spring" not in hw_sql:
+            conn.executescript("""
+                CREATE TABLE home_water_tests_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT DEFAULT (datetime('now')),
+                    ph REAL,
+                    gh REAL,
+                    kh REAL,
+                    ammonia REAL,
+                    nitrite REAL,
+                    nitrate REAL,
+                    tds REAL,
+                    temp REAL,
+                    sample_point TEXT DEFAULT 'tap'
+                        CHECK(sample_point IN (
+                            'tap','bottled_spring','bottled_distilled','bottled',
+                            'raw','post_neutralizer','post_softener','hose','other'
+                        )),
+                    water_blend TEXT
+                        CHECK(water_blend IS NULL OR water_blend IN (
+                            'as_used','hard','soft','mixed','unknown'
+                        )),
+                    is_lab_test INTEGER DEFAULT 0,
+                    notes TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now'))
+                );
+                INSERT INTO home_water_tests_new
+                    (id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+                     sample_point, water_blend, is_lab_test, notes, created_at, updated_at)
+                SELECT id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp,
+                       sample_point, water_blend, is_lab_test, notes, created_at, updated_at
+                FROM home_water_tests;
+                DROP TABLE home_water_tests;
+                ALTER TABLE home_water_tests_new RENAME TO home_water_tests;
+                CREATE INDEX IF NOT EXISTS idx_home_water_tests_ts
+                    ON home_water_tests(timestamp DESC);
+            """)
 
         # Migration: add schedule_id to events if not present
         cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}

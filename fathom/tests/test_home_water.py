@@ -48,13 +48,14 @@ def test_add_home_water_gh_kh(client):
     assert row["ph"] is None
 
 
-def test_add_home_water_lab_and_raw_sample(client):
+def test_manual_add_never_sets_lab_flag(client):
+    """Lab badge is only set via PDF/CSV import — not the manual form."""
     r = client.post(
         "/home-water",
         data={
             "gh": "12", "kh": "14", "tds": "280",
-            "sample_point": "raw", "is_lab_test": "1",
-            "notes": "municipal lab report",
+            "sample_point": "raw",
+            "notes": "hand-typed values",
             "timestamp": "2026-03-01 12:00:00",
         },
         headers={"Accept": "application/json"},
@@ -66,8 +67,8 @@ def test_add_home_water_lab_and_raw_sample(client):
             (r.json()["id"],),
         ).fetchone()
     assert row["sample_point"] == "raw"
-    assert row["is_lab_test"] == 1
-    assert "municipal" in row["notes"]
+    assert row["is_lab_test"] == 0
+    assert "hand-typed" in row["notes"]
     assert row["tds"] == 280.0
 
 
@@ -85,6 +86,26 @@ def test_add_invalid_sample_point_defaults_to_tap(client):
     assert row["sample_point"] == "tap"
 
 
+def test_add_bottled_spring_sample_point(client):
+    r = client.post(
+        "/home-water",
+        data={
+            "gh": "2", "kh": "1", "sample_point": "bottled_spring",
+            "notes": "Poland Spring gallon",
+            "timestamp": "2026-05-01 12:00:00",
+        },
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT sample_point, notes FROM home_water_tests WHERE id=?",
+            (r.json()["id"],),
+        ).fetchone()
+    assert row["sample_point"] == "bottled_spring"
+    assert "Poland Spring" in row["notes"]
+
+
 def test_update_home_water(client):
     created = client.post(
         "/home-water",
@@ -94,7 +115,7 @@ def test_update_home_water(client):
 
     r = client.post(
         f"/home-water/{created}/update",
-        data={"gh": "7.5", "kh": "9", "sample_point": "post_neutralizer", "is_lab_test": "1",
+        data={"gh": "7.5", "kh": "9", "sample_point": "post_neutralizer",
               "notes": "diagnostic", "timestamp": "2026-07-01 15:00:00"},
         headers={"Accept": "application/json"},
     )
@@ -107,7 +128,7 @@ def test_update_home_water(client):
     assert row["gh"] == 7.5
     assert row["kh"] == 9.0
     assert row["sample_point"] == "post_neutralizer"
-    assert row["is_lab_test"] == 1
+    assert row["is_lab_test"] == 0
     assert row["notes"] == "diagnostic"
 
 
@@ -367,7 +388,7 @@ def test_update_water_blend(client):
         f"/home-water/{created}/update",
         data={
             "gh": "8", "kh": "10", "sample_point": "raw",
-            "water_blend": "hard", "is_lab_test": "1",
+            "water_blend": "hard",
             "timestamp": "2024-01-01 12:00:00",
         },
         headers={"Accept": "application/json"},
@@ -380,6 +401,31 @@ def test_update_water_blend(client):
         ).fetchone()
     assert row["sample_point"] == "raw"
     assert row["water_blend"] == "hard"
+    assert row["is_lab_test"] == 0
+
+
+def test_update_preserves_lab_flag_from_import(client):
+    created = client.post(
+        "/home-water/bulk",
+        json={"readings": [{
+            "timestamp": "2024-06-01 12:00:00", "gh": 8.0, "kh": 10.0,
+            "sample_point": "tap", "is_lab_test": 1, "notes": "from PDF",
+        }]},
+    ).json()["ids"][0]
+    r = client.post(
+        f"/home-water/{created}/update",
+        data={
+            "gh": "8.5", "kh": "10", "sample_point": "tap",
+            "timestamp": "2024-06-01 12:00:00", "notes": "from PDF (edited)",
+        },
+        headers={"Accept": "application/json"},
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT gh, is_lab_test FROM home_water_tests WHERE id=?", (created,),
+        ).fetchone()
+    assert row["gh"] == 8.5
     assert row["is_lab_test"] == 1
 
 
