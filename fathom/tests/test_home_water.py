@@ -507,6 +507,13 @@ def test_build_home_water_summary_prompt_covers_tanks_drinking_raw():
     assert "drinking" in prompt.lower()
     assert "horse" in prompt.lower()
     assert "raw" in prompt.lower()
+    assert "No infants" in prompt or "no infants" in prompt.lower()
+    assert "3+" in prompt or "adult" in prompt.lower()
+    assert "subjective" in prompt.lower() or "40–50" in prompt or "40-50" in prompt
+    assert "foal" in prompt.lower()  # instruction to avoid foal hedging
+    assert "infant" in prompt.lower()
+    assert "blank line" in prompt.lower()
+    assert "tank name" in prompt.lower()
 
 
 def test_run_home_water_summary_persists(client, monkeypatch):

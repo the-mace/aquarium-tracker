@@ -263,7 +263,17 @@ def build_home_water_summary_prompt(
 
     return f"""You write a short suitability assessment of household well/source water for an aquarium keeper.
 
-Do NOT restate numeric parameter values (no "GH is 7", no "nitrate 39 ppm"). The UI already shows numbers. Speak qualitatively: soft/hard, buffered or not, elevated nitrate, non-detect nitrite, etc., and what that means.
+Do NOT restate numeric parameter values (no "GH is 7", no "nitrate 39 ppm"). The UI already shows numbers. Speak qualitatively: soft/hard, buffered or not, moderately elevated nitrate, non-detect nitrite, etc., and what that means.
+
+STANDING HOUSEHOLD CONTEXT (always apply — do not hedge for groups that are not present):
+- No infants and no pregnant people in the household. Do NOT mention infants, pregnancy, formula, or pediatric risk.
+- Horses are all healthy adults (3+ years). No foaling, no pregnant mares, no foals/youngstock. Do NOT mention mares, foals, breeding, or young-horse sensitivity.
+- Softener/neutralizer do NOT remove nitrate; source nitrate is a chronic well baseline, not a treatment failure.
+
+NITRATE / API KIT CONTEXT:
+- API nitrate color charts around the mid band (~40–50 ppm as NO3-) are extremely subjective; exact chart steps are not reliable precision.
+- When kit color is consistent test-to-test in that band (and labs land in the same ballpark), treat it as a stable moderate baseline — not a crisis, not a number to over-interpret, and not something to re-flag every time.
+- Only call out nitrate if it clearly trends up/down across readings or becomes a real floor issue for tank water changes (WC cannot dilute below source).
 
 ACTIVE TANKS (judge WC-source water against each tank's notes/targets/stock):
 {tanks_text}
@@ -280,21 +290,29 @@ LATEST RAW / UNFILTERED WELL READING (bypass softener/neutralizer — NOT the no
 Write plain text only (no markdown headers, no bullets with dashes if you can avoid them; short paragraphs are fine).
 
 Output format — plain text with exactly these two section markers (no JSON, no markdown).
-Write RAW_OUTDOOR first so it is never cut off, then WC_SOURCE. Keep the whole answer tight (about 200–350 words total).
+Write RAW_OUTDOOR first so it is never cut off, then WC_SOURCE. Keep the whole answer tight (about 150–280 words total).
 
 === RAW_OUTDOOR ===
-1 short paragraph (3–5 sentences max) on the latest RAW well sample as drinking water for horses (barn/pasture troughs, outdoor stock tanks). Equine-focused only: nitrate is the main well-water concern for horses (pregnant mares and foals most sensitive); also note nitrite if relevant, and whether this raw stream is fine for routine horse watering vs caution/alternate source. If no raw sample exists, say so in one sentence. Do not restate numbers. Not aquarium advice.
+1 short paragraph (2–4 sentences) on the latest RAW well sample as drinking water for adult horses only (barn/pasture troughs). Routine suitability for healthy adult horses; nitrite only if relevant. If no raw sample exists, say so in one sentence. Do not restate numbers. Not aquarium advice. No mare/foal language.
 
 === WC_SOURCE ===
-2 short paragraphs max: (1) suitability of the latest WC-source water for EACH named tank (shrimp vs fish targets, accepted KH baselines, etc.); (2) brief human drinking-water suitability of that same WC-source water (nitrate/nitrite/potability — no long disclaimers). Do not restate numbers.
+Structure this section for easy scanning (whitespace matters — the UI preserves blank lines):
+
+1) One short block per named tank. Start each block with the tank name on its own line (e.g. "Shrimp Tank:"), then 1–3 sentences on suitability for that tank only (targets, stock, nitrate as stable source floor — not a kit-precision debate).
+2) Put a blank line between each tank block so they are visually separated.
+3) After all tanks, one blank line, then a short "Drinking water:" block for adult household use only (no infant/pregnancy caveats).
+
+Do not restate numbers. Do not merge all tanks into one dense paragraph.
 
 Rules:
 - Prefer tank notes accepted baselines over generic species norms.
 - WC-source and raw may differ a lot (softener/neutralizer); never conflate them.
-- Outdoor section is horse-specific (not poultry, dogs, or generic livestock).
+- Outdoor section is adult-horse-specific (not poultry, dogs, foals, or generic livestock).
+- Never invent infant/pregnancy/mare/foal warnings for this household.
 - If data is thin, say what's uncertain rather than inventing.
 - Plain text only — no JSON, no code fences, no bullet markdown.
 - Stay concise; finish both sections completely.
+- Always use blank lines between tank blocks in WC_SOURCE.
 """
 
 

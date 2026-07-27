@@ -116,6 +116,8 @@ def test_build_recommendation_prompt_includes_home_water():
     assert "Home / source water" in prompt
     assert "GH=8.0" in prompt
     assert "INCOMING" in prompt or "incoming" in prompt
+    assert "infants" in prompt.lower()
+    assert "adult" in prompt.lower() or "3+" in prompt
 
 
 def test_build_analysis_prompt_includes_home_water():

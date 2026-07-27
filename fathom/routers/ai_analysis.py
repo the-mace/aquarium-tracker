@@ -67,7 +67,13 @@ _HOME_WATER_PROMPT_RULE = (
     "and compare it to current tank parameters (e.g. how a % change will pull GH/KH toward "
     "home-water values). Do NOT flag home-water GH/KH as tank out-of-range. Sample points other "
     "than tap (raw, post-neutralizer, hose, lab panels, etc.) are diagnostic context only — "
-    "not the fill water — unless tank notes/schedule explicitly say that stream is used for changes."
+    "not the fill water — unless tank notes/schedule explicitly say that stream is used for changes. "
+    "Kit nitrate near ~40–50 ppm is expected from this well (API chart colors are subjective; "
+    "consistent color band is enough — do not over-precise or repeatedly flag stable ~40–50 "
+    "source nitrate as a new crisis). Softener/neutralizer do not remove nitrate, so WCs cannot "
+    "dilute tank nitrate below source. Household context: no infants or pregnancy; horses are "
+    "all healthy adults (3+ years), no foaling — do not hedge drinking/horse advice for "
+    "infants, pregnant people, mares, or foals."
 )
 
 
