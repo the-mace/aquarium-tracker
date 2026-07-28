@@ -34,7 +34,7 @@
       <div class="sidebar-section">
         <span class="sidebar-label">{{ tank.name }}</span>
         <a href="/tanks/{{ tank.id }}" class="sidebar-link {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
-        <a href="/tanks/{{ tank.id }}/tests/new" class="sidebar-link {% if active == 'tests' %}active{% endif %}">Add Test</a>
+        <a href="/tanks/{{ tank.id }}/tests" class="sidebar-link {% if active == 'tests' %}active{% endif %}">Test Results</a>
         <a href="/tanks/{{ tank.id }}/inhabitants" class="sidebar-link {% if active == 'inhabitants' %}active{% endif %}">Inhabitants</a>
         <a href="/tanks/{{ tank.id }}/plants" class="sidebar-link {% if active == 'plants' %}active{% endif %}">Plants & Hardscape</a>
         <a href="/tanks/{{ tank.id }}/equipment" class="sidebar-link {% if active == 'equipment' %}active{% endif %}">Equipment</a>
