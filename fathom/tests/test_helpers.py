@@ -159,6 +159,8 @@ def test_fmt_home_water_formats_sample_and_lab():
 
 def test_build_home_water_baseline_merges_partial_rows():
     """GH-only newest reading still carries earlier KH/pH into the baseline."""
+    from datetime import datetime, timezone
+    now = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
     rows = [
         {"id": 2, "timestamp": "2026-08-05 12:00:00", "gh": 8.0, "kh": None, "ph": None,
          "ammonia": None, "nitrite": None, "nitrate": None, "tds": None, "temp": None,
@@ -167,7 +169,7 @@ def test_build_home_water_baseline_merges_partial_rows():
          "ammonia": None, "nitrite": None, "nitrate": 40.0, "tds": None, "temp": None,
          "sample_point": "tap"},
     ]
-    baseline = build_home_water_baseline(rows)
+    baseline = build_home_water_baseline(rows, now=now)
     assert baseline is not None
     assert baseline["is_composite"] is True
     assert baseline["by_key"]["gh"]["value"] == 8.0
@@ -176,17 +178,43 @@ def test_build_home_water_baseline_merges_partial_rows():
     assert baseline["by_key"]["kh"]["timestamp"] == "2026-07-01 12:00:00"
     assert baseline["by_key"]["ph"]["value"] == 7.2
     assert baseline["by_key"]["nitrate"]["value"] == 40.0
+    # July→August is well under 90 days
+    assert baseline["has_stale"] is False
+    assert baseline["by_key"]["gh"]["is_stale"] is False
+    assert baseline["by_key"]["kh"]["is_stale"] is False
+
+
+def test_build_home_water_baseline_marks_stale_over_90_days():
+    """Params whose as-of date is >3 months old are flagged for the red UI cue."""
+    from datetime import datetime, timezone
+    now = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
+    rows = [
+        {"id": 2, "timestamp": "2026-08-01 12:00:00", "gh": 8.0, "kh": None, "ph": None,
+         "ammonia": None, "nitrite": None, "nitrate": None, "tds": None, "temp": None,
+         "sample_point": "tap"},
+        {"id": 1, "timestamp": "2026-04-01 12:00:00", "gh": 7.0, "kh": 10.0, "ph": 7.2,
+         "ammonia": None, "nitrite": None, "nitrate": 40.0, "tds": None, "temp": None,
+         "sample_point": "tap"},
+    ]
+    baseline = build_home_water_baseline(rows, now=now)
+    assert baseline["by_key"]["gh"]["is_stale"] is False
+    assert baseline["by_key"]["kh"]["is_stale"] is True
+    assert baseline["by_key"]["ph"]["is_stale"] is True
+    assert baseline["has_stale"] is True
 
 
 def test_build_home_water_baseline_single_full_row_not_composite():
+    from datetime import datetime, timezone
+    now = datetime(2026, 7, 15, 12, 0, 0, tzinfo=timezone.utc)
     rows = [{
         "id": 1, "timestamp": "2026-07-01 12:00:00", "gh": 8.0, "kh": 10.0,
         "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
         "tds": None, "temp": None, "sample_point": "tap",
     }]
-    baseline = build_home_water_baseline(rows)
+    baseline = build_home_water_baseline(rows, now=now)
     assert baseline["is_composite"] is False
     assert len(baseline["params"]) == 2
+    assert baseline["has_stale"] is False
 
 
 def test_build_home_water_baseline_empty():

@@ -109,16 +109,19 @@
     <div class="param-grid">
       {% for p in home_water_baseline.params %}
       {% if p.key in ('gh', 'kh', 'ph', 'tds', 'nitrate') %}
-      <div class="param-item">
+      <div class="param-item{% if p.is_stale %} param-item-stale{% endif %}">
         <span class="param-label">{{ p.label }}</span>
         <span class="param-value">{{ p.value }}{% if p.key == 'temp' %}°{% endif %}</span>
-        {% if home_water_baseline.is_composite and p.timestamp %}
+        {% if (home_water_baseline.is_composite or p.is_stale) and p.timestamp %}
         <span class="param-asof ts-local" data-utc="{{ p.timestamp }}" data-date-only="1">{{ p.timestamp }}</span>
         {% endif %}
       </div>
       {% endif %}
       {% endfor %}
     </div>
+    {% if home_water_baseline.has_stale %}
+    <p class="baseline-stale-note">Values in red are &gt;3 months old — consider a full home-water test.</p>
+    {% endif %}
     <div class="stat-card-footer">
       {% if home_water_baseline.is_composite %}
       Last known per param

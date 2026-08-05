@@ -394,6 +394,19 @@ p { margin-bottom: .5rem; }
   text-align: center;
   opacity: .9;
 }
+/* Baseline values older than ~3 months — nudge for a full kit retest */
+.param-item-stale .param-label,
+.param-item-stale .param-value,
+.param-item-stale .param-asof {
+  color: #f87171;
+}
+.param-item-stale .param-asof { opacity: 1; }
+.baseline-stale-note {
+  font-size: .75rem;
+  color: #f87171;
+  margin: .45rem 0 0;
+  line-height: 1.35;
+}
 .param-danger { color: #f87171; }
 .param-warn   { color: var(--warning); }
 

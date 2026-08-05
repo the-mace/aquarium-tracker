@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -181,6 +182,10 @@ HOME_WATER_PARAM_DEFS = (
 )
 HOME_WATER_PARAM_KEYS = tuple(k for k, _ in HOME_WATER_PARAM_DEFS)
 
+# UI reminder: values whose as-of date is older than this are highlighted red
+# ("consider a full kit test"). ~3 calendar months.
+BASELINE_STALE_DAYS = 90
+
 
 def _norm_sample_point_row(row: dict) -> str:
     sp = (row.get("sample_point") or "tap").strip().lower()
@@ -192,12 +197,49 @@ def _row_sort_key(row: dict):
     return (row.get("timestamp") or "", row.get("id") or 0)
 
 
-def build_home_water_baseline(rows: list[dict]) -> Optional[dict]:
+def _parse_home_water_ts(ts: Optional[str]) -> Optional[datetime]:
+    """Parse stored home-water timestamps (UTC 'YYYY-MM-DD[ HH:MM:SS]')."""
+    if not ts:
+        return None
+    s = str(ts).strip().replace("T", " ")
+    for fmt, n in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16), ("%Y-%m-%d", 10)):
+        try:
+            return datetime.strptime(s[:n], fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _is_baseline_ts_stale(
+    ts: Optional[str],
+    *,
+    now: Optional[datetime] = None,
+    stale_days: int = BASELINE_STALE_DAYS,
+) -> bool:
+    """True when the reading date is older than stale_days (default ~3 months)."""
+    dt = _parse_home_water_ts(ts)
+    if dt is None:
+        return False
+    now_utc = now or datetime.now(timezone.utc)
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=timezone.utc)
+    return (now_utc - dt).days > stale_days
+
+
+def build_home_water_baseline(
+    rows: list[dict],
+    *,
+    now: Optional[datetime] = None,
+    stale_days: int = BASELINE_STALE_DAYS,
+) -> Optional[dict]:
     """Last-known value per parameter across *rows* (partial logs OK).
 
     Walks newest → oldest and takes the first non-null for each field. Callers
     should pass a single sample stream (e.g. tap only) so GH from a WC-day
     reading is not mixed with a different sample type.
+
+    Each param gets ``is_stale`` when its as-of date is older than ``stale_days``
+    (~3 months) so the UI can remind the keeper to run a full kit test.
 
     Returns None if no numeric params exist. Structure::
 
@@ -205,12 +247,14 @@ def build_home_water_baseline(rows: list[dict]) -> Optional[dict]:
           "sample_point": "tap",
           "params": [
             {"key": "gh", "label": "GH", "value": 8.0,
-             "timestamp": "2026-08-05 12:00:00", "source_id": 12},
+             "timestamp": "2026-08-05 12:00:00", "source_id": 12,
+             "is_stale": False},
             ...
           ],
           "by_key": {"gh": {...}, ...},
           "newest_timestamp": "2026-08-05 12:00:00",
           "is_composite": True,  # values come from more than one reading date
+          "has_stale": True,     # any param older than stale_days
         }
     """
     if not rows:
@@ -224,12 +268,14 @@ def build_home_water_baseline(rows: list[dict]) -> Optional[dict]:
             val = r.get(key)
             if val is None:
                 continue
+            ts = r.get("timestamp")
             found[key] = {
                 "key": key,
                 "label": label,
                 "value": val,
-                "timestamp": r.get("timestamp"),
+                "timestamp": ts,
                 "source_id": r.get("id"),
+                "is_stale": _is_baseline_ts_stale(ts, now=now, stale_days=stale_days),
             }
     if not found:
         return None
@@ -242,6 +288,7 @@ def build_home_water_baseline(rows: list[dict]) -> Optional[dict]:
         "by_key": found,
         "newest_timestamp": newest_ts,
         "is_composite": len(timestamps) > 1,
+        "has_stale": any(p.get("is_stale") for p in params),
     }
 
 

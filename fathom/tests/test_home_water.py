@@ -250,6 +250,46 @@ def test_dashboard_and_list_show_composite_baseline(client, tank_id):
     assert "Combined from multiple readings" in page.text
 
 
+def test_stale_baseline_params_flagged_in_ui(client, tank_id, monkeypatch):
+    """Baseline values >3 months old get param-item-stale + red reminder text."""
+    from datetime import datetime, timezone
+    import routers.home_water as hw
+
+    fixed_now = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
+
+    def _baseline_fixed(conn, limit=50):
+        return hw.build_home_water_baseline(
+            hw.load_wc_source_tests(conn, limit=limit), now=fixed_now,
+        )
+
+    monkeypatch.setattr(hw, "wc_source_baseline", _baseline_fixed)
+    # tanks.py imported the real function at load time — patch there too
+    import routers.tanks as tanks_mod
+    monkeypatch.setattr(tanks_mod, "wc_source_baseline", _baseline_fixed)
+
+    client.post(
+        "/home-water",
+        data={"gh": "7.0", "kh": "10", "ph": "7.2", "sample_point": "tap",
+              "timestamp": "2026-04-01 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    client.post(
+        "/home-water",
+        data={"gh": "8.0", "sample_point": "tap", "timestamp": "2026-08-01 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+
+    page = client.get("/home-water")
+    assert page.status_code == 200
+    assert "param-item-stale" in page.text
+    assert "full home-water test" in page.text
+
+    dash = client.get(f"/tanks/{tank_id}")
+    assert dash.status_code == 200
+    assert "param-item-stale" in dash.text
+    assert "full home-water test" in dash.text
+
+
 def test_latest_wc_source_prefers_tap(client):
     from routers.home_water import latest_wc_source_test
 
