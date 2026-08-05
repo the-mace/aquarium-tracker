@@ -442,7 +442,7 @@ def test_event_with_schedule_id_snaps_to_day_of_week(client, tank_id):
 
 def test_mark_done_snaps_to_day_of_week_not_flat_interval(client, tank_id):
     # Regression: a task pinned to a weekday (e.g. Thursday) but marked done a day
-    # late/early (e.g. Friday) should come due on the *next* occurrence of that
+    # late (e.g. Friday) should come due on the *next* occurrence of that
     # weekday, not exactly interval_days after whatever day it was actually done.
     dow_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     target_dow = dow_names[(date.today().weekday() - 1) % 7]
@@ -466,6 +466,57 @@ def test_mark_done_snaps_to_day_of_week_not_flat_interval(client, tank_id):
     with _db.get_db() as conn:
         sched = dict(conn.execute("SELECT next_due FROM recurring_schedule WHERE id=?", (sch_id,)).fetchone())
     assert sched["next_due"] == expected_next
+
+
+def test_mark_done_early_skips_this_weeks_preferred_day(client, tank_id):
+    # Regression: weekly Thursday task marked done Wednesday must NOT leave
+    # next_due as tomorrow (this week's Thursday) — that was the early-WC bug.
+    # Next due is the *following* preferred weekday (tomorrow + 7).
+    from routers.schedules import compute_next_due
+
+    # Fixed calendar cases (independent of "today")
+    wed = date(2026, 8, 5)   # Wednesday
+    thu = date(2026, 8, 6)   # Thursday
+    fri = date(2026, 8, 7)   # Friday
+    sun = date(2026, 8, 9)   # Sunday
+    assert compute_next_due("thu", 7, wed) == "2026-08-13"  # next next Thu (+8)
+    assert compute_next_due("thu", 7, thu) == "2026-08-13"  # next Thu (+7)
+    assert compute_next_due("thu", 7, fri) == "2026-08-13"  # next Thu (+6)
+    assert compute_next_due("mon", 7, sun) == "2026-08-17"  # skip tomorrow Mon → +8
+
+    dow_names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    target_dow = dow_names[(date.today().weekday() + 1) % 7]  # tomorrow
+
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={
+            "category": "maintenance",
+            "day_of_week": target_dow,
+            "description": "Early WC weekly",
+            "interval_days": "7",
+        },
+        follow_redirects=False,
+    )
+    import database as _db
+    with _db.get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM recurring_schedule WHERE tank_id=? AND description='Early WC weekly'",
+            (tank_id,),
+        ).fetchone()
+    sch_id = row[0]
+
+    client.post(f"/tanks/{tank_id}/schedule/{sch_id}/mark-done", follow_redirects=False)
+
+    # Tomorrow's preferred day + 7 days (skip this week's occurrence)
+    expected_next = (date.today() + timedelta(days=8)).isoformat()
+    with _db.get_db() as conn:
+        sched = dict(conn.execute(
+            "SELECT last_done, next_due FROM recurring_schedule WHERE id=?", (sch_id,)
+        ).fetchone())
+    assert sched["last_done"] == date.today().isoformat()
+    assert sched["next_due"] == expected_next
+    # Must not be tomorrow (the bug)
+    assert sched["next_due"] != (date.today() + timedelta(days=1)).isoformat()
 
 
 def test_mark_done_long_interval_with_day_of_week_aligns_after_interval(client, tank_id):

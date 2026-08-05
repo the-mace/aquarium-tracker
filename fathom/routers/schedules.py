@@ -63,9 +63,20 @@ def compute_next_due(day_of_week, interval_days, from_date):
     """Next due date after from_date (the day a task was just done).
 
     For weekly-cadence tasks (interval_days of 7 or less, or no interval at all)
-    pinned to a day_of_week, due dates always land on that weekday — e.g. done
-    Friday but tied to Thursday should come due the *next* Thursday (6 days
-    later), not 7 days after whatever day it actually got marked done.
+    pinned to a day_of_week, due dates always land on that weekday, and marking
+    done always completes the *current* cycle:
+
+    - On the preferred day → same weekday next week (+7)
+    - Late (e.g. Friday for a Thursday task) → the next preferred weekday
+      (Friday→Thursday = +6)
+    - Early (e.g. Wednesday for a Thursday task) → skip this week's preferred
+      day and land on the following one (Wednesday→Thursday = +8), not tomorrow.
+      Without this, an early water change would leave next_due as "tomorrow"
+      and look due again almost immediately.
+
+    Early vs late is decided by which preferred weekday is closer: if the
+    upcoming preferred day is closer than the previous one, treat as early and
+    add another week (handles Sunday-before-Monday as well as Wed-before-Thu).
 
     For longer intervals (e.g. a 30-day task that's also pinned to a weekday),
     the day_of_week is a landing-day preference rather than the cadence itself:
@@ -74,13 +85,19 @@ def compute_next_due(day_of_week, interval_days, from_date):
     interval task would incorrectly come due only 7 days later.
     """
     if day_of_week and day_of_week in _DOW_INDEX:
+        preferred = _DOW_INDEX[day_of_week]
         if interval_days and interval_days > 7:
             target = from_date + timedelta(days=interval_days)
-            return _next_weekday(target, _DOW_INDEX[day_of_week]).isoformat()
-        days_ahead = _DOW_INDEX[day_of_week] - from_date.weekday()
-        if days_ahead <= 0:
-            days_ahead += 7
-        return (from_date + timedelta(days=days_ahead)).isoformat()
+            return _next_weekday(target, preferred).isoformat()
+        # Weekly cadence pinned to a weekday.
+        days_since = (from_date.weekday() - preferred) % 7  # 0 = done on preferred day
+        if days_since == 0:
+            return (from_date + timedelta(days=7)).isoformat()
+        days_until = (preferred - from_date.weekday()) % 7  # 1..6 → next preferred
+        # Closer to the upcoming preferred day than the last one → early; skip it.
+        if days_until < days_since:
+            days_until += 7
+        return (from_date + timedelta(days=days_until)).isoformat()
     if interval_days:
         return (from_date + timedelta(days=interval_days)).isoformat()
     return None
