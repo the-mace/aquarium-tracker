@@ -66,7 +66,37 @@
 {% endif %}
 {% endif %}
 
-{% if latest_tap %}
+{% if tap_baseline and tap_baseline.params %}
+<div class="stat-card" style="margin-bottom:1.25rem;max-width:32rem">
+  <div class="stat-card-title">WC source baseline (tap)</div>
+  <p class="muted" style="font-size:.78rem;margin:0 0 .6rem">
+    Last known value per parameter. Partial logs (e.g. GH-only on water-change days) are filled from earlier tap readings.
+  </p>
+  <div class="param-grid">
+    {% for p in tap_baseline.params %}
+    <div class="param-item">
+      <span class="param-label">{{ p.label }}</span>
+      <span class="param-value">{{ p.value }}{% if p.key == 'temp' %}°{% endif %}</span>
+      {% if tap_baseline.is_composite and p.timestamp %}
+      <span class="param-asof ts-local" data-utc="{{ p.timestamp }}" data-date-only="1">{{ p.timestamp }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="stat-card-footer">
+    {% if tap_baseline.is_composite %}
+    Combined from multiple readings
+    {% if tap_baseline.newest_timestamp %}
+    · newest <span class="ts-local" data-utc="{{ tap_baseline.newest_timestamp }}" data-date-only="1">{{ tap_baseline.newest_timestamp }}</span>
+    {% endif %}
+    {% elif tap_baseline.newest_timestamp %}
+    <span class="ts-local" data-utc="{{ tap_baseline.newest_timestamp }}">{{ tap_baseline.newest_timestamp }}</span>
+    {% endif %}
+    {% if latest_tap and latest_tap.water_blend %}<span class="badge badge-cat" style="margin-left:.35rem">{{ water_blend_labels.get(latest_tap.water_blend, latest_tap.water_blend) }}</span>{% endif %}
+    {% if latest_tap and latest_tap.is_lab_test %}<span class="badge badge-warning" style="margin-left:.25rem">Lab</span>{% endif %}
+  </div>
+</div>
+{% elif latest_tap %}
 <div class="stat-card" style="margin-bottom:1.25rem;max-width:28rem">
   <div class="stat-card-title">Latest WC source (tap)</div>
   <div class="param-grid">

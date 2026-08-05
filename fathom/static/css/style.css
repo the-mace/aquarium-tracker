@@ -385,6 +385,15 @@ p { margin-bottom: .5rem; }
 }
 .param-label { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .param-value { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+/* Per-param as-of date on composite home-water baseline cards */
+.param-asof {
+  font-size: .6rem;
+  color: var(--muted);
+  margin-top: .15rem;
+  line-height: 1.2;
+  text-align: center;
+  opacity: .9;
+}
 .param-danger { color: #f87171; }
 .param-warn   { color: var(--warning); }
 

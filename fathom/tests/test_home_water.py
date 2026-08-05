@@ -13,6 +13,7 @@ from routers.home_water import (
     home_water_summary_is_stale,
     should_refresh_home_water_summary_after_write,
     run_home_water_summary,
+    wc_source_baseline,
 )
 
 
@@ -211,6 +212,42 @@ def test_dashboard_shows_latest_tap_home_water(client, tank_id):
     assert "11" in r.text
     # Featured card is tap GH/KH, not the newer raw-only reading
     assert "Home Water (tap)" in r.text
+
+
+def test_dashboard_and_list_show_composite_baseline(client, tank_id):
+    """GH-only newest tap still surfaces older KH on dashboard + home-water page."""
+    client.post(
+        "/home-water",
+        data={"gh": "7.5", "kh": "10", "ph": "7.2", "sample_point": "tap",
+              "timestamp": "2026-07-01 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    client.post(
+        "/home-water",
+        data={"gh": "8.0", "sample_point": "tap", "timestamp": "2026-08-05 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    with get_db() as conn:
+        baseline = wc_source_baseline(conn)
+    assert baseline is not None
+    assert baseline["is_composite"] is True
+    assert baseline["by_key"]["gh"]["value"] == 8.0
+    assert baseline["by_key"]["kh"]["value"] == 10.0
+
+    dash = client.get(f"/tanks/{tank_id}")
+    assert dash.status_code == 200
+    assert "Home Water (tap)" in dash.text
+    assert "8.0" in dash.text or "8" in dash.text
+    assert "10" in dash.text
+    assert "Last known per param" in dash.text
+
+    page = client.get("/home-water")
+    assert page.status_code == 200
+    assert "WC source baseline" in page.text
+    assert "Last known value per parameter" in page.text
+    assert "8" in page.text
+    assert "10" in page.text
+    assert "Combined from multiple readings" in page.text
 
 
 def test_latest_wc_source_prefers_tap(client):

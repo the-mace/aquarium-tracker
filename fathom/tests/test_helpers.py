@@ -6,12 +6,13 @@ from database import row_to_dict, rows_to_list, init_db, get_db
 from routers.ai_analysis import (
     _fmt_test_results, _fmt_inhabitants, _fmt_plants, _fmt_hardscape,
     _fmt_issues, _fmt_issues_with_id, _fmt_events, _fmt_schedule, _fmt_timeline_rows, _fmt_tank_notes,
-    _fmt_home_water,
+    _fmt_home_water, _fmt_home_water_block, _baseline_from_fill_rows,
     _message_text,
     build_recommendation_prompt, build_analysis_prompt, build_summary_prompt,
     build_issue_review_prompt, _parse_issue_updates,
     build_notes_proposal_prompt, _parse_notes_proposal,
 )
+from routers.home_water import build_home_water_baseline
 
 
 # ── database helpers ────────────────────────────────────────────────────────
@@ -156,6 +157,78 @@ def test_fmt_home_water_formats_sample_and_lab():
     assert "store brand" in result
 
 
+def test_build_home_water_baseline_merges_partial_rows():
+    """GH-only newest reading still carries earlier KH/pH into the baseline."""
+    rows = [
+        {"id": 2, "timestamp": "2026-08-05 12:00:00", "gh": 8.0, "kh": None, "ph": None,
+         "ammonia": None, "nitrite": None, "nitrate": None, "tds": None, "temp": None,
+         "sample_point": "tap"},
+        {"id": 1, "timestamp": "2026-07-01 12:00:00", "gh": 7.5, "kh": 10.0, "ph": 7.2,
+         "ammonia": None, "nitrite": None, "nitrate": 40.0, "tds": None, "temp": None,
+         "sample_point": "tap"},
+    ]
+    baseline = build_home_water_baseline(rows)
+    assert baseline is not None
+    assert baseline["is_composite"] is True
+    assert baseline["by_key"]["gh"]["value"] == 8.0
+    assert baseline["by_key"]["gh"]["timestamp"] == "2026-08-05 12:00:00"
+    assert baseline["by_key"]["kh"]["value"] == 10.0
+    assert baseline["by_key"]["kh"]["timestamp"] == "2026-07-01 12:00:00"
+    assert baseline["by_key"]["ph"]["value"] == 7.2
+    assert baseline["by_key"]["nitrate"]["value"] == 40.0
+
+
+def test_build_home_water_baseline_single_full_row_not_composite():
+    rows = [{
+        "id": 1, "timestamp": "2026-07-01 12:00:00", "gh": 8.0, "kh": 10.0,
+        "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+        "tds": None, "temp": None, "sample_point": "tap",
+    }]
+    baseline = build_home_water_baseline(rows)
+    assert baseline["is_composite"] is False
+    assert len(baseline["params"]) == 2
+
+
+def test_build_home_water_baseline_empty():
+    assert build_home_water_baseline([]) is None
+    assert build_home_water_baseline([{"gh": None, "kh": None, "timestamp": "x"}]) is None
+
+
+def test_fmt_home_water_block_includes_baseline():
+    rows = [
+        {"id": 2, "timestamp": "2026-08-05 12:00:00", "gh": 8.0, "kh": None,
+         "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+         "tds": None, "temp": None, "sample_point": "tap", "is_lab_test": 0,
+         "water_blend": None, "notes": None},
+        {"id": 1, "timestamp": "2026-07-01 12:00:00", "gh": 7.5, "kh": 10.0,
+         "ph": None, "ammonia": None, "nitrite": None, "nitrate": None,
+         "tds": None, "temp": None, "sample_point": "tap", "is_lab_test": 0,
+         "water_blend": None, "notes": None},
+    ]
+    block = _fmt_home_water_block(rows)
+    assert "Current fill-water baseline" in block
+    assert "GH=8.0" in block
+    assert "KH=10.0" in block
+    assert "as of 2026-08-05" in block
+    assert "as of 2026-07-01" in block
+    assert "Recent fill-water readings" in block
+    # Baseline uses only the newest stream's sample_point (tap), not bottled
+    assert _baseline_from_fill_rows(rows)["sample_point"] == "tap"
+
+
+def test_baseline_from_fill_rows_prefers_newest_stream():
+    rows = [
+        {"id": 3, "timestamp": "2026-08-05", "gh": 1.0, "kh": None, "sample_point": "bottled_spring",
+         "ph": None, "ammonia": None, "nitrite": None, "nitrate": None, "tds": None, "temp": None},
+        {"id": 2, "timestamp": "2026-08-01", "gh": 8.0, "kh": 10.0, "sample_point": "tap",
+         "ph": None, "ammonia": None, "nitrite": None, "nitrate": None, "tds": None, "temp": None},
+    ]
+    baseline = _baseline_from_fill_rows(rows)
+    assert baseline["sample_point"] == "bottled_spring"
+    assert baseline["by_key"]["gh"]["value"] == 1.0
+    assert "kh" not in baseline["by_key"]  # don't pull KH from a different stream
+
+
 def test_build_recommendation_prompt_includes_home_water():
     tank = {"name": "5G Tank", "water_type": "fresh", "volume_gallons": 5, "notes": ""}
     test_result = {"id": 1, "timestamp": "2026-07-02 08:00:00", "ph": 7.0, "gh": 6.0, "kh": 4.0,
@@ -167,11 +240,13 @@ def test_build_recommendation_prompt_includes_home_water():
                                          home_water_tests=home)
     assert "Fill water" in prompt
     assert "GH=8.0" in prompt
+    assert "Current fill-water baseline" in prompt
     assert "INCOMING" in prompt or "incoming" in prompt
     assert "bottled" in prompt.lower()
     assert "prior week" in prompt.lower() or "aged" in prompt.lower()
     assert "infants" in prompt.lower()
     assert "adult" in prompt.lower() or "3+" in prompt
+    assert "partial" in prompt.lower() or "last known" in prompt.lower()
 
 
 def test_load_home_water_tests_excludes_raw_includes_bottled(tmp_path, monkeypatch):

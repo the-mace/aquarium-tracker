@@ -15,7 +15,7 @@ from database import get_db, get_db_readonly, get_schema_text, rows_to_list, row
 from ai_config import CLAUDE_MODEL
 from routers.ai_analysis import (
     _fmt_tank_notes, _fmt_inhabitants, _fmt_schedule, _CURRENT_PRACTICES_RULE,
-    _fmt_home_water, _HOME_WATER_PROMPT_RULE, load_home_water_tests,
+    _fmt_home_water_block, _HOME_WATER_PROMPT_RULE, load_home_water_tests,
 )
 
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
@@ -114,9 +114,9 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         parts.append("\nLatest Water Parameters: none recorded")
 
     parts.append(
-        "\nFill water for water changes (tap WC source and/or bottled only — newest first; "
+        "\nFill water for water changes (tap WC source and/or bottled only — "
         "NOT raw/diagnostic home-water samples):\n"
-        + _fmt_home_water(home_water_tests)
+        + _fmt_home_water_block(home_water_tests)
     )
     parts.append(_HOME_WATER_PROMPT_RULE)
 
@@ -239,7 +239,7 @@ def _gather_tank_context(conn, tank_id: int) -> dict:
             "SELECT * FROM recurring_schedule WHERE tank_id = ? AND is_active = 1",
             (tank_id,),
         ).fetchall()),
-        "home_water_tests": load_home_water_tests(conn, limit=8),
+        "home_water_tests": load_home_water_tests(conn),
     }
 
 

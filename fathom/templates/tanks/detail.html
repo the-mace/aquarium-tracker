@@ -103,7 +103,35 @@
   </div>
   {% endif %}
 
-  {% if latest_home_water %}
+  {% if home_water_baseline and home_water_baseline.params %}
+  <div class="stat-card">
+    <div class="stat-card-title">Home Water (tap)</div>
+    <div class="param-grid">
+      {% for p in home_water_baseline.params %}
+      {% if p.key in ('gh', 'kh', 'ph', 'tds', 'nitrate') %}
+      <div class="param-item">
+        <span class="param-label">{{ p.label }}</span>
+        <span class="param-value">{{ p.value }}{% if p.key == 'temp' %}°{% endif %}</span>
+        {% if home_water_baseline.is_composite and p.timestamp %}
+        <span class="param-asof ts-local" data-utc="{{ p.timestamp }}" data-date-only="1">{{ p.timestamp }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    <div class="stat-card-footer">
+      {% if home_water_baseline.is_composite %}
+      Last known per param
+      {% if home_water_baseline.newest_timestamp %}
+      · newest <span class="ts-local" data-utc="{{ home_water_baseline.newest_timestamp }}" data-date-only="1">{{ home_water_baseline.newest_timestamp }}</span>
+      {% endif %}
+      {% elif home_water_baseline.newest_timestamp %}
+      <span class="ts-local" data-utc="{{ home_water_baseline.newest_timestamp }}">{{ home_water_baseline.newest_timestamp }}</span>
+      {% endif %}
+      · <a href="/home-water" class="link-sm">History →</a>
+    </div>
+  </div>
+  {% elif latest_home_water %}
   <div class="stat-card">
     <div class="stat-card-title">Home Water (tap)</div>
     <div class="param-grid">

@@ -515,17 +515,21 @@ function utcToLocalInputValue(utcString) {
 
 // Parse a stored "YYYY-MM-DD HH:MM:SS" UTC string and format it for display
 // in the browser's local timezone.
-function formatLocalTimestamp(utcString) {
+// dateOnly: true → "YYYY-MM-DD" only (compact as-of labels on composite cards).
+function formatLocalTimestamp(utcString, dateOnly = false) {
   if (!utcString) return '';
   const iso = utcString.includes('T') ? utcString : utcString.replace(' ', 'T') + 'Z';
   const d = new Date(iso);
   if (isNaN(d)) return utcString;
-  return `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
+  const day = `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
+  if (dateOnly) return day;
+  return `${day} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;
 }
 
 function hydrateLocalTimestamps(root = document) {
   root.querySelectorAll('.ts-local[data-utc]').forEach(el => {
-    el.textContent = formatLocalTimestamp(el.dataset.utc);
+    const dateOnly = el.dataset.dateOnly === '1' || el.dataset.dateOnly === 'true';
+    el.textContent = formatLocalTimestamp(el.dataset.utc, dateOnly);
   });
 }
 document.addEventListener('DOMContentLoaded', () => hydrateLocalTimestamps());

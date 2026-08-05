@@ -196,6 +196,11 @@ _HOME_WATER_PROMPT_RULE = (
     "Never invent or assume raw well, post-neutralizer, post-softener, hose, or other "
     "diagnostic home-water samples as tank fill; those are tracked separately and are "
     "irrelevant to tank water-change advice. "
+    "Partial home-water logs are normal (e.g. GH-only on water-change days). When a "
+    "'Current fill-water baseline' line is present, use it as the best estimate of current "
+    "incoming chemistry: each parameter is the last known value with its own as-of date. "
+    "Do not treat a GH-only newest row as meaning KH/nitrate/etc. are unknown if the "
+    "baseline still has those values from earlier readings. "
     "For water-change advice, choose the INCOMING fill chemistry carefully: "
     "(1) Prefer tank notes and the recurring schedule over a naive 'newest home-water row' "
     "when they describe a standing practice. "
@@ -260,11 +265,55 @@ def _fmt_home_water(rows):
     return "\n".join(lines)
 
 
-def load_home_water_tests(conn, limit=8):
+def _baseline_from_fill_rows(rows):
+    """Composite last-known-per-param for the newest fill-water sample stream."""
+    if not rows:
+        return None
+    from routers.home_water import build_home_water_baseline
+    newest_sp = (rows[0].get("sample_point") or "tap").strip().lower() or "tap"
+    same = [
+        r for r in rows
+        if ((r.get("sample_point") or "tap").strip().lower() or "tap") == newest_sp
+    ]
+    return build_home_water_baseline(same)
+
+
+def _fmt_home_water_baseline(baseline):
+    """One-line composite baseline for AI prompts."""
+    if not baseline or not baseline.get("params"):
+        return "  (no numeric baseline yet)"
+    sp = baseline.get("sample_point") or "tap"
+    label = _HOME_WATER_SAMPLE_LABELS.get(sp, sp)
+    parts = []
+    for p in baseline["params"]:
+        ts = (p.get("timestamp") or "")[:10] or "?"
+        parts.append(f"{p['key'].upper()}={p['value']} (as of {ts})")
+    composite = "composite" if baseline.get("is_composite") else "single reading"
+    return f"  [{label}; {composite}] " + ", ".join(parts)
+
+
+def _fmt_home_water_block(rows):
+    """Baseline + recent reading history for AI fill-water sections."""
+    if not rows:
+        return "  No home/source water readings recorded."
+    baseline = _baseline_from_fill_rows(rows)
+    lines = [
+        "Current fill-water baseline (last known value per parameter; dates may differ "
+        "when logs are partial — e.g. GH-only on WC days):",
+        _fmt_home_water_baseline(baseline),
+        "Recent fill-water readings (newest first):",
+        _fmt_home_water(rows),
+    ]
+    return "\n".join(lines)
+
+
+def load_home_water_tests(conn, limit=24):
     """Load recent *fill-water* home readings for tank AI (tap + bottled only).
 
     Raw / post-treatment / hose / other diagnostic samples are excluded — they are
     for home-water suitability and history, not tank water-change analysis.
+    Default limit is high enough that a stretch of GH-only WC-day logs still leaves
+    older KH/nitrate/etc. available for the composite baseline.
     """
     placeholders = ",".join("?" * len(FILL_WATER_SAMPLE_POINTS))
     return rows_to_list(conn.execute(
@@ -374,8 +423,8 @@ Recurring feeding/dosing/maintenance schedule:
 Tank activity over the last 4 weeks (newest first):
 {_fmt_timeline_rows(timeline_rows)}
 
-Fill water for water changes (tap WC source and/or bottled only — newest first; NOT raw/diagnostic):
-{_fmt_home_water(home_water_tests)}
+Fill water for water changes (tap WC source and/or bottled only — NOT raw/diagnostic):
+{_fmt_home_water_block(home_water_tests)}
 {_HOME_WATER_PROMPT_RULE}
 
 Water test just recorded (newest) plus recent tests for trend comparison:
@@ -409,8 +458,8 @@ Hardscape:
 Recent Test Results (newest first):
 {_fmt_test_results(test_results)}
 
-Fill water for water changes (tap WC source and/or bottled only — newest first; NOT raw/diagnostic):
-{_fmt_home_water(home_water_tests)}
+Fill water for water changes (tap WC source and/or bottled only — NOT raw/diagnostic):
+{_fmt_home_water_block(home_water_tests)}
 {_HOME_WATER_PROMPT_RULE}
 
 Open Issues:
@@ -455,8 +504,8 @@ Hardscape:
 Latest Water Parameters:
 {_fmt_test_results(test_results[:1])}
 
-Fill water for water changes (tap WC source and/or bottled only — newest first; NOT raw/diagnostic):
-{_fmt_home_water(home_water_tests)}
+Fill water for water changes (tap WC source and/or bottled only — NOT raw/diagnostic):
+{_fmt_home_water_block(home_water_tests)}
 {_HOME_WATER_PROMPT_RULE}
 
 Open Issues:
@@ -494,7 +543,7 @@ Recent events (last 30 days — evidence of actual water source and dosing):
 {_fmt_events(events)}
 
 Fill water readings (tap WC source and/or bottled only — measured incoming water for changes; prefer over free-text guesses):
-{_fmt_home_water(home_water_tests)}
+{_fmt_home_water_block(home_water_tests)}
 
 Recent test results with notes (newest first; may record accepted parameter baselines):
 {_fmt_test_results(test_results[:6])}
@@ -648,7 +697,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 (tank_id,),
             ).fetchall())
 
-            home_water_tests = load_home_water_tests(conn, limit=8)
+            home_water_tests = load_home_water_tests(conn)
 
         client = anthropic.Anthropic(api_key=api_key)
 
@@ -861,7 +910,7 @@ async def run_test_recommendation(tank_id: int, result_id: int):
 
             timeline_rows = rows_to_list(conn.execute(_TIMELINE_QUERY, (tank_id,) * 9).fetchall())
 
-            home_water_tests = load_home_water_tests(conn, limit=8)
+            home_water_tests = load_home_water_tests(conn)
 
         cutoff = (datetime.now(timezone.utc).date() - timedelta(days=28)).isoformat()
         timeline_rows = [r for r in timeline_rows if (r.get("ts") or "")[:10] >= cutoff]

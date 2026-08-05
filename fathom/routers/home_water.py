@@ -168,13 +168,102 @@ def _parse_is_lab(value: Optional[str]) -> int:
     return 1 if str(value).strip().lower() in ("1", "true", "on", "yes") else 0
 
 
-def latest_wc_source_test(conn) -> Optional[dict]:
-    """Latest reading suitable as water-change incoming water (tap / default)."""
-    return row_to_dict(conn.execute(
+# Display order for composite baseline cards / AI (kit-first, then less-common).
+HOME_WATER_PARAM_DEFS = (
+    ("gh", "GH"),
+    ("kh", "KH"),
+    ("ph", "pH"),
+    ("nitrate", "NO₃"),
+    ("tds", "TDS"),
+    ("ammonia", "NH₃"),
+    ("nitrite", "NO₂"),
+    ("temp", "Temp"),
+)
+HOME_WATER_PARAM_KEYS = tuple(k for k, _ in HOME_WATER_PARAM_DEFS)
+
+
+def _norm_sample_point_row(row: dict) -> str:
+    sp = (row.get("sample_point") or "tap").strip().lower()
+    return sp if sp else "tap"
+
+
+def _row_sort_key(row: dict):
+    """Newest first: timestamp DESC, then id DESC."""
+    return (row.get("timestamp") or "", row.get("id") or 0)
+
+
+def build_home_water_baseline(rows: list[dict]) -> Optional[dict]:
+    """Last-known value per parameter across *rows* (partial logs OK).
+
+    Walks newest → oldest and takes the first non-null for each field. Callers
+    should pass a single sample stream (e.g. tap only) so GH from a WC-day
+    reading is not mixed with a different sample type.
+
+    Returns None if no numeric params exist. Structure::
+
+        {
+          "sample_point": "tap",
+          "params": [
+            {"key": "gh", "label": "GH", "value": 8.0,
+             "timestamp": "2026-08-05 12:00:00", "source_id": 12},
+            ...
+          ],
+          "by_key": {"gh": {...}, ...},
+          "newest_timestamp": "2026-08-05 12:00:00",
+          "is_composite": True,  # values come from more than one reading date
+        }
+    """
+    if not rows:
+        return None
+    ordered = sorted(rows, key=_row_sort_key, reverse=True)
+    found: dict[str, dict] = {}
+    for r in ordered:
+        for key, label in HOME_WATER_PARAM_DEFS:
+            if key in found:
+                continue
+            val = r.get(key)
+            if val is None:
+                continue
+            found[key] = {
+                "key": key,
+                "label": label,
+                "value": val,
+                "timestamp": r.get("timestamp"),
+                "source_id": r.get("id"),
+            }
+    if not found:
+        return None
+    params = [found[k] for k, _ in HOME_WATER_PARAM_DEFS if k in found]
+    timestamps = {p["timestamp"] for p in params if p.get("timestamp")}
+    newest_ts = ordered[0].get("timestamp")
+    return {
+        "sample_point": _norm_sample_point_row(ordered[0]),
+        "params": params,
+        "by_key": found,
+        "newest_timestamp": newest_ts,
+        "is_composite": len(timestamps) > 1,
+    }
+
+
+def load_wc_source_tests(conn, limit: int = 50) -> list[dict]:
+    """Tap / default WC-source history, newest first (not raw/diagnostic/bottled)."""
+    return rows_to_list(conn.execute(
         """SELECT * FROM home_water_tests
            WHERE sample_point IS NULL OR sample_point = '' OR sample_point = 'tap'
-           ORDER BY timestamp DESC, id DESC LIMIT 1"""
-    ).fetchone())
+           ORDER BY timestamp DESC, id DESC LIMIT ?""",
+        (limit,),
+    ).fetchall())
+
+
+def wc_source_baseline(conn, limit: int = 50) -> Optional[dict]:
+    """Composite last-known-per-param for tap WC source (UI dashboard / home-water card)."""
+    return build_home_water_baseline(load_wc_source_tests(conn, limit=limit))
+
+
+def latest_wc_source_test(conn) -> Optional[dict]:
+    """Latest reading suitable as water-change incoming water (tap / default)."""
+    rows = load_wc_source_tests(conn, limit=1)
+    return rows[0] if rows else None
 
 
 def latest_raw_water_test(conn) -> Optional[dict]:
@@ -277,10 +366,17 @@ def build_home_water_summary_prompt(
         )
     tanks_text = "\n".join(tank_blocks) if tank_blocks else "  (no tanks)"
 
-    from routers.ai_analysis import _fmt_home_water
+    from routers.ai_analysis import _fmt_home_water, _fmt_home_water_baseline
     tap_block = _fmt_home_water([latest_tap] if latest_tap else [])
-    recent_block = _fmt_home_water(recent_tap) if recent_tap else "  (none)"
+    # History in the prompt stays short; baseline walks the fuller recent_tap list.
+    recent_block = _fmt_home_water((recent_tap or [])[:5]) if recent_tap else "  (none)"
     raw_block = _fmt_home_water([latest_raw] if latest_raw else [])
+    # Composite last-known-per-param (GH-only WC days still keep prior KH/nitrate/etc.)
+    baseline_rows = list(recent_tap or [])
+    if latest_tap and not baseline_rows:
+        baseline_rows = [latest_tap]
+    tap_baseline = build_home_water_baseline(baseline_rows)
+    baseline_block = _fmt_home_water_baseline(tap_baseline)
 
     return f"""You write a short suitability assessment of household well/source water for an aquarium keeper.
 
@@ -295,11 +391,15 @@ NITRATE / API KIT CONTEXT:
 - API nitrate color charts around the mid band (~40–50 ppm as NO3-) are extremely subjective; exact chart steps are not reliable precision.
 - When kit color is consistent test-to-test in that band (and labs land in the same ballpark), treat it as a stable moderate baseline — not a crisis, not a number to over-interpret, and not something to re-flag every time.
 - Only call out nitrate if it clearly trends up/down across readings or becomes a real floor issue for tank water changes (WC cannot dilute below source).
+- Partial kit logs are normal (GH-only on water-change days). Use the CURRENT WC-SOURCE BASELINE (last known per parameter) when the latest single reading is incomplete.
 
 ACTIVE TANKS (judge WC-source water against each tank's notes/targets/stock):
 {tanks_text}
 
-LATEST WC-SOURCE / TAP READING (what is normally used for water changes and household drinking after treatment):
+CURRENT WC-SOURCE BASELINE (last known value per parameter across recent tap logs; as-of dates may differ):
+{baseline_block}
+
+LATEST WC-SOURCE / TAP READING (single newest row — may be GH-only):
 {tap_block}
 
 RECENT WC-SOURCE HISTORY (newest first; for trend only — do not dump history):
@@ -366,11 +466,8 @@ async def run_home_water_summary(force: bool = False):
 
             latest_tap = latest_wc_source_test(conn)
             latest_raw = latest_raw_water_test(conn)
-            recent_tap = rows_to_list(conn.execute(
-                """SELECT * FROM home_water_tests
-                   WHERE sample_point IS NULL OR sample_point = '' OR sample_point = 'tap'
-                   ORDER BY timestamp DESC, id DESC LIMIT 5"""
-            ).fetchall())
+            # Enough history for composite baseline when recent rows are GH-only.
+            recent_tap = load_wc_source_tests(conn, limit=24)
 
             tanks = rows_to_list(conn.execute(
                 """SELECT id, name, water_type, volume_gallons, notes, status
@@ -629,6 +726,7 @@ async def list_home_water(request: Request, background_tasks: BackgroundTasks):
             "SELECT * FROM home_water_tests ORDER BY timestamp DESC, id DESC LIMIT 1"
         ).fetchone())
         latest_tap = latest_wc_source_test(conn)
+        tap_baseline = wc_source_baseline(conn, limit=50)
         latest_raw = latest_raw_water_test(conn)
         summary_refreshing = False
         summary = get_home_water_summary(conn)
@@ -644,6 +742,7 @@ async def list_home_water(request: Request, background_tasks: BackgroundTasks):
         "tests": tests,
         "latest": latest,
         "latest_tap": latest_tap,
+        "tap_baseline": tap_baseline,
         "latest_raw": latest_raw,
         "summary": summary,
         "summary_refreshing": summary_refreshing,
