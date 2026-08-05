@@ -46,3 +46,8 @@ htmlcov/
 
 # Logs
 *.log
+
+# Local agent / personal ops state (like fathom/data — not app source)
+# Culture trackers, home setup notes, order status, etc. live as MD under .claude/
+# (.claude/ is ignored above). CLAUDE.local.md is local agent pointers only.
+CLAUDE.local.md
