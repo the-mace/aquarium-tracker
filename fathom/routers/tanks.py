@@ -137,14 +137,12 @@ async def tank_detail(request: Request, tank_id: int):
         today_dow = date.today().strftime('%a').lower()
         today_date = date.today().isoformat()
 
+        from routers.schedules import TIME_OF_DAY_ORDER
         today_schedule = rows_to_list(conn.execute(
-            """SELECT * FROM recurring_schedule
+            f"""SELECT * FROM recurring_schedule
                WHERE tank_id=? AND is_active=1 AND tracking_mode='reference_only'
                  AND day_of_week=?
-               ORDER BY category,
-                 CASE day_of_week WHEN 'mon' THEN 0 WHEN 'tue' THEN 1 WHEN 'wed' THEN 2
-                   WHEN 'thu' THEN 3 WHEN 'fri' THEN 4 WHEN 'sat' THEN 5 WHEN 'sun' THEN 6
-                   ELSE 7 END""",
+               ORDER BY category, {TIME_OF_DAY_ORDER}, description""",
             (tank_id, today_dow),
         ).fetchall())
 

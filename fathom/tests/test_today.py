@@ -29,6 +29,29 @@ def test_today_shows_feeding_scheduled_for_today(client, tank_id):
     assert "Flakes AM" in r.text
 
 
+def test_today_orders_am_before_pm(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": _dow(), "time_of_day": "pm",
+              "description": "Evening pellets"},
+        follow_redirects=False,
+    )
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": _dow(), "time_of_day": "am",
+              "description": "Morning flakes"},
+        follow_redirects=False,
+    )
+    r = client.get("/today")
+    assert r.status_code == 200
+    assert "badge-tod-am" in r.text
+    assert "badge-tod-pm" in r.text
+    am_pos = r.text.find("Morning flakes")
+    pm_pos = r.text.find("Evening pellets")
+    assert am_pos != -1 and pm_pos != -1
+    assert am_pos < pm_pos
+
+
 def test_today_hides_feeding_scheduled_other_day(client, tank_id):
     other = _dow(date.today() + timedelta(days=1))
     client.post(

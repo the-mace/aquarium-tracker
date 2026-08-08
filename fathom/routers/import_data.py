@@ -80,8 +80,8 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
   ],
   "recurring_schedule": [
     {"category": "feeding", "tracking_mode": "reference_only", "day_of_week": "mon",
-     "description": "Flakes 2x pinch", "interval_type": null, "interval_days": null,
-     "last_done": null, "next_due": null, "notes": null}
+     "time_of_day": "am", "description": "Flakes 2x pinch", "interval_type": null,
+     "interval_days": null, "last_done": null, "next_due": null, "notes": null}
   ],
   "flags": [
     {"section": "test_results", "index": 0, "field": "kh", "message": "KH of 22 is very high for freshwater (typical range: 3-12 dKH). Please verify."}
@@ -123,7 +123,7 @@ EXTRACTION RULES (follow carefully):
 
 11. DATE INFERENCE: When a record has no explicit date of its own but appears within a dated log entry (or is clearly associated with one), use that entry's date for the record's date field — purchase_date, installed_date, added_date, created_at, etc. Never leave a date null if the surrounding context makes it inferable.
 
-10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). A 'logged' task tied to a specific day_of_week (e.g. "Thursday: 20% water change") is itself a weekly frequency — always set interval_type='weekly' and interval_days=7 for these, even if the word "weekly" isn't used explicitly, so due-date tracking works after the first mark-done. If the text states a different frequency (monthly, every N days), use that instead. "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun — for reference_only (feeding/dosing) rows, day_of_week is REQUIRED: only extract a feeding or dosing entry as recurring_schedule when the text ties it to a specific day of the week. Vague or occasional mentions with no identifiable day ("feeds bloodworms sometimes", "doses Flourish here and there") are not a recurring schedule — leave them out of recurring_schedule entirely (capture them as an observation or event instead if otherwise noteworthy). 'logged' maintenance rows may omit day_of_week when the frequency is interval-based rather than tied to a weekday (e.g. "clean filter monthly").
+10. RECURRING SCHEDULE: If the text describes a regular weekly feeding plan, dosing routine, or recurring maintenance task, extract each unique day+item combo as one recurring_schedule row. Use tracking_mode='reference_only' for feeding and dosing. Use tracking_mode='logged' for maintenance tasks with a frequency (e.g. "clean filter monthly" → interval_type='interval_days', interval_days=30). A 'logged' task tied to a specific day_of_week (e.g. "Thursday: 20% water change") is itself a weekly frequency — always set interval_type='weekly' and interval_days=7 for these, even if the word "weekly" isn't used explicitly, so due-date tracking works after the first mark-done. If the text states a different frequency (monthly, every N days), use that instead. "No feeding" days are valid entries. day_of_week must be one of mon/tue/wed/thu/fri/sat/sun — for reference_only (feeding/dosing) rows, day_of_week is REQUIRED: only extract a feeding or dosing entry as recurring_schedule when the text ties it to a specific day of the week. Vague or occasional mentions with no identifiable day ("feeds bloodworms sometimes", "doses Flourish here and there") are not a recurring schedule — leave them out of recurring_schedule entirely (capture them as an observation or event instead if otherwise noteworthy). 'logged' maintenance rows may omit day_of_week when the frequency is interval-based rather than tied to a weekday (e.g. "clean filter monthly"). time_of_day is "am" or "pm" when the text indicates morning/AM vs evening/PM/night feeding (or dosing); leave null when not specified. If the same food is fed twice a day, emit two rows (same day_of_week, different time_of_day) rather than one combined row.
 
 Valid event_type values: water_change, feeding, purchase, observation, treatment, maintenance, other
 Valid equipment categories: filter, heater, light, uv, pump, co2, other
@@ -998,12 +998,17 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 dow = None
             if tracking_mode == "reference_only" and not dow:
                 continue
+            tod = rs.get("time_of_day")
+            if tod and str(tod).strip().lower() in ("am", "pm"):
+                tod = str(tod).strip().lower()
+            else:
+                tod = None
             conn.execute(
                 """INSERT INTO recurring_schedule
-                   (tank_id, category, tracking_mode, day_of_week, description,
+                   (tank_id, category, tracking_mode, day_of_week, time_of_day, description,
                     interval_type, interval_days, last_done, next_due, is_active, notes)
-                   VALUES (?,?,?,?,?,?,?,?,?,1,?)""",
-                (tank_id, cat, tracking_mode, dow,
+                   VALUES (?,?,?,?,?,?,?,?,?,?,1,?)""",
+                (tank_id, cat, tracking_mode, dow, tod,
                  rs.get("description", ""), rs.get("interval_type"), rs.get("interval_days"),
                  rs.get("last_done"), rs.get("next_due"), rs.get("notes")),
             )

@@ -28,6 +28,9 @@
         {% else %}
         <span class="sched-day sched-day-float">—</span>
         {% endif %}
+        {% if s.time_of_day %}
+        <span class="badge badge-tod badge-tod-{{ s.time_of_day }}">{{ s.time_of_day|upper }}</span>
+        {% endif %}
         <div class="sched-desc-col">
           <div class="sched-desc-line">
             <span class="sched-desc">{{ s.description }}</span>
@@ -115,6 +118,14 @@
             <option value="sun">Sunday</option>
           </select>
         </div>
+        <div class="form-group" id="add-tod-group">
+          <label>Time of day</label>
+          <select name="time_of_day">
+            <option value="">—</option>
+            <option value="am">AM</option>
+            <option value="pm">PM</option>
+          </select>
+        </div>
         <div class="form-group" id="add-interval-group" style="display:none">
           <label>Interval (days)</label>
           <input type="number" name="interval_days" min="1" placeholder="30 = monthly, 75 = every 2-3 mo">
@@ -166,6 +177,14 @@
             <option value="sun">Sunday</option>
           </select>
         </div>
+        <div class="form-group" id="edit-tod-group">
+          <label>Time of day</label>
+          <select name="time_of_day" id="edit-tod">
+            <option value="">—</option>
+            <option value="am">AM</option>
+            <option value="pm">PM</option>
+          </select>
+        </div>
         <div class="form-group" id="edit-interval-group" style="display:none">
           <label>Interval (days)</label>
           <input type="number" name="interval_days" id="edit-interval" min="1" onchange="recomputeNextDueFromLastDone()">
@@ -215,9 +234,18 @@ function syncSchedForm(prefix) {
   const intGroup = document.getElementById(prefix + '-interval-group');
   const lastDoneGroup = document.getElementById(prefix + '-last-done-group');
   const nextDueGroup = document.getElementById(prefix + '-next-due-group');
+  const todGroup = document.getElementById(prefix + '-tod-group');
   if (intGroup) intGroup.style.display = isMaint ? '' : 'none';
   if (lastDoneGroup) lastDoneGroup.style.display = isMaint ? '' : 'none';
   if (nextDueGroup) nextDueGroup.style.display = isMaint ? '' : 'none';
+  // AM/PM is for feedings (and dosing); hide for maintenance tasks.
+  if (todGroup) {
+    todGroup.style.display = isMaint ? 'none' : '';
+    if (isMaint) {
+      const sel = todGroup.querySelector('select[name="time_of_day"]');
+      if (sel) sel.value = '';
+    }
+  }
 }
 
 /** Mirror of compute_next_due in schedules.py — suggests a due date when last_done changes. */
@@ -273,6 +301,7 @@ function openEditSched(s) {
   f.action = '/tanks/{{ tank.id }}/schedule/' + s.id + '/update';
   document.getElementById('edit-category').value = s.category || 'feeding';
   document.getElementById('edit-dow').value = s.day_of_week || '';
+  document.getElementById('edit-tod').value = s.time_of_day || '';
   document.getElementById('edit-description').value = s.description || '';
   document.getElementById('edit-interval').value = s.interval_days || '';
   document.getElementById('edit-notes').value = s.notes || '';

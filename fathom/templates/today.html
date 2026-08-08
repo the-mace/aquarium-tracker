@@ -24,6 +24,9 @@
       {% for s in tank.today_schedule %}
       <div class="today-item">
         <span class="badge badge-cat">{{ s.category }}</span>
+        {% if s.time_of_day %}
+        <span class="badge badge-tod badge-tod-{{ s.time_of_day }}">{{ s.time_of_day|upper }}</span>
+        {% endif %}
         <div class="today-item-text">
           <span>{{ s.description }}</span>
           {% if s.notes %}

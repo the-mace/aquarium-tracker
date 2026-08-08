@@ -258,7 +258,9 @@
         <div class="sched-group">
         <div class="sched-group-label">{{ s.category }}</div>
       {% endif %}
-      <div class="sched-today-item">{{ s.description }}</div>
+      <div class="sched-today-item">
+        {% if s.time_of_day %}<span class="badge badge-tod badge-tod-{{ s.time_of_day }}">{{ s.time_of_day|upper }}</span> {% endif %}{{ s.description }}
+      </div>
     {% endfor %}
     {% if ns.cur_cat %}</div>{% endif %}
     <div class="stat-card-footer"><a href="/tanks/{{ tank.id }}/schedule" class="link-sm">Manage →</a></div>

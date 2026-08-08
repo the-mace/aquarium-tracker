@@ -391,7 +391,9 @@ def _fmt_schedule(rows):
             lines.append(f"  [{cat}] {desc} — every {interval} days, last done {last_done}, next due {next_due}")
         else:
             dow = r.get("day_of_week") or "unscheduled"
-            lines.append(f"  [{cat}] {desc} — {dow}")
+            tod = r.get("time_of_day")
+            when = f"{dow} {tod.upper()}" if tod in ("am", "pm") else dow
+            lines.append(f"  [{cat}] {desc} — {when}")
     return "\n".join(lines)
 
 

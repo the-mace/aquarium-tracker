@@ -331,6 +331,7 @@ def init_db():
                 category TEXT NOT NULL CHECK(category IN ('feeding','dosing','maintenance')),
                 tracking_mode TEXT NOT NULL DEFAULT 'reference_only' CHECK(tracking_mode IN ('reference_only','logged')),
                 day_of_week TEXT CHECK(day_of_week IN ('mon','tue','wed','thu','fri','sat','sun')),
+                time_of_day TEXT CHECK(time_of_day IS NULL OR time_of_day IN ('am','pm')),
                 description TEXT NOT NULL,
                 interval_type TEXT CHECK(interval_type IN ('weekly','monthly','interval_days')),
                 interval_days INTEGER,
@@ -459,6 +460,36 @@ def init_db():
         if "schedule_id" not in cols:
             conn.execute(
                 "ALTER TABLE events ADD COLUMN schedule_id INTEGER REFERENCES recurring_schedule(id) ON DELETE SET NULL"
+            )
+
+        # Migration: AM/PM tag on recurring feedings (and optional for dosing)
+        sched_cols = {row[1] for row in conn.execute("PRAGMA table_info(recurring_schedule)").fetchall()}
+        if sched_cols and "time_of_day" not in sched_cols:
+            conn.execute(
+                "ALTER TABLE recurring_schedule ADD COLUMN time_of_day TEXT "
+                "CHECK(time_of_day IS NULL OR time_of_day IN ('am','pm'))"
+            )
+            # One-shot backfill from wording already in description/notes
+            # (e.g. prod notes "Morning feeding" / "Evening feeding").
+            text_expr = "lower(coalesce(description,'') || ' ' || coalesce(notes,''))"
+            conn.execute(
+                f"""UPDATE recurring_schedule SET time_of_day = 'am'
+                   WHERE time_of_day IS NULL
+                     AND ({text_expr} LIKE '%morning%'
+                          OR {text_expr} LIKE '% a.m.%'
+                          OR {text_expr} LIKE 'am %'
+                          OR {text_expr} LIKE '% am'
+                          OR {text_expr} LIKE '% am %')"""
+            )
+            conn.execute(
+                f"""UPDATE recurring_schedule SET time_of_day = 'pm'
+                   WHERE time_of_day IS NULL
+                     AND ({text_expr} LIKE '%evening%'
+                          OR {text_expr} LIKE '%night%'
+                          OR {text_expr} LIKE '% p.m.%'
+                          OR {text_expr} LIKE 'pm %'
+                          OR {text_expr} LIKE '% pm'
+                          OR {text_expr} LIKE '% pm %')"""
             )
 
         # Migration: add monitoring_at to issues if not present

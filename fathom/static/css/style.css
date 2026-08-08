@@ -209,6 +209,9 @@ p { margin-bottom: .5rem; }
 .badge-archived    { background: rgba(148,163,184,.1); color: var(--muted); }
 .badge-warning     { background: rgba(245,158,11,.15); color: var(--warning); }
 .badge-cat         { background: rgba(56,189,248,.1); color: var(--accent); border: 1px solid rgba(56,189,248,.2); }
+.badge-tod         { font-size: .65rem; font-weight: 700; letter-spacing: .04em; min-width: 1.75rem; text-align: center; flex-shrink: 0; }
+.badge-tod-am      { background: rgba(251,191,36,.15); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
+.badge-tod-pm      { background: rgba(129,140,248,.15); color: #a5b4fc; border: 1px solid rgba(129,140,248,.3); }
 .badge-issue-open       { background: rgba(239,68,68,.15); color: #f87171; }
 .badge-issue-monitoring { background: rgba(245,158,11,.15); color: var(--warning); }
 .badge-issue-resolved   { background: rgba(0,196,160,.15); color: var(--primary); }
@@ -1181,6 +1184,7 @@ p { margin-bottom: .5rem; }
 .sched-today-item {
   font-size: .875rem; padding: .2rem 0; color: var(--text);
   border-left: 2px solid var(--primary); padding-left: .5rem; margin-bottom: .2rem;
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
 }
 
 .maint-list { display: flex; flex-direction: column; gap: .5rem; }

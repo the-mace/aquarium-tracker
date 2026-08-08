@@ -12,6 +12,16 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 DOW_LABELS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
                "fri": "Friday", "sat": "Saturday", "sun": "Sunday"}
 
+# AM before PM; untagged last. Shared by schedule page, Today, and dashboard widget.
+TIME_OF_DAY_ORDER = (
+    "CASE time_of_day WHEN 'am' THEN 0 WHEN 'pm' THEN 1 ELSE 2 END"
+)
+
+def _normalize_time_of_day(value: Optional[str]) -> Optional[str]:
+    if value and value.strip().lower() in ("am", "pm"):
+        return value.strip().lower()
+    return None
+
 def _next_weekday(d, weekday):
     """Return d advanced to the next occurrence of weekday (0=Mon … 6=Sun), or d if already that day."""
     days_ahead = weekday - d.weekday()
@@ -28,6 +38,7 @@ _DOW_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun":
 _DIFF_FIELDS = [
     ("category", "category"),
     ("day_of_week", "day"),
+    ("time_of_day", "time"),
     ("description", "description"),
     ("interval_days", "interval (days)"),
     ("is_active", "active"),
@@ -38,6 +49,8 @@ _DIFF_FIELDS = [
 def _fmt_diff_val(field, value):
     if field == "day_of_week":
         return DOW_LABELS.get(value, "none") if value else "none"
+    if field == "time_of_day":
+        return value.upper() if value else "none"
     if field == "is_active":
         return "yes" if value else "no"
     if value is None or value == "":
@@ -110,11 +123,12 @@ async def schedule_page(request: Request, tank_id: int):
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
         schedules = rows_to_list(conn.execute(
-            """SELECT * FROM recurring_schedule WHERE tank_id=?
+            f"""SELECT * FROM recurring_schedule WHERE tank_id=?
                ORDER BY category,
                  CASE day_of_week WHEN 'mon' THEN 0 WHEN 'tue' THEN 1 WHEN 'wed' THEN 2
                    WHEN 'thu' THEN 3 WHEN 'fri' THEN 4 WHEN 'sat' THEN 5 WHEN 'sun' THEN 6
                    ELSE 7 END,
+                 {TIME_OF_DAY_ORDER},
                  description""",
             (tank_id,),
         ).fetchall())
@@ -135,6 +149,7 @@ async def add_schedule(
     tank_id: int,
     category: str = Form(...),
     day_of_week: Optional[str] = Form(None),
+    time_of_day: Optional[str] = Form(None),
     description: str = Form(...),
     interval_days: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
@@ -143,14 +158,15 @@ async def add_schedule(
     tracking_mode = "logged" if category == "maintenance" else "reference_only"
     interval_type = "interval_days" if (category == "maintenance" and interval_days) else None
     dow = day_of_week if day_of_week and day_of_week in ("mon","tue","wed","thu","fri","sat","sun") else None
+    tod = _normalize_time_of_day(time_of_day)
 
     with get_db() as conn:
         cur = conn.execute(
             """INSERT INTO recurring_schedule
-               (tank_id, category, tracking_mode, day_of_week, description,
+               (tank_id, category, tracking_mode, day_of_week, time_of_day, description,
                 interval_type, interval_days, is_active, notes)
-               VALUES (?,?,?,?,?,?,?,1,?)""",
-            (tank_id, category, tracking_mode, dow, description, interval_type, interval_days, notes),
+               VALUES (?,?,?,?,?,?,?,?,1,?)""",
+            (tank_id, category, tracking_mode, dow, tod, description, interval_type, interval_days, notes),
         )
         dow_label = DOW_LABELS.get(dow, "")
         detail = f" ({dow_label})" if dow_label else ""
@@ -169,6 +185,7 @@ async def update_schedule(
     sch_id: int,
     category: str = Form(...),
     day_of_week: Optional[str] = Form(None),
+    time_of_day: Optional[str] = Form(None),
     description: str = Form(...),
     interval_days: Optional[str] = Form(None),
     is_active: Optional[str] = Form(None),
@@ -180,6 +197,7 @@ async def update_schedule(
     tracking_mode = "logged" if category == "maintenance" else "reference_only"
     interval_type = "interval_days" if (category == "maintenance" and interval_days) else None
     dow = day_of_week if day_of_week and day_of_week in ("mon","tue","wed","thu","fri","sat","sun") else None
+    tod = _normalize_time_of_day(time_of_day)
     active = 1 if is_active else 0
 
     with get_db() as conn:
@@ -208,17 +226,18 @@ async def update_schedule(
             next_due_val = compute_next_due(dow, interval_days, date.fromisoformat(last_done_val))
 
         summary = _describe_schedule_changes(existing, {
-            "category": category, "day_of_week": dow, "description": description,
-            "interval_days": interval_days, "is_active": active, "notes": notes,
+            "category": category, "day_of_week": dow, "time_of_day": tod,
+            "description": description, "interval_days": interval_days,
+            "is_active": active, "notes": notes,
         })
 
         conn.execute(
             """UPDATE recurring_schedule SET
-               category=?, tracking_mode=?, day_of_week=?, description=?,
+               category=?, tracking_mode=?, day_of_week=?, time_of_day=?, description=?,
                interval_type=?, interval_days=?, is_active=?, notes=?,
                last_done=?, next_due=?, updated_at=datetime('now')
                WHERE id=?""",
-            (category, tracking_mode, dow, description, interval_type, interval_days, active, notes,
+            (category, tracking_mode, dow, tod, description, interval_type, interval_days, active, notes,
              last_done_val, next_due_val, sch_id),
         )
 

@@ -19,6 +19,49 @@ def test_add_feeding_reference(client, tank_id):
     assert "Monday" in r.text
 
 
+def test_add_feeding_with_am_pm(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={
+            "category": "feeding", "day_of_week": "mon",
+            "time_of_day": "am", "description": "Morning flakes",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    import database as _db
+    with _db.get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT time_of_day FROM recurring_schedule WHERE tank_id=? AND description='Morning flakes'",
+            (tank_id,),
+        ).fetchone())
+    assert row["time_of_day"] == "am"
+    r = client.get(f"/tanks/{tank_id}/schedule")
+    assert "Morning flakes" in r.text
+    assert "badge-tod-am" in r.text
+
+
+def test_schedule_orders_am_before_pm(client, tank_id):
+    """Same day feedings: AM rows before PM rows on the schedule page."""
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "wed", "time_of_day": "pm",
+              "description": "PM wafers"},
+        follow_redirects=False,
+    )
+    client.post(
+        f"/tanks/{tank_id}/schedule",
+        data={"category": "feeding", "day_of_week": "wed", "time_of_day": "am",
+              "description": "AM flakes"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/tanks/{tank_id}/schedule")
+    am_pos = r.text.find("AM flakes")
+    pm_pos = r.text.find("PM wafers")
+    assert am_pos != -1 and pm_pos != -1
+    assert am_pos < pm_pos
+
+
 def test_add_dosing_no_dow(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/schedule",
@@ -317,7 +360,9 @@ def test_dashboard_today_schedule_excludes_floating_day(client, tank_id):
     # "Floating Food" now legitimately appears elsewhere on the dashboard (the
     # recent-events panel picks up the "Schedule added" event) — check specifically
     # that it's absent from the Today's Schedule widget's own item markup.
-    assert '<div class="sched-today-item">Floating Food</div>' not in r.text
+    import re
+    items = re.findall(r'class="sched-today-item"[^>]*>(.*?)</div>', r.text, re.S)
+    assert not any("Floating Food" in item for item in items)
 
 
 def test_dashboard_maintenance_widget(client, tank_id):

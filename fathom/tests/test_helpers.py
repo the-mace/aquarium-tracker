@@ -564,6 +564,15 @@ def test_fmt_schedule_reference_only_row():
     assert "mon" in result
 
 
+def test_fmt_schedule_reference_only_with_time_of_day():
+    rows = [{"category": "feeding", "description": "Morning flakes",
+             "tracking_mode": "reference_only", "day_of_week": "tue",
+             "time_of_day": "am"}]
+    result = _fmt_schedule(rows)
+    assert "Morning flakes" in result
+    assert "tue AM" in result
+
+
 def test_fmt_timeline_rows_empty():
     assert "No recent activity" in _fmt_timeline_rows([])
 

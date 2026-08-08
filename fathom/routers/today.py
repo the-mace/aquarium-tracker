@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from database import get_db, rows_to_list
+from routers.schedules import TIME_OF_DAY_ORDER
 
 router = APIRouter(tags=["today"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -21,10 +22,10 @@ async def today_page(request: Request):
 
         for tank in tanks:
             tank["today_schedule"] = rows_to_list(conn.execute(
-                """SELECT * FROM recurring_schedule
+                f"""SELECT * FROM recurring_schedule
                    WHERE tank_id=? AND is_active=1 AND tracking_mode='reference_only'
                      AND day_of_week=?
-                   ORDER BY category, description""",
+                   ORDER BY category, {TIME_OF_DAY_ORDER}, description""",
                 (tank["id"], today_dow),
             ).fetchall())
 
