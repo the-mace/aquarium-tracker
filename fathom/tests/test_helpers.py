@@ -59,11 +59,21 @@ def test_init_db_idempotent(tmp_path, monkeypatch):
         ).fetchall()}
     expected = {
         "tanks", "test_results", "events", "inhabitants", "population_events",
-        "purchases", "tank_equipment", "issues", "observations",
+        "purchases", "tank_equipment", "issues", "goals", "goal_dependencies",
+        "observations",
         "tank_state_summary", "plants", "hardscape", "home_water_tests",
         "home_water_summary",
     }
     assert expected.issubset(tables)
+    # Fresh goals schema includes progress columns + paused status in CHECK
+    with get_db() as conn:
+        goal_cols = {row[1] for row in conn.execute("PRAGMA table_info(goals)").fetchall()}
+        assert "progress_summary" in goal_cols
+        assert "progress_summary_at" in goal_cols
+        goals_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='goals'"
+        ).fetchone()[0]
+        assert "paused" in goals_sql
 
 
 def test_get_db_rolls_back_on_error(tmp_path, monkeypatch):
@@ -178,21 +188,22 @@ def test_build_home_water_baseline_merges_partial_rows():
     assert baseline["by_key"]["kh"]["timestamp"] == "2026-07-01 12:00:00"
     assert baseline["by_key"]["ph"]["value"] == 7.2
     assert baseline["by_key"]["nitrate"]["value"] == 40.0
-    # July→August is well under 90 days
+    # July→August is well under 180 days
     assert baseline["has_stale"] is False
     assert baseline["by_key"]["gh"]["is_stale"] is False
     assert baseline["by_key"]["kh"]["is_stale"] is False
 
 
-def test_build_home_water_baseline_marks_stale_over_90_days():
-    """Params whose as-of date is >3 months old are flagged for the red UI cue."""
+def test_build_home_water_baseline_marks_stale_over_180_days():
+    """Params whose as-of date is >6 months old are flagged for the red UI cue."""
     from datetime import datetime, timezone
     now = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
     rows = [
         {"id": 2, "timestamp": "2026-08-01 12:00:00", "gh": 8.0, "kh": None, "ph": None,
          "ammonia": None, "nitrite": None, "nitrate": None, "tds": None, "temp": None,
          "sample_point": "tap"},
-        {"id": 1, "timestamp": "2026-04-01 12:00:00", "gh": 7.0, "kh": 10.0, "ph": 7.2,
+        # ~216 days before "now" — over the 180-day threshold
+        {"id": 1, "timestamp": "2026-01-01 12:00:00", "gh": 7.0, "kh": 10.0, "ph": 7.2,
          "ammonia": None, "nitrite": None, "nitrate": 40.0, "tds": None, "temp": None,
          "sample_point": "tap"},
     ]

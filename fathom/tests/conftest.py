@@ -12,6 +12,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
     monkeypatch.setattr(_ai, "run_ai_analysis", lambda *a, **kw: None)
     monkeypatch.setattr(_ai, "run_test_recommendation", lambda *a, **kw: None)
+    monkeypatch.setattr(_ai, "run_goal_progress", lambda *a, **kw: None)
     monkeypatch.setattr(_ref, "fetch_reference_info_bg", lambda *a, **kw: None)
     monkeypatch.setattr(_ref, "fetch_tank_dimensions_bg", lambda *a, **kw: None)
     monkeypatch.setattr(_hw, "run_home_water_summary", lambda *a, **kw: None)
@@ -20,6 +21,7 @@ def client(tmp_path, monkeypatch):
     # across tests sharing the same tank_id/entity_name in a fresh per-test DB.
     _ref._in_flight.clear()
     _ref._dim_in_flight.clear()
+    _ai._goal_progress_in_flight.clear()
     _hw._summary_in_flight = False
     from main import app
     with TestClient(app, raise_server_exceptions=True) as c:

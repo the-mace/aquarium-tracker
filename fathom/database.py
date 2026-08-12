@@ -318,8 +318,41 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tank_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                target TEXT,
+                status TEXT DEFAULT 'in_progress'
+                    CHECK(status IN ('open','in_progress','paused','achieved','abandoned')),
+                notes TEXT,
+                progress_summary TEXT,
+                progress_summary_at TEXT,
+                sort_order INTEGER DEFAULT 0,
+                opened_at TEXT DEFAULT (datetime('now')),
+                achieved_at TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS goal_dependencies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                goal_id INTEGER NOT NULL,
+                depends_on_goal_id INTEGER NOT NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+                FOREIGN KEY (depends_on_goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+                UNIQUE(goal_id, depends_on_goal_id),
+                CHECK(goal_id != depends_on_goal_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_issues_tank_status ON issues(tank_id, status);
+            CREATE INDEX IF NOT EXISTS idx_goals_tank_status ON goals(tank_id, status);
+            CREATE INDEX IF NOT EXISTS idx_goal_deps_goal ON goal_dependencies(goal_id);
+            CREATE INDEX IF NOT EXISTS idx_goal_deps_depends ON goal_dependencies(depends_on_goal_id);
             CREATE INDEX IF NOT EXISTS idx_inhabitants_tank ON inhabitants(tank_id);
             CREATE INDEX IF NOT EXISTS idx_population_events_tank ON population_events(tank_id, timestamp);
             CREATE INDEX IF NOT EXISTS idx_plants_tank ON plants(tank_id);
@@ -496,6 +529,63 @@ def init_db():
         cols = {row[1] for row in conn.execute("PRAGMA table_info(issues)").fetchall()}
         if "monitoring_at" not in cols:
             conn.execute("ALTER TABLE issues ADD COLUMN monitoring_at TEXT")
+
+        # Migration: goals.progress_summary columns (table may predate them —
+        # CREATE TABLE IF NOT EXISTS does not add columns to an existing table)
+        goals_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='goals'"
+        ).fetchone()
+        if goals_exists:
+            goal_cols = {row[1] for row in conn.execute("PRAGMA table_info(goals)").fetchall()}
+            if "progress_summary" not in goal_cols:
+                conn.execute("ALTER TABLE goals ADD COLUMN progress_summary TEXT")
+            if "progress_summary_at" not in goal_cols:
+                conn.execute("ALTER TABLE goals ADD COLUMN progress_summary_at TEXT")
+
+            # Allow status='paused' (and keep legacy 'open') via CHECK rebuild when needed
+            goals_sql_row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='goals'"
+            ).fetchone()
+            goals_sql = (goals_sql_row[0] or "") if goals_sql_row else ""
+            if goals_sql and "paused" not in goals_sql:
+                conn.executescript("""
+                    DROP TABLE IF EXISTS goals_new;
+                    CREATE TABLE goals_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tank_id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        target TEXT,
+                        status TEXT DEFAULT 'in_progress'
+                            CHECK(status IN ('open','in_progress','paused','achieved','abandoned')),
+                        notes TEXT,
+                        progress_summary TEXT,
+                        progress_summary_at TEXT,
+                        sort_order INTEGER DEFAULT 0,
+                        opened_at TEXT DEFAULT (datetime('now')),
+                        achieved_at TEXT,
+                        created_at TEXT DEFAULT (datetime('now')),
+                        updated_at TEXT DEFAULT (datetime('now')),
+                        FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE
+                    );
+                    INSERT INTO goals_new (
+                        id, tank_id, title, description, target, status, notes,
+                        progress_summary, progress_summary_at, sort_order,
+                        opened_at, achieved_at, created_at, updated_at
+                    )
+                    SELECT id, tank_id, title, description, target, status, notes,
+                           progress_summary, progress_summary_at, sort_order,
+                           opened_at, achieved_at, created_at, updated_at
+                    FROM goals;
+                    DROP TABLE goals;
+                    ALTER TABLE goals_new RENAME TO goals;
+                    CREATE INDEX IF NOT EXISTS idx_goals_tank_status ON goals(tank_id, status);
+                """)
+
+            # Legacy 'open' was the old default; new goals start as in_progress.
+            conn.execute(
+                "UPDATE goals SET status = 'in_progress' WHERE status = 'open'"
+            )
 
         # Migration: move per-entity observation links (previously 4 nullable FK columns) into
         # the observation_links junction table so one observation can link to multiple entities

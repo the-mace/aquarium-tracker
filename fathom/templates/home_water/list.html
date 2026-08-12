@@ -83,9 +83,13 @@
     </div>
     {% endfor %}
   </div>
-  {% if tap_baseline.has_stale %}
-  <p class="baseline-stale-note">Values in red are &gt;3 months old — consider a full home-water test (GH/KH/pH/NO₃ at least).</p>
-  {% endif %}
+  <p class="baseline-stale-note{% if tap_baseline.has_stale %} baseline-stale-alarm{% endif %}">
+    {% if tap_baseline.has_stale %}
+    Highlighted values are over 6 months old — log a new home-water test to refresh them.
+    {% else %}
+    Values over 6 months old are highlighted when they need a retest.
+    {% endif %}
+  </p>
   <div class="stat-card-footer">
     {% if tap_baseline.is_composite %}
     Combined from multiple readings

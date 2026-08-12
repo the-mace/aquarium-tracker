@@ -182,9 +182,9 @@ HOME_WATER_PARAM_DEFS = (
 )
 HOME_WATER_PARAM_KEYS = tuple(k for k, _ in HOME_WATER_PARAM_DEFS)
 
-# UI reminder: values whose as-of date is older than this are highlighted red
-# ("consider a full kit test"). ~3 calendar months.
-BASELINE_STALE_DAYS = 90
+# UI reminder: values whose as-of date is older than this are highlighted red.
+# ~6 calendar months — home water is not retested more often than that in practice.
+BASELINE_STALE_DAYS = 180
 
 
 def _norm_sample_point_row(row: dict) -> str:
@@ -216,7 +216,7 @@ def _is_baseline_ts_stale(
     now: Optional[datetime] = None,
     stale_days: int = BASELINE_STALE_DAYS,
 ) -> bool:
-    """True when the reading date is older than stale_days (default ~3 months)."""
+    """True when the reading date is older than stale_days (default ~6 months)."""
     dt = _parse_home_water_ts(ts)
     if dt is None:
         return False
@@ -239,7 +239,7 @@ def build_home_water_baseline(
     reading is not mixed with a different sample type.
 
     Each param gets ``is_stale`` when its as-of date is older than ``stale_days``
-    (~3 months) so the UI can remind the keeper to run a full kit test.
+    (~6 months) so the UI can remind the keeper to retest home water.
 
     Returns None if no numeric params exist. Structure::
 

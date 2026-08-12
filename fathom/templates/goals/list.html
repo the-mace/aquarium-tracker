@@ -1,0 +1,583 @@
+{% extends "base.html" %}
+{% block title %}Goals — {{ tank.name }} — Fathom{% endblock %}
+{% set active = "goals" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Goals — {{ tank.name }}</h1>
+  <button class="btn btn-primary" onclick="openAddGoalModal()">+ New Goal</button>
+</div>
+
+{% if goals %}
+<div class="filter-bar" style="margin-bottom:1rem">
+  <input type="text" id="goal-search" placeholder="Search goals…" oninput="filterGoals()" style="width:220px;font-size:.85rem;padding:.35rem .6rem">
+  <div class="filter-pills" id="status-pills">
+    <button class="pill pill-active" data-status="all" onclick="setStatusFilter(this,'all')">All</button>
+    <button class="pill" data-status="in_progress" onclick="setStatusFilter(this,'in_progress')">In progress</button>
+    <button class="pill" data-status="paused" onclick="setStatusFilter(this,'paused')">Paused</button>
+    <button class="pill" data-status="achieved" onclick="setStatusFilter(this,'achieved')">Achieved</button>
+    <button class="pill" data-status="abandoned" onclick="setStatusFilter(this,'abandoned')">Abandoned</button>
+    <button class="pill" data-status="blocked" onclick="setStatusFilter(this,'blocked')">Blocked</button>
+  </div>
+</div>
+
+<div class="goal-cards" id="goal-list">
+  {% for goal in goals %}
+  <div class="goal-card status-{{ goal.status }}{% if goal.blocked and goal.status in ('open','in_progress') %} is-blocked{% endif %}"
+       data-status="{{ goal.status }}"
+       data-blocked="{{ '1' if goal.blocked and goal.status in ('open','in_progress') else '0' }}"
+       data-opened="{{ goal.opened_at or '' }}"
+       data-search="{{ (goal.title ~ ' ' ~ (goal.description or '') ~ ' ' ~ (goal.target or '') ~ ' ' ~ (goal.notes or '')) | lower }}"
+       data-goal-id="{{ goal.id }}"
+       data-goal-title="{{ goal.title }}"
+       data-goal-description="{{ goal.description or '' }}"
+       data-goal-target="{{ goal.target or '' }}"
+       data-goal-status="{{ goal.status }}"
+       data-goal-notes="{{ goal.notes or '' }}"
+       data-goal-deps="{% for d in goal.dependencies %}{{ d.id }}{% if not loop.last %},{% endif %}{% endfor %}">
+    <div class="goal-card-header">
+      <h3>{{ goal.title }}</h3>
+      <div class="goal-badges">
+        {% if goal.blocked and goal.status in ('open','in_progress') %}
+        <span class="badge badge-goal-blocked">blocked</span>
+        {% endif %}
+        <span class="badge badge-goal-{{ goal.status }}">{{ goal.status.replace('_', ' ') }}</span>
+      </div>
+    </div>
+    {% if goal.target %}<p class="goal-target"><span class="goal-label">Target:</span> {{ goal.target }}</p>{% endif %}
+    {% if goal.description %}<p class="goal-desc">{{ goal.description }}</p>{% endif %}
+    {% if goal.dependencies %}
+    <div class="goal-deps">
+      <span class="goal-label">Depends on:</span>
+      <ul class="goal-dep-list">
+        {% for d in goal.dependencies %}
+        <li class="goal-dep status-{{ d.status }}">
+          {% if d.status == 'achieved' %}<span class="goal-dep-mark met" title="Achieved">✓</span>
+          {% else %}<span class="goal-dep-mark unmet" title="{{ d.status }}">○</span>{% endif %}
+          {% if d.tank_id != tank.id %}<span class="goal-dep-tank">{{ d.tank_name }}:</span>{% endif %}
+          {{ d.title }}
+          <span class="muted">({{ d.status.replace('_', ' ') }})</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if goal.progress_summary %}
+    <div class="goal-progress">
+      <div class="goal-progress-header">
+        <span class="goal-label">AI progress</span>
+        {% if goal.progress_summary_at %}
+        <span class="muted goal-progress-at">Updated {{ goal.progress_summary_at }}</span>
+        {% endif %}
+      </div>
+      <p class="goal-progress-text">{{ goal.progress_summary }}</p>
+    </div>
+    {% elif goal.status in ('open', 'in_progress') %}
+    <p class="goal-progress-pending muted">Generating AI progress…</p>
+    {% endif %}
+    {% if goal.notes %}<p class="goal-notes muted">{{ goal.notes }}</p>{% endif %}
+    <div class="goal-card-footer">
+      <span class="muted">Opened {{ goal.opened_at }}</span>
+      {% if goal.achieved_at %}<span class="muted">Achieved {{ goal.achieved_at }}</span>{% endif %}
+      <div class="goal-actions">
+        {% if goal.status == 'in_progress' or goal.status == 'open' %}
+        <button class="btn btn-xs btn-ghost" type="button" onclick="openAddNoteModal(this)">+ Note</button>
+        <form method="post" action="/tanks/{{ tank.id }}/goals/{{ goal.id }}/update" style="display:inline">
+          <input type="hidden" name="status" value="paused">
+          <input type="hidden" name="title" value="{{ goal.title }}">
+          <button class="btn btn-xs btn-ghost" type="submit">Pause</button>
+        </form>
+        <button class="btn btn-xs btn-ghost" type="button" onclick="openAchieveModal(this)">→ Achieved</button>
+        {% elif goal.status == 'paused' %}
+        <form method="post" action="/tanks/{{ tank.id }}/goals/{{ goal.id }}/update" style="display:inline">
+          <input type="hidden" name="status" value="in_progress">
+          <input type="hidden" name="title" value="{{ goal.title }}">
+          <button class="btn btn-xs btn-ghost" type="submit">Resume</button>
+        </form>
+        <button class="btn btn-xs btn-ghost" type="button" onclick="openAchieveModal(this)">→ Achieved</button>
+        {% elif goal.status == 'achieved' or goal.status == 'abandoned' %}
+        <form method="post" action="/tanks/{{ tank.id }}/goals/{{ goal.id }}/update" style="display:inline">
+          <input type="hidden" name="status" value="in_progress">
+          <input type="hidden" name="title" value="{{ goal.title }}">
+          <button class="btn btn-xs btn-ghost" type="submit">Resume</button>
+        </form>
+        {% endif %}
+        {% if goal.status in ('open','in_progress','paused') %}
+        <form method="post" action="/tanks/{{ tank.id }}/goals/{{ goal.id }}/update" style="display:inline">
+          <input type="hidden" name="status" value="abandoned">
+          <input type="hidden" name="title" value="{{ goal.title }}">
+          <button class="btn btn-xs btn-ghost" type="submit">Abandon</button>
+        </form>
+        {% endif %}
+        <button class="btn btn-xs btn-ghost" type="button" onclick="openEditGoalModal(this)">Edit</button>
+        <form method="post" action="/tanks/{{ tank.id }}/goals/{{ goal.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this goal?')">
+          <button class="btn btn-xs btn-danger" type="submit">✕</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<div id="goal-empty" class="empty-state" style="display:none">
+  <p class="muted">No goals match the current filter.</p>
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No goals yet</h2>
+  <p class="muted">Track water targets, stocking plans, breeding milestones — and link them across tanks when one depends on another.</p>
+  <button class="btn btn-primary" onclick="openAddGoalModal()">Add a Goal</button>
+</div>
+{% endif %}
+
+{# ── Add / Edit goal modal (shared form, action swapped in JS) ── #}
+<div id="modal-goal-form" class="modal" style="display:none">
+  <div class="modal-box modal-box-lg">
+    <div class="modal-header">
+      <h3 id="goal-form-heading">New Goal</h3>
+      <button class="modal-close" onclick="closeModal('modal-goal-form')">×</button>
+    </div>
+    <form id="goal-form" method="post" action="/tanks/{{ tank.id }}/goals">
+      <input type="hidden" name="update_deps" id="goal-update-deps" value="">
+      <input type="hidden" id="goal-form-mode" value="create">
+      <div id="goal-form-fields">
+        <div class="form-group"><label>Title *</label><input type="text" name="title" id="goal-title" required placeholder="e.g. GH ready for Amano shrimp"></div>
+        <div class="form-group"><label>Target</label><input type="text" name="target" id="goal-target" placeholder="e.g. GH 6–8, stable for 2+ weeks"></div>
+        <div class="form-group"><label>Status</label>
+          <select name="status" id="goal-status">
+            <option value="in_progress" selected>In progress</option>
+            <option value="paused">Paused</option>
+            <option value="achieved">Achieved</option>
+            <option value="abandoned">Abandoned</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Description</label><textarea name="description" id="goal-description" rows="3" placeholder="Why this matters, what success looks like…"></textarea></div>
+        <div class="form-group"><label>Notes</label><textarea name="notes" id="goal-notes" rows="2"></textarea></div>
+        <div class="form-group">
+          <label>Depends on <span class="muted">(other goals, any tank)</span></label>
+          {% if picker_by_tank %}
+          <div class="goal-dep-picker" id="goal-dep-picker">
+            {% for tank_name, pgoals in picker_by_tank.items() %}
+            <div class="goal-dep-group">
+              <div class="goal-dep-group-label">{{ tank_name }}</div>
+              {% for pg in pgoals %}
+              <label class="goal-dep-option" data-picker-id="{{ pg.id }}">
+                <input type="checkbox" name="depends_on" value="{{ pg.id }}">
+                <span>{{ pg.title }}</span>
+                <span class="badge badge-goal-{{ pg.status }}">{{ pg.status.replace('_', ' ') }}</span>
+              </label>
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="muted" style="font-size:.85rem">No other goals yet — add more goals to set dependencies.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      {# AI review step (create flow only). Fields must NOT use `required` while hidden —
+         browser constraint validation blocks submit before JS runs (looks like a no-op). #}
+      <div id="goal-review-panel" style="display:none">
+        <div id="goal-review-status" class="goal-review-status"></div>
+        <p id="goal-review-summary" class="goal-review-summary"></p>
+        <ul id="goal-review-suggestions" class="goal-review-suggestions"></ul>
+        <p class="muted" style="font-size:.8rem;margin:.75rem 0 .35rem">Edit the fields below, then save or re-review.</p>
+        <div class="form-group"><label>Title *</label><input type="text" id="review-title"></div>
+        <div class="form-group"><label>Target</label><input type="text" id="review-target"></div>
+        <div class="form-group"><label>Description</label><textarea id="review-description" rows="3"></textarea></div>
+        <div class="form-group"><label>Notes</label><textarea id="review-notes" rows="2"></textarea></div>
+        <p id="goal-review-error" class="form-error" style="display:none"></p>
+      </div>
+
+      <div class="modal-footer" id="goal-form-footer">
+        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-goal-form')">Cancel</button>
+        {# Create: type=button + onclick (Safari-safe; form submit + async handlers are unreliable).
+           Edit mode swaps this to type=submit via openEditGoalModal. #}
+        <button class="btn btn-primary" type="button" id="goal-form-submit" onclick="startGoalReview()">Review Goal</button>
+      </div>
+      <div class="modal-footer" id="goal-review-footer" style="display:none">
+        <button class="btn btn-ghost" type="button" onclick="goalReviewBackToEdit()">← Edit draft</button>
+        <button class="btn btn-ghost" type="button" id="goal-review-rereview" onclick="goalReReview()">Re-review</button>
+        <button class="btn btn-ghost" type="button" id="goal-review-save-original" onclick="goalSaveVersion('original')">Save as first written</button>
+        <button class="btn btn-primary" type="button" id="goal-review-save" onclick="goalSaveVersion('current')">Save this version</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-achieve-goal" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Mark Achieved</h3><button class="modal-close" onclick="closeModal('modal-achieve-goal')">×</button></div>
+    <form id="achieve-goal-form" method="post">
+      <input type="hidden" name="status" value="achieved">
+      <input type="hidden" name="title" id="achieve-goal-title">
+      <div class="form-group"><label>Achieved on</label><input type="date" name="achieved_at" id="achieve-goal-date" required></div>
+      <div class="form-group"><label>Note (optional)</label><textarea name="comment" rows="3" placeholder="What sealed it?"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-achieve-goal')">Cancel</button><button class="btn btn-primary" type="submit">Mark Achieved</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-add-note-goal" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add Note</h3><button class="modal-close" onclick="closeModal('modal-add-note-goal')">×</button></div>
+    <form id="add-note-goal-form" method="post" onsubmit="return prepareGoalNoteSubmit(this)">
+      <input type="hidden" name="status" id="add-note-goal-status">
+      <input type="hidden" name="title" id="add-note-goal-title">
+      <div class="form-group"><label>Note</label><textarea name="comment" id="add-note-goal-text" rows="4" required placeholder="Progress update…"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-note-goal')">Cancel</button><button class="btn btn-primary" type="submit">Add Note</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let activeStatus = 'all';
+let _goalReviewOriginal = null; // first-written draft for "Save as first written"
+let _goalReviewBusy = false;
+
+function _todayLocalDateStr() {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function _resetDepPicker(selectedIds) {
+  const selected = new Set((selectedIds || []).map(String));
+  document.querySelectorAll('#goal-dep-picker input[type="checkbox"]').forEach(cb => {
+    cb.checked = selected.has(cb.value);
+  });
+}
+
+function _showGoalFormStep() {
+  document.getElementById('goal-form-fields').style.display = 'block';
+  document.getElementById('goal-review-panel').style.display = 'none';
+  document.getElementById('goal-form-footer').style.display = 'flex';
+  document.getElementById('goal-review-footer').style.display = 'none';
+  document.getElementById('goal-review-error').style.display = 'none';
+}
+
+function _showGoalReviewStep() {
+  document.getElementById('goal-form-fields').style.display = 'none';
+  document.getElementById('goal-review-panel').style.display = 'block';
+  document.getElementById('goal-form-footer').style.display = 'none';
+  document.getElementById('goal-review-footer').style.display = 'flex';
+  const box = document.querySelector('#modal-goal-form .modal-box');
+  if (box) box.scrollTop = 0;
+}
+
+function openAddGoalModal() {
+  const form = document.getElementById('goal-form');
+  form.action = `/tanks/{{ tank.id }}/goals`;
+  document.getElementById('goal-form-mode').value = 'create';
+  document.getElementById('goal-form-heading').textContent = 'New Goal';
+  const btn = document.getElementById('goal-form-submit');
+  btn.textContent = 'Review Goal';
+  btn.type = 'button';
+  btn.setAttribute('onclick', 'startGoalReview()');
+  document.getElementById('goal-update-deps').value = '1';
+  document.getElementById('goal-title').value = '';
+  document.getElementById('goal-target').value = '';
+  document.getElementById('goal-description').value = '';
+  document.getElementById('goal-notes').value = '';
+  document.getElementById('goal-status').value = 'in_progress';
+  document.querySelectorAll('#goal-dep-picker .goal-dep-option').forEach(el => {
+    el.style.display = '';
+  });
+  _resetDepPicker([]);
+  _goalReviewOriginal = null;
+  _goalReviewBusy = false;
+  _showGoalFormStep();
+  openModal('modal-goal-form');
+}
+
+function openEditGoalModal(btn) {
+  const card = btn.closest('.goal-card');
+  const goalId = card.dataset.goalId;
+  const form = document.getElementById('goal-form');
+  form.action = `/tanks/{{ tank.id }}/goals/${goalId}/update`;
+  document.getElementById('goal-form-mode').value = 'edit';
+  document.getElementById('goal-form-heading').textContent = 'Edit Goal';
+  const submitBtn = document.getElementById('goal-form-submit');
+  submitBtn.textContent = 'Save Changes';
+  submitBtn.type = 'submit';
+  submitBtn.removeAttribute('onclick');
+  document.getElementById('goal-update-deps').value = '1';
+  document.getElementById('goal-title').value = card.dataset.goalTitle || '';
+  document.getElementById('goal-target').value = card.dataset.goalTarget || '';
+  document.getElementById('goal-description').value = card.dataset.goalDescription || '';
+  document.getElementById('goal-notes').value = card.dataset.goalNotes || '';
+  document.getElementById('goal-status').value = card.dataset.goalStatus || 'in_progress';
+  document.querySelectorAll('#goal-dep-picker .goal-dep-option').forEach(el => {
+    el.style.display = el.dataset.pickerId === goalId ? 'none' : '';
+  });
+  const deps = (card.dataset.goalDeps || '').split(',').filter(Boolean);
+  _resetDepPicker(deps);
+  _goalReviewOriginal = null;
+  _goalReviewBusy = false;
+  _showGoalFormStep();
+  openModal('modal-goal-form');
+}
+
+function _goalFormDraftFromFields() {
+  return {
+    title: document.getElementById('goal-title').value.trim(),
+    target: document.getElementById('goal-target').value.trim(),
+    description: document.getElementById('goal-description').value.trim(),
+    notes: document.getElementById('goal-notes').value.trim(),
+    status: document.getElementById('goal-status').value,
+    depends_on: Array.from(document.querySelectorAll('#goal-dep-picker input[name="depends_on"]:checked')).map(cb => cb.value),
+  };
+}
+
+function _goalFormDraftFromReview() {
+  return {
+    title: document.getElementById('review-title').value.trim(),
+    target: document.getElementById('review-target').value.trim(),
+    description: document.getElementById('review-description').value.trim(),
+    notes: document.getElementById('review-notes').value.trim(),
+    status: document.getElementById('goal-status').value,
+    depends_on: Array.from(document.querySelectorAll('#goal-dep-picker input[name="depends_on"]:checked')).map(cb => cb.value),
+  };
+}
+
+function _applyDraftToFormFields(draft) {
+  document.getElementById('goal-title').value = draft.title || '';
+  document.getElementById('goal-target').value = draft.target || '';
+  document.getElementById('goal-description').value = draft.description || '';
+  document.getElementById('goal-notes').value = draft.notes || '';
+  if (draft.status) document.getElementById('goal-status').value = draft.status;
+  if (draft.depends_on) _resetDepPicker(draft.depends_on);
+}
+
+function _applyDraftToReviewFields(draft) {
+  document.getElementById('review-title').value = draft.title || '';
+  document.getElementById('review-target').value = draft.target || '';
+  document.getElementById('review-description').value = draft.description || '';
+  document.getElementById('review-notes').value = draft.notes || '';
+}
+
+function _setReviewUi(result) {
+  const statusEl = document.getElementById('goal-review-status');
+  const ok = !!result.reasonable;
+  statusEl.textContent = ok ? 'Looks reasonable' : 'Could be improved';
+  statusEl.className = 'goal-review-status ' + (ok ? 'ok' : 'warn');
+  document.getElementById('goal-review-summary').textContent = result.summary || '';
+  const ul = document.getElementById('goal-review-suggestions');
+  ul.innerHTML = '';
+  (result.suggestions || []).forEach(s => {
+    const li = document.createElement('li');
+    li.textContent = s;
+    ul.appendChild(li);
+  });
+  // Prefer proposed fields for the editable review form
+  const proposed = result.proposed || result.draft || {};
+  _applyDraftToReviewFields(proposed);
+  const origBtn = document.getElementById('goal-review-save-original');
+  if (result.changed) {
+    origBtn.style.display = '';
+  } else {
+    origBtn.style.display = 'none';
+  }
+}
+
+async function _runGoalReview(draft) {
+  const fd = new FormData();
+  fd.append('title', draft.title);
+  fd.append('target', draft.target || '');
+  fd.append('description', draft.description || '');
+  fd.append('notes', draft.notes || '');
+  (draft.depends_on || []).forEach(id => fd.append('depends_on', id));
+  const res = await fetch(`/tanks/{{ tank.id }}/goals/review`, {
+    method: 'POST',
+    body: fd,
+    headers: { 'Accept': 'application/json' },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Review failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Create-flow entry point — called by Review Goal button (type=button). Safari-safe. */
+async function startGoalReview() {
+  if (_goalReviewBusy) return;
+  const mode = document.getElementById('goal-form-mode').value;
+  if (mode !== 'create') return;
+  const draft = _goalFormDraftFromFields();
+  if (!draft.title) {
+    const titleEl = document.getElementById('goal-title');
+    titleEl.focus();
+    if (typeof titleEl.reportValidity === 'function') titleEl.reportValidity();
+    else alert('Title is required.');
+    return;
+  }
+  _goalReviewBusy = true;
+  const btn = document.getElementById('goal-form-submit');
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Reviewing...';
+  document.getElementById('goal-form-heading').textContent = 'Reviewing goal...';
+  try {
+    if (!_goalReviewOriginal) {
+      _goalReviewOriginal = {
+        title: draft.title,
+        target: draft.target,
+        description: draft.description,
+        notes: draft.notes,
+        status: draft.status,
+        depends_on: draft.depends_on.slice(),
+      };
+    }
+    const result = await _runGoalReview(draft);
+    _setReviewUi(result);
+    document.getElementById('goal-form-heading').textContent = 'Review goal';
+    _showGoalReviewStep();
+  } catch (err) {
+    console.error('Goal review failed', err);
+    document.getElementById('goal-form-heading').textContent = 'New Goal';
+    alert((err && err.message) ? err.message : 'Review failed');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+    _goalReviewBusy = false;
+  }
+}
+
+function goalReviewBackToEdit() {
+  // Always restore what the user originally typed — not the AI rewrite.
+  const draft = _goalReviewOriginal || _goalFormDraftFromFields();
+  _applyDraftToFormFields(draft);
+  document.getElementById('goal-form-heading').textContent = 'New Goal';
+  const btn = document.getElementById('goal-form-submit');
+  btn.textContent = 'Review Goal';
+  btn.type = 'button';
+  btn.setAttribute('onclick', 'startGoalReview()');
+  // Next Review should re-capture original if they change the draft again.
+  _goalReviewOriginal = null;
+  _showGoalFormStep();
+}
+
+async function goalReReview() {
+  if (_goalReviewBusy) return;
+  const draft = _goalFormDraftFromReview();
+  if (!draft.title) {
+    document.getElementById('goal-review-error').style.display = '';
+    document.getElementById('goal-review-error').textContent = 'Title is required.';
+    return;
+  }
+  _goalReviewBusy = true;
+  const btn = document.getElementById('goal-review-rereview');
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Reviewing…';
+  document.getElementById('goal-review-error').style.display = 'none';
+  try {
+    const result = await _runGoalReview(draft);
+    _setReviewUi(result);
+  } catch (err) {
+    document.getElementById('goal-review-error').style.display = '';
+    document.getElementById('goal-review-error').textContent = err.message || 'Review failed';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+    _goalReviewBusy = false;
+  }
+}
+
+async function goalSaveVersion(which) {
+  if (_goalReviewBusy) return;
+  let draft;
+  if (which === 'original') {
+    draft = _goalReviewOriginal || _goalFormDraftFromReview();
+  } else {
+    draft = _goalFormDraftFromReview();
+  }
+  if (!draft.title) {
+    document.getElementById('goal-review-error').style.display = '';
+    document.getElementById('goal-review-error').textContent = 'Title is required.';
+    return;
+  }
+  _goalReviewBusy = true;
+  const saveBtn = document.getElementById('goal-review-save');
+  const prev = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  try {
+    const fd = new FormData();
+    fd.append('title', draft.title);
+    fd.append('target', draft.target || '');
+    fd.append('description', draft.description || '');
+    fd.append('notes', draft.notes || '');
+    fd.append('status', draft.status || 'in_progress');
+    (draft.depends_on || []).forEach(id => fd.append('depends_on', id));
+    const res = await fetch(`/tanks/{{ tank.id }}/goals`, {
+      method: 'POST',
+      body: fd,
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) throw new Error(await res.text() || `Save failed (${res.status})`);
+    window.location.href = `/tanks/{{ tank.id }}/goals`;
+  } catch (err) {
+    document.getElementById('goal-review-error').style.display = '';
+    document.getElementById('goal-review-error').textContent = err.message || 'Save failed';
+    saveBtn.disabled = false;
+    saveBtn.textContent = prev;
+    _goalReviewBusy = false;
+  }
+}
+
+function openAchieveModal(btn) {
+  const card = btn.closest('.goal-card');
+  const form = document.getElementById('achieve-goal-form');
+  form.action = `/tanks/{{ tank.id }}/goals/${card.dataset.goalId}/update`;
+  document.getElementById('achieve-goal-title').value = card.dataset.goalTitle;
+  form.querySelector('textarea[name="comment"]').value = '';
+  document.getElementById('achieve-goal-date').value = _todayLocalDateStr();
+  openModal('modal-achieve-goal');
+}
+
+function openAddNoteModal(btn) {
+  const card = btn.closest('.goal-card');
+  const form = document.getElementById('add-note-goal-form');
+  form.action = `/tanks/{{ tank.id }}/goals/${card.dataset.goalId}/update`;
+  document.getElementById('add-note-goal-title').value = card.dataset.goalTitle;
+  document.getElementById('add-note-goal-status').value = card.dataset.goalStatus;
+  document.getElementById('add-note-goal-text').value = '';
+  openModal('modal-add-note-goal');
+}
+
+function prepareGoalNoteSubmit(form) {
+  const textarea = form.querySelector('#add-note-goal-text');
+  // Server also stamps dates; keep raw text — backend prefixes YYYY-MM-DD
+  return true;
+}
+
+function setStatusFilter(btn, status) {
+  activeStatus = status;
+  document.querySelectorAll('#status-pills .pill').forEach(p => p.classList.remove('pill-active'));
+  btn.classList.add('pill-active');
+  filterGoals();
+}
+
+function filterGoals() {
+  const q = (document.getElementById('goal-search')?.value || '').toLowerCase();
+  const cards = Array.from(document.querySelectorAll('#goal-list .goal-card'));
+  let visibleCount = 0;
+  cards.forEach(card => {
+    let statusMatch;
+    if (activeStatus === 'all') statusMatch = true;
+    else if (activeStatus === 'blocked') statusMatch = card.dataset.blocked === '1';
+    else statusMatch = card.dataset.status === activeStatus;
+    const textMatch = !q || card.dataset.search.includes(q);
+    const show = statusMatch && textMatch;
+    card.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+  const empty = document.getElementById('goal-empty');
+  if (empty) empty.style.display = visibleCount === 0 ? '' : 'none';
+}
+</script>
+{% endblock %}

@@ -28,3 +28,8 @@ CLAUDE_MAX_TOKENS_ISSUE_REVIEW = 2048
 CLAUDE_MAX_TOKENS_SUMMARY = 4096
 CLAUDE_MAX_TOKENS_NOTES_PROPOSAL = 2048
 CLAUDE_MAX_TOKENS_RECOMMENDATION = 1500
+CLAUDE_MAX_TOKENS_GOAL_PROGRESS = 2048
+# Goal review returns JSON; adaptive thinking previously burned the whole 2048
+# budget and truncated mid-JSON → "Could not parse AI review". Budget leaves
+# room for thinking + full rewrite, or use thinking-off for this call site.
+CLAUDE_MAX_TOKENS_GOAL_REVIEW = 4096

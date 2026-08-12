@@ -15,6 +15,8 @@ from ai_config import (
     CLAUDE_MAX_TOKENS_SUMMARY,
     CLAUDE_MAX_TOKENS_NOTES_PROPOSAL,
     CLAUDE_MAX_TOKENS_RECOMMENDATION,
+    CLAUDE_MAX_TOKENS_GOAL_PROGRESS,
+    CLAUDE_MAX_TOKENS_GOAL_REVIEW,
 )
 
 logger = logging.getLogger(__name__)
@@ -388,6 +390,56 @@ def _fmt_issues_with_id(rows):
     )
 
 
+def _fmt_goals(rows):
+    """Format active goals for AI prompts (includes targets, deps, progress)."""
+    if not rows:
+        return "  None"
+    lines = []
+    for r in rows:
+        parts = [f"  [{r.get('status', 'open').upper()}] {r['title']}"]
+        if r.get("target"):
+            parts.append(f"    Target: {r['target']}")
+        if r.get("description"):
+            parts.append(f"    {r['description']}")
+        deps = r.get("dependencies") or []
+        if deps:
+            dep_bits = []
+            for d in deps:
+                tank_bit = f"{d.get('tank_name')}: " if d.get("tank_name") else ""
+                dep_bits.append(f"{tank_bit}{d['title']} [{d.get('status', '?')}]")
+            parts.append(f"    Depends on: {'; '.join(dep_bits)}")
+            if r.get("blocked"):
+                parts.append("    Status: BLOCKED (one or more dependencies not yet achieved)")
+        if r.get("progress_summary"):
+            parts.append(f"    Progress: {r['progress_summary']}")
+        lines.append("\n".join(parts))
+    return "\n".join(lines)
+
+
+def _fmt_goals_for_progress(rows):
+    """Compact goal list with ids for the progress-update JSON prompt."""
+    if not rows:
+        return "  None"
+    lines = []
+    for r in rows:
+        bits = [f"id={r['id']}", f"[{r.get('status', 'open').upper()}]", r["title"]]
+        if r.get("target"):
+            bits.append(f"— target: {r['target']}")
+        if r.get("description"):
+            bits.append(f"— {r['description']}")
+        deps = r.get("dependencies") or []
+        if deps:
+            dep_s = "; ".join(
+                f"{(d.get('tank_name') + ': ') if d.get('tank_name') else ''}{d['title']} [{d.get('status','?')}]"
+                for d in deps
+            )
+            bits.append(f"— depends on: {dep_s}")
+        if r.get("progress_summary"):
+            bits.append(f"— prior progress note: {r['progress_summary']}")
+        lines.append("  " + " ".join(bits))
+    return "\n".join(lines)
+
+
 def _fmt_events(rows):
     if not rows:
         return "  None"
@@ -428,8 +480,9 @@ def _fmt_timeline_rows(rows):
 
 
 def build_recommendation_prompt(tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows,
-                                home_water_tests=None):
+                                home_water_tests=None, goals=None):
     home_water_tests = home_water_tests or []
+    goals = goals or []
     return f"""You are helping during routine aquarium maintenance, right after a water test was just logged. Write a short status update the keeper will read immediately, mid-maintenance.
 
 Background context (use this ONLY to judge whether something needs attention — e.g. species-appropriate parameter ranges for the inhabitants below, or whether a scheduled task is overdue. Do NOT summarize or restate this background in your answer; the keeper already knows their own tank contents):
@@ -437,6 +490,8 @@ Background context (use this ONLY to judge whether something needs attention —
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
 Inhabitants: {_fmt_inhabitants(inhabitants)}
 Open issues: {_fmt_issues(issues)}
+Active goals (longer-horizon aims — only mention if this test clearly advances or blocks one):
+{_fmt_goals(goals)}
 Recurring feeding/dosing/maintenance schedule:
 {_fmt_schedule(schedule_rows)}
 Tank activity over the last 4 weeks (newest first):
@@ -454,14 +509,16 @@ Now write the actual response. Cover only what's relevant, briefly:
 2. Any water parameter values or trends worth flagging vs. the recent tests above (e.g. a drop/rise since the last test, or a value outside the *safe tolerance* range for the inhabitants). Use precise, species-specific tolerance ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary. Only mention parameters that are actually notable, skip the rest.
 {_PARAMETER_BASELINE_RULE}
 3. The action to take now. Usually this is simply "Proceed with the standard water change" per the schedule above — do not restate the schedule's gallons/dose/interval details, the keeper already has those. Only describe something different if this test's results or recent history genuinely call for a different action. When a water change is the plan, you may briefly note how incoming home-water GH/KH will pull tank parameters if that is actually material (skip if home water is unknown or already aligned).
+4. Goals — only if this reading clearly moves an active goal forward or shows it is stalled (e.g. GH finally in range for a stocking goal). One short clause max; skip if nothing goal-related changed.
 
 2-4 sentences total, plain text, no markdown, no headers, no preamble like "Recommendation:" or "Analysis:" — this text is appended directly to the test result's own notes field."""
 
 
 def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape,
-                          schedule_rows=None, home_water_tests=None):
+                          schedule_rows=None, home_water_tests=None, goals=None):
     schedule_rows = schedule_rows or []
     home_water_tests = home_water_tests or []
+    goals = goals or []
     return f"""You are an expert aquarium keeper analyzing water chemistry and tank health data.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
@@ -485,6 +542,9 @@ Fill water for water changes (tap WC source and/or bottled only — NOT raw/diag
 Open Issues:
 {_fmt_issues(issues)}
 
+Active Goals (longer-horizon aims for this tank — water targets, stocking, breeding; may depend on goals on other tanks):
+{_fmt_goals(goals)}
+
 Recurring schedule (current planned feeding/dosing/maintenance — authoritative for what the keeper currently does):
 {_fmt_schedule(schedule_rows)}
 
@@ -500,16 +560,18 @@ Please provide:
 2. Any flags or concerns about parameters outside the *safe tolerance* range for this tank's inhabitants — use precise, species-specific ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary.
 3. Specific actionable recommendations
 4. For each open issue, suggest whether it should remain open, move to monitoring, or be resolved
-5. If the latest test's own notes mention something new (an inhabitant added/removed, an action taken, a change noticed) that isn't already reflected in the Current Inhabitants/Plants/Hardscape lists above, acknowledge it explicitly — don't let it get crowded out by the water-chemistry discussion.
+5. Progress toward active goals when the data speaks to them (e.g. GH vs a stocking target) — brief, only when relevant
+6. If the latest test's own notes mention something new (an inhabitant added/removed, an action taken, a change noticed) that isn't already reflected in the Current Inhabitants/Plants/Hardscape lists above, acknowledge it explicitly — don't let it get crowded out by the water-chemistry discussion.
 
 Keep your response concise and practical. Use plain text, no markdown formatting."""
 
 
 def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis,
-                         schedule_rows=None, events=None, home_water_tests=None):
+                         schedule_rows=None, events=None, home_water_tests=None, goals=None):
     schedule_rows = schedule_rows or []
     events = events or []
     home_water_tests = home_water_tests or []
+    goals = goals or []
     return f"""You are an expert aquarium keeper. Write a concise 2-3 paragraph summary of this tank's current state for use as context in future questions.
 
 Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
@@ -533,6 +595,9 @@ Fill water for water changes (tap WC source and/or bottled only — NOT raw/diag
 Open Issues:
 {_fmt_issues([i for i in issues if i.get('status') != 'resolved'])}
 
+Active Goals:
+{_fmt_goals(goals)}
+
 Recurring schedule (current planned feeding/dosing/maintenance — authoritative for what the keeper currently does):
 {_fmt_schedule(schedule_rows)}
 
@@ -546,7 +611,375 @@ Latest Analysis:
 
 {_PARAMETER_BASELINE_RULE}
 
-Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events and home-water readings, not obsolete notes), and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
+Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events and home-water readings, not obsolete notes), active goals when they matter for "what the keeper is working toward", and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
+
+
+def build_goal_progress_prompt(tank, goals, test_results, inhabitants, events, home_water_tests=None):
+    """Prompt for per-goal progress blurbs after a water test (JSON response)."""
+    home_water_tests = home_water_tests or []
+    return f"""You are assessing progress toward aquarium goals right after a new water test.
+
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
+
+Inhabitants:
+{_fmt_inhabitants(inhabitants)}
+
+Recent Test Results (newest first):
+{_fmt_test_results(test_results)}
+
+Fill water for water changes (tap WC source and/or bottled only — NOT raw/diagnostic):
+{_fmt_home_water_block(home_water_tests)}
+{_HOME_WATER_PROMPT_RULE}
+
+Recent Events (last 30 days):
+{_fmt_events(events)}
+
+Active goals to update (use the id field exactly):
+{_fmt_goals_for_progress(goals)}
+
+{_PARAMETER_BASELINE_RULE}
+
+For EACH goal above, write a short progress assessment (2-4 sentences, plain text, no markdown):
+- How current water params / stock / events stand relative to the goal's target and description
+- Whether dependencies still block it (name them)
+- What concrete next step would move it forward (one sentence max)
+- Do not invent readings that aren't in the data; if data is sparse, say so briefly
+
+Return ONLY a JSON array (no markdown fences, no extra text), one object per goal:
+[{{"goal_id": <int>, "progress_summary": "<text>"}}]
+Include every goal id listed above exactly once."""
+
+
+def _fmt_other_tanks_stock(other_tanks_stock):
+    """Format other tanks' currently stocked animals for cross-tank goal drafts."""
+    if not other_tanks_stock:
+        return "  (no other tanks)"
+    lines = []
+    for ot in other_tanks_stock:
+        name = ot.get("name") or "Tank"
+        vol = ot.get("volume_gallons")
+        header = f"  {name}"
+        if vol is not None:
+            header += f" ({vol}g)"
+        stock = ot.get("inhabitants") or []
+        if not stock:
+            lines.append(f"{header}: (no current stock)")
+            continue
+        bits = []
+        for r in stock:
+            label = (r.get("common_name") or r.get("species") or "Unknown").strip()
+            c = r.get("count")
+            if c is None:
+                bits.append(f"{label} (many)")
+            else:
+                bits.append(f"{label} x{c}")
+        lines.append(f"{header}: {', '.join(bits)}")
+    return "\n".join(lines)
+
+
+def build_goal_review_prompt(tank, draft, existing_goals, latest_test=None, inhabitants=None,
+                             dep_goals=None, home_water_tests=None, other_tanks_stock=None):
+    """Review a draft goal before it is saved; propose clearer/measurable wording."""
+    latest_test = latest_test or {}
+    inhabitants = inhabitants or []
+    dep_goals = dep_goals or []
+    home_water_tests = home_water_tests or []
+    other_tanks_stock = other_tanks_stock or []
+    draft_title = (draft.get("title") or "").strip()
+    draft_target = (draft.get("target") or "").strip()
+    draft_desc = (draft.get("description") or "").strip()
+    draft_notes = (draft.get("notes") or "").strip()
+
+    if latest_test:
+        params = []
+        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp"):
+            val = latest_test.get(field)
+            if val is not None:
+                params.append(f"{field.upper()}={val}")
+        latest_line = ", ".join(params) if params else "no numeric params"
+        latest_block = f"  {(latest_test.get('timestamp') or '')[:10]}: {latest_line}"
+    else:
+        latest_block = "  No water tests recorded yet."
+
+    if dep_goals:
+        dep_lines = "\n".join(
+            f"  - [{d.get('status','?')}] {d.get('tank_name','?')}: {d.get('title','')}"
+            + (f" — {d['target']}" if d.get("target") else "")
+            for d in dep_goals
+        )
+    else:
+        dep_lines = "  (none selected)"
+
+    # Split stock so the model does not treat count=0 rows as living animals.
+    current_inh = [
+        r for r in inhabitants
+        if r.get("count") is None or (isinstance(r.get("count"), (int, float)) and r.get("count") > 0)
+    ]
+    former_inh = [
+        r for r in inhabitants
+        if r.get("count") is not None and r.get("count") == 0
+    ]
+    current_block = _fmt_inhabitants(current_inh)
+    if former_inh:
+        former_bits = []
+        for r in former_inh:
+            label = (r.get("common_name") or r.get("species") or "Unknown").strip()
+            former_bits.append(f"  {label} (count 0 — NOT currently in the tank)")
+        former_block = "\n".join(former_bits)
+    else:
+        former_block = "  None"
+
+    return f"""You are helping a keeper turn a rough draft into a clean, savable aquarium goal.
+
+Tank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}
+
+Latest water test:
+{latest_block}
+
+Currently stocked (count null/"many" or count > 0 only — these are in the tank now):
+{current_block}
+
+Formerly stocked / not present now (count 0 — do NOT treat as living stock; do NOT assume restocking this exact variety unless the draft names it):
+{former_block}
+
+Other tanks' currently stocked animals (for cross-tank drafts — moving/breeding/sourcing between tanks):
+{_fmt_other_tanks_stock(other_tanks_stock)}
+
+Fill/source water (context only):
+{_fmt_home_water_block(home_water_tests)}
+
+Other goals already on this tank (avoid near-duplicates; note conflicts in summary/suggestions only):
+{_fmt_goals(existing_goals)}
+
+Dependencies the keeper selected for this new goal:
+{dep_lines}
+
+Draft goal (user's rough intent — interpret carefully; do not invent facts):
+  Title: {draft_title or '(empty)'}
+  Target: {draft_target or '(empty)'}
+  Description: {draft_desc or '(empty)'}
+  Notes: {draft_notes or '(empty)'}
+
+Your job has TWO separate outputs:
+
+1) FEEDBACK (summary + suggestions only):
+- Is this a reasonable goal for this tank?
+- What's vague, missing, duplicate, already true, or blocked?
+- What must the keeper clarify (species, destination tank, duration)?
+- Put ALL critique, questions, and "please clarify X" language HERE only
+- READ the full draft (title + target + description + notes) before claiming species is unknown
+- If the draft says stock will come from another tank ("shrimp tank", "other tank", "from the X tank", "both tanks", "move from"), you MUST cross-reference "Other tanks' currently stocked animals" and resolve species from that source tank when it matches
+- Only ask "which species?" when neither this tank's current stock NOR a named/implied source tank's stock can resolve the draft
+
+2) PROPOSED GOAL FIELDS (title/target/description/notes):
+- These are the actual goal text that will be saved if the user clicks Save
+- Write a finished goal with proper capitalization and punctuation
+- Title: short and clear (e.g. "Raise GH before adding Fire Red shrimp") — not "Clarify …"
+- Target: one concrete line with ideal range, optional tolerable range, and timeline when relevant
+  Example: "Ideal GH 6–8 dGH (tolerable 5–10); hold ideal for 4+ consecutive weeks"
+- Description: 2–4 complete sentences: why, how success is judged, realistic approach given tank + fill water; if sourcing from another tank, name that tank and the stock being moved
+- Notes: optional short keeper notes only; leave "" if nothing useful
+
+SPECIES / FACTUAL ACCURACY — do not hallucinate; DO cross-reference other tanks:
+- Allowed species names in proposed fields only if they appear in: (a) the draft text, (b) this tank's Currently stocked list, or (c) a source tank named/implied in the draft under "Other tanks' currently stocked animals"
+- count=0 / formerly stocked on THIS tank is NOT by itself permission to name that variety
+- When draft implies a source tank (e.g. "from the shrimp tank", "shrimp tank", "other tank", "both tanks") and that tank has a clear matching animal (e.g. Fire Red Shrimp for "red shrimp"), USE that name in proposed fields — do not claim species is unknown
+- If multiple red/shrimp varieties exist on the source tank, ask which one in suggestions; if only one clear match, use it
+- Do not invent cultivars not present in draft, this tank's current stock, or the referenced source tank's current stock
+- Do not invent stock that is not listed for the referenced tank
+- Water ranges may use species-appropriate guidance once species is resolved from real data
+
+CRITICAL — never put review feedback into proposed fields:
+- No "undefined", "needs specific…", "before this can be tracked"
+- No "draft intent is unclear", "if the goal is…", "confirm whether…"
+- No scolding about what is already stocked
+- If species is truly ambiguous after cross-referencing other tanks: reasonable=false, ask in summary/suggestions, keep proposed species generic
+- If draft is already excellent, copy it into proposed unchanged but fix capitalization/punctuation
+
+Return ONLY JSON (no markdown fences, no text before or after the object):
+{{
+  "reasonable": <true|false>,
+  "summary": "<2-4 sentences of assessment/feedback only>",
+  "suggestions": ["<feedback bullet 1>", "..."],
+  "proposed": {{
+    "title": "<finished goal title>",
+    "target": "<finished measurable target with ideal/tolerable ranges and timeline>",
+    "description": "<finished goal description, complete sentences>",
+    "notes": "<optional notes or empty string>"
+  }}
+}}
+
+No markdown in any string."""
+
+
+# Phrases that mean the model wrote reviewer meta-text into a proposed goal field.
+_GOAL_REVIEW_META_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"undefined|needs?\s+specific|before\s+this\s+can\s+be\s+tracked|"
+    r"draft\s+intent|intent\s+is\s+unclear|if\s+the\s+goal\s+is|"
+    r"confirm\s+whether|clarify\s+(the\s+)?|needs?\s+clarif|"
+    r"this\s+likely\s+duplicates|not\s+a\s+goal|cannot\s+be\s+tracked|"
+    r"you\s+should|the\s+user\s+should|keeper\s+should|"
+    r"still\s+needs\s+to\s+be\s+specified|needs\s+to\s+be\s+specified|"
+    r"by\s+the\s+keeper"
+    r")\b"
+)
+
+
+def _looks_like_review_meta(text: str) -> bool:
+    """True if text is critique/instructions rather than savable goal wording."""
+    if not text or not text.strip():
+        return False
+    t = text.strip()
+    if _GOAL_REVIEW_META_PATTERNS.search(t):
+        return True
+    # Titles that start with review verbs
+    if re.match(r"(?i)^(clarify|review|fix|define|specify|decide)\b", t):
+        return True
+    return False
+
+
+def _parse_goal_review(raw: str, draft: dict) -> dict:
+    """Parse goal-review JSON; fall back to draft fields when parsing fails."""
+    draft_out = {
+        "title": (draft.get("title") or "").strip(),
+        "target": (draft.get("target") or "").strip(),
+        "description": (draft.get("description") or "").strip(),
+        "notes": (draft.get("notes") or "").strip(),
+    }
+    fallback = {
+        "reasonable": False,
+        "summary": "Could not parse AI review — you can save the goal as written or try Re-review.",
+        "suggestions": [],
+        "proposed": dict(draft_out),
+        "changed": False,
+        "parse_failed": True,
+    }
+    if not raw:
+        return fallback
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    data = None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Extract first balanced {...} object (handles leading/trailing prose)
+        start = text.find("{")
+        if start >= 0:
+            depth = 0
+            in_str = False
+            esc = False
+            end = -1
+            for i, ch in enumerate(text[start:], start):
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == "\\":
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end > start:
+                try:
+                    data = json.loads(text[start : end + 1])
+                except json.JSONDecodeError:
+                    data = None
+        if data is None:
+            logger.warning("Goal review parse failed: %s", text[:200])
+            return fallback
+    if not isinstance(data, dict):
+        return fallback
+
+    proposed_in = data.get("proposed") if isinstance(data.get("proposed"), dict) else {}
+    proposed = {
+        "title": (proposed_in.get("title") if proposed_in.get("title") is not None else draft_out["title"]),
+        "target": (proposed_in.get("target") if proposed_in.get("target") is not None else draft_out["target"]),
+        "description": (
+            proposed_in.get("description") if proposed_in.get("description") is not None
+            else draft_out["description"]
+        ),
+        "notes": (proposed_in.get("notes") if proposed_in.get("notes") is not None else draft_out["notes"]),
+    }
+    for k in proposed:
+        proposed[k] = (proposed[k] or "").strip() if isinstance(proposed[k], str) else draft_out[k]
+
+    # If the model dumped reviewer feedback into proposed fields, keep the user's draft
+    # for those fields rather than showing meta-text as the "goal".
+    for k in ("title", "target", "description", "notes"):
+        if _looks_like_review_meta(proposed[k]):
+            logger.info("Goal review proposed.%s looked like meta-feedback; using draft", k)
+            proposed[k] = draft_out[k]
+
+    suggestions = data.get("suggestions") or []
+    if not isinstance(suggestions, list):
+        suggestions = []
+    suggestions = [str(s).strip() for s in suggestions if str(s).strip()]
+
+    summary = (data.get("summary") or "").strip() or fallback["summary"]
+    reasonable = data.get("reasonable")
+    if not isinstance(reasonable, bool):
+        reasonable = True
+
+    changed = any(proposed[k] != draft_out[k] for k in draft_out)
+    return {
+        "reasonable": reasonable,
+        "summary": summary,
+        "suggestions": suggestions,
+        "proposed": proposed,
+        "changed": changed,
+    }
+
+
+def _parse_goal_progress_updates(raw: str, valid_ids: set[int]) -> list[dict]:
+    """Parse Claude's goal-progress JSON; drop unknown ids / empty summaries."""
+    if not raw or not valid_ids:
+        return []
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r"\[.*\]", text, re.DOTALL)
+        if not m:
+            logger.warning("Goal progress parse failed (no JSON array): %s", text[:200])
+            return []
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            logger.warning("Goal progress parse failed: %s", text[:200])
+            return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    seen: set[int] = set()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            gid = int(item.get("goal_id"))
+        except (TypeError, ValueError):
+            continue
+        if gid not in valid_ids or gid in seen:
+            continue
+        summary = (item.get("progress_summary") or "").strip()
+        if not summary:
+            continue
+        seen.add(gid)
+        out.append({"goal_id": gid, "progress_summary": summary})
+    return out
 
 
 def build_notes_proposal_prompt(tank, schedule_rows, events, test_results, home_water_tests=None):
@@ -697,6 +1130,9 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 (tank_id,),
             ).fetchall())
 
+            from routers.goals import load_active_goals
+            goals = load_active_goals(conn, tank_id)
+
             events = rows_to_list(conn.execute(
                 "SELECT * FROM events WHERE tank_id = ? AND timestamp >= datetime('now','-30 days') ORDER BY timestamp DESC",
                 (tank_id,),
@@ -728,7 +1164,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
 
         analysis_prompt = build_analysis_prompt(
             tank, test_results, issues, events, inhabitants, plants, hardscape, schedule_rows,
-            home_water_tests=home_water_tests,
+            home_water_tests=home_water_tests, goals=goals,
         )
         _, analysis_text = await _claude_text(
             client,
@@ -794,7 +1230,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
 
         summary_prompt = build_summary_prompt(
             tank, test_results, issues, inhabitants, plants, hardscape, analysis_text,
-            schedule_rows, events, home_water_tests=home_water_tests,
+            schedule_rows, events, home_water_tests=home_water_tests, goals=goals,
         )
         _, summary_text = await _claude_text(
             client,
@@ -925,6 +1361,9 @@ async def run_test_recommendation(tank_id: int, result_id: int):
                 (tank_id,),
             ).fetchall())
 
+            from routers.goals import load_active_goals
+            goals = load_active_goals(conn, tank_id)
+
             inhabitants = rows_to_list(conn.execute(
                 "SELECT * FROM inhabitants WHERE tank_id = ?", (tank_id,)
             ).fetchall())
@@ -944,7 +1383,7 @@ async def run_test_recommendation(tank_id: int, result_id: int):
 
         prompt = build_recommendation_prompt(
             tank, test_result, recent_tests, issues, inhabitants, schedule_rows, timeline_rows,
-            home_water_tests=home_water_tests,
+            home_water_tests=home_water_tests, goals=goals,
         )
         _, recommendation = await _claude_text(
             client,
@@ -977,3 +1416,98 @@ async def run_test_recommendation(tank_id: int, result_id: int):
 
     except Exception as e:
         logger.error("Test recommendation failed for tank %d test %d: %s", tank_id, result_id, e)
+
+
+# Prevent concurrent progress runs for the same tank (create + list backfill + test save).
+_goal_progress_in_flight: set[int] = set()
+
+
+async def run_goal_progress(tank_id: int, result_id: int | None = None):
+    """Refresh AI progress summaries for all active goals on a tank.
+
+    Triggered when a goal is created and after each manual water-test save.
+    One Claude call covers every open/in_progress goal.
+    """
+    if tank_id in _goal_progress_in_flight:
+        logger.info("Goal progress already in flight for tank %d — skip", tank_id)
+        return
+    _goal_progress_in_flight.add(tank_id)
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set, skipping goal progress update")
+        _goal_progress_in_flight.discard(tank_id)
+        return
+
+    try:
+        import anthropic
+        from routers.goals import load_active_goals
+
+        with get_db() as conn:
+            tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
+            if not tank:
+                return
+
+            goals = load_active_goals(conn, tank_id)
+            if not goals:
+                logger.info("No active goals for tank %d — skip progress update", tank_id)
+                return
+
+            test_results = rows_to_list(conn.execute(
+                "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 10",
+                (tank_id,),
+            ).fetchall())
+
+            inhabitants = rows_to_list(conn.execute(
+                "SELECT * FROM inhabitants WHERE tank_id = ?", (tank_id,),
+            ).fetchall())
+
+            events = rows_to_list(conn.execute(
+                "SELECT * FROM events WHERE tank_id = ? AND timestamp >= datetime('now','-30 days') ORDER BY timestamp DESC",
+                (tank_id,),
+            ).fetchall())
+
+            home_water_tests = load_home_water_tests(conn)
+
+        client = anthropic.Anthropic(api_key=api_key)
+        prompt = build_goal_progress_prompt(
+            tank, goals, test_results, inhabitants, events,
+            home_water_tests=home_water_tests,
+        )
+        _, raw = await _claude_text(
+            client,
+            label="goal_progress",
+            tank_id=tank_id,
+            max_tokens=CLAUDE_MAX_TOKENS_GOAL_PROGRESS,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if not raw:
+            logger.warning("Goal progress returned no text for tank %d", tank_id)
+            return
+
+        updates = _parse_goal_progress_updates(raw, {g["id"] for g in goals})
+        if not updates:
+            logger.warning("Goal progress produced no valid updates for tank %d: %s", tank_id, raw[:200])
+            return
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        with get_db() as conn:
+            for upd in updates:
+                conn.execute(
+                    """UPDATE goals SET progress_summary = ?, progress_summary_at = ?,
+                       updated_at = datetime('now')
+                       WHERE id = ? AND tank_id = ?
+                         AND status IN ('open', 'in_progress')""",
+                    (upd["progress_summary"], now, upd["goal_id"], tank_id),
+                )
+
+        logger.info(
+            "Goal progress updated for tank %d (%d goals)%s",
+            tank_id, len(updates),
+            f" after test {result_id}" if result_id else "",
+        )
+
+    except Exception as e:
+        logger.error("Goal progress update failed for tank %d: %s", tank_id, e)
+    finally:
+        _goal_progress_in_flight.discard(tank_id)

@@ -97,9 +97,10 @@ async def add_test_result(
                 (tank_id, result_id, notes.strip()),
             )
 
-    from routers.ai_analysis import run_ai_analysis, run_test_recommendation
+    from routers.ai_analysis import run_ai_analysis, run_test_recommendation, run_goal_progress
     background_tasks.add_task(run_ai_analysis, tank_id, "test", result_id)
     background_tasks.add_task(run_test_recommendation, tank_id, result_id)
+    background_tasks.add_task(run_goal_progress, tank_id, result_id)
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:

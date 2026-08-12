@@ -19,7 +19,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 
 TANK_TABLES = [
     "test_results", "events", "inhabitants", "population_events",
-    "purchases", "observations", "issues", "tank_state_summary",
+    "purchases", "observations", "issues", "goals", "tank_state_summary",
     "plants", "hardscape", "tank_equipment", "recurring_schedule",
     "tank_notes_proposals", "chat_conversations",
 ]
@@ -98,6 +98,9 @@ async def tank_detail(request: Request, tank_id: int):
             "SELECT * FROM issues WHERE tank_id = ? AND status != 'resolved' ORDER BY opened_at DESC",
             (tank_id,),
         ).fetchall())
+
+        from routers.goals import load_dashboard_goals
+        active_goals = load_dashboard_goals(conn, tank_id)
 
         recent_observations = rows_to_list(conn.execute(
             "SELECT * FROM observations WHERE tank_id = ? ORDER BY created_at DESC LIMIT 3",
@@ -180,6 +183,7 @@ async def tank_detail(request: Request, tank_id: int):
         "home_water_baseline": home_water_baseline,
         "inhabitants": inhabitants,
         "open_issues": open_issues,
+        "active_goals": active_goals,
         "recent_observations": recent_observations,
         "recent_events": recent_events,
         "equipment": equipment,

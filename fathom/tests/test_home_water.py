@@ -251,7 +251,7 @@ def test_dashboard_and_list_show_composite_baseline(client, tank_id):
 
 
 def test_stale_baseline_params_flagged_in_ui(client, tank_id, monkeypatch):
-    """Baseline values >3 months old get param-item-stale + red reminder text."""
+    """Baseline values >6 months old get param-item-stale + red (alarm) reminder."""
     from datetime import datetime, timezone
     import routers.home_water as hw
 
@@ -270,7 +270,7 @@ def test_stale_baseline_params_flagged_in_ui(client, tank_id, monkeypatch):
     client.post(
         "/home-water",
         data={"gh": "7.0", "kh": "10", "ph": "7.2", "sample_point": "tap",
-              "timestamp": "2026-04-01 12:00:00"},
+              "timestamp": "2026-01-01 12:00:00"},
         headers={"Accept": "application/json"},
     )
     client.post(
@@ -282,12 +282,36 @@ def test_stale_baseline_params_flagged_in_ui(client, tank_id, monkeypatch):
     page = client.get("/home-water")
     assert page.status_code == 200
     assert "param-item-stale" in page.text
-    assert "full home-water test" in page.text
+    assert "baseline-stale-alarm" in page.text
+    assert "over 6 months old" in page.text
+    assert "log a new home-water test" in page.text
 
     dash = client.get(f"/tanks/{tank_id}")
     assert dash.status_code == 200
     assert "param-item-stale" in dash.text
-    assert "full home-water test" in dash.text
+    assert "baseline-stale-alarm" in dash.text
+    assert "log a new home-water test" in dash.text
+
+
+def test_fresh_baseline_note_is_muted_not_alarm(client, tank_id):
+    """When no displayed values are stale, the note stays muted (not red)."""
+    client.post(
+        "/home-water",
+        data={"gh": "8.0", "kh": "6", "ph": "7.2", "sample_point": "tap",
+              "timestamp": "2026-08-10 12:00:00"},
+        headers={"Accept": "application/json"},
+    )
+    page = client.get("/home-water")
+    assert page.status_code == 200
+    assert "baseline-stale-note" in page.text
+    assert "baseline-stale-alarm" not in page.text
+    assert "highlighted when they need a retest" in page.text
+
+    dash = client.get(f"/tanks/{tank_id}")
+    assert dash.status_code == 200
+    assert "baseline-stale-note" in dash.text
+    assert "baseline-stale-alarm" not in dash.text
+    assert "param-item-stale" not in dash.text
 
 
 def test_latest_wc_source_prefers_tap(client):

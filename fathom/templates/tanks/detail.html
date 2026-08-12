@@ -106,9 +106,12 @@
   {% if home_water_baseline and home_water_baseline.params %}
   <div class="stat-card">
     <div class="stat-card-title">Home Water (tap)</div>
+    {% set dash_hw_keys = ('gh', 'kh', 'ph', 'tds', 'nitrate') %}
+    {% set ns = namespace(visible_stale=false) %}
     <div class="param-grid">
       {% for p in home_water_baseline.params %}
-      {% if p.key in ('gh', 'kh', 'ph', 'tds', 'nitrate') %}
+      {% if p.key in dash_hw_keys %}
+      {% if p.is_stale %}{% set ns.visible_stale = true %}{% endif %}
       <div class="param-item{% if p.is_stale %} param-item-stale{% endif %}">
         <span class="param-label">{{ p.label }}</span>
         <span class="param-value">{{ p.value }}{% if p.key == 'temp' %}°{% endif %}</span>
@@ -119,9 +122,13 @@
       {% endif %}
       {% endfor %}
     </div>
-    {% if home_water_baseline.has_stale %}
-    <p class="baseline-stale-note">Values in red are &gt;3 months old — consider a full home-water test.</p>
-    {% endif %}
+    <p class="baseline-stale-note{% if ns.visible_stale %} baseline-stale-alarm{% endif %}">
+      {% if ns.visible_stale %}
+      Highlighted values are over 6 months old — log a new home-water test to refresh them.
+      {% else %}
+      Values over 6 months old are highlighted when they need a retest.
+      {% endif %}
+    </p>
     <div class="stat-card-footer">
       {% if home_water_baseline.is_composite %}
       Last known per param
@@ -195,6 +202,36 @@
     {% endif %}
     <div class="stat-card-footer">
       <a href="/tanks/{{ tank.id }}/issues" class="link-sm">Manage →</a>
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-card-title">
+      Goals
+      {% if active_goals %}<span class="badge badge-goal-in_progress">{{ active_goals|length }}</span>{% endif %}
+    </div>
+    {% if active_goals %}
+    <div class="goal-list">
+      {% for goal in active_goals %}
+      <div class="goal-row">
+        <span class="goal-status-dot status-{{ 'blocked' if goal.blocked else goal.status }}"></span>
+        <div class="goal-row-body">
+          <span class="goal-row-title">{{ goal.title }}</span>
+          {% if goal.target %}<span class="goal-row-target">{{ goal.target }}</span>{% endif %}
+          {% if goal.blocked and goal.unmet_deps %}
+          <span class="goal-row-blocked">Waiting on:
+            {% for d in goal.unmet_deps %}{% if d.tank_id != tank.id %}{{ d.tank_name }}: {% endif %}{{ d.title }}{% if not loop.last %}; {% endif %}{% endfor %}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No active goals.</p>
+    {% endif %}
+    <div class="stat-card-footer">
+      <a href="/tanks/{{ tank.id }}/goals" class="link-sm">Manage →</a>
     </div>
   </div>
 </div>
@@ -453,7 +490,7 @@
     <div class="danger-item">
       <div>
         <strong>Reset Tank Data</strong>
-        <p>Wipes all test results, events, inhabitants, purchases, observations, and issues. Keeps tank and equipment.</p>
+        <p>Wipes all test results, events, inhabitants, purchases, observations, issues, and goals. Keeps tank and equipment.</p>
       </div>
       <button class="btn btn-danger" onclick="openModal('modal-reset')">Reset Data</button>
     </div>
@@ -565,7 +602,7 @@
 <div id="modal-reset" class="modal" style="display:none">
   <div class="modal-box modal-box-sm">
     <div class="modal-header"><h3>Reset Tank Data</h3><button class="modal-close" onclick="closeModal('modal-reset')">×</button></div>
-    <p>This will permanently delete all data for <strong>{{ tank.name }}</strong> — test results, events, inhabitants, purchases, observations, issues, equipment, plants, hardscape, and schedule entries. Only the tank record itself is kept.</p>
+    <p>This will permanently delete all data for <strong>{{ tank.name }}</strong> — test results, events, inhabitants, purchases, observations, issues, goals, equipment, plants, hardscape, and schedule entries. Only the tank record itself is kept.</p>
     <form method="post" action="/tanks/{{ tank.id }}/reset" onsubmit="return checkConfirm(this,'{{ tank.name }}','reset-err')">
       <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" autocomplete="off"></div>
       <div id="reset-err" class="form-error" style="display:none">Name does not match — please try again.</div>

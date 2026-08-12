@@ -14,9 +14,10 @@ from typing import Optional
 from database import get_db, get_db_readonly, get_schema_text, rows_to_list, row_to_dict
 from ai_config import CLAUDE_MODEL
 from routers.ai_analysis import (
-    _fmt_tank_notes, _fmt_inhabitants, _fmt_schedule, _CURRENT_PRACTICES_RULE,
+    _fmt_tank_notes, _fmt_inhabitants, _fmt_schedule, _fmt_goals, _CURRENT_PRACTICES_RULE,
     _fmt_home_water_block, _HOME_WATER_PROMPT_RULE, load_home_water_tests,
 )
+from routers.goals import load_active_goals
 
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -79,9 +80,10 @@ def _run_query_db(sql: str) -> dict:
 
 
 def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary,
-                         recent_obs, schedule_rows=None, home_water_tests=None):
+                         recent_obs, schedule_rows=None, home_water_tests=None, goals=None):
     schedule_rows = schedule_rows or []
     home_water_tests = home_water_tests or []
+    goals = goals or []
     parts = [
         "You are an expert aquarium keeper assistant with detailed knowledge of the following tank.",
         f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}",
@@ -140,6 +142,9 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
     if open_issues:
         lines = [f"  [{i['status'].upper()}] {i['title']}: {i.get('description','')}" for i in open_issues]
         parts.append("\nOpen Issues:\n" + "\n".join(lines))
+
+    if goals:
+        parts.append("\nActive Goals:\n" + _fmt_goals(goals))
 
     parts.append(
         "\nRecurring schedule (current planned feeding/dosing/maintenance — authoritative for "
@@ -231,6 +236,7 @@ def _gather_tank_context(conn, tank_id: int) -> dict:
             "SELECT title, description, status FROM issues WHERE tank_id = ? AND status != 'resolved'",
             (tank_id,),
         ).fetchall()),
+        "goals": load_active_goals(conn, tank_id),
         "recent_obs": rows_to_list(conn.execute(
             "SELECT text, source, created_at FROM observations WHERE tank_id = ? ORDER BY created_at DESC LIMIT 5",
             (tank_id,),
@@ -398,7 +404,7 @@ async def chat(tank_id: int, body: ChatMessage):
     system_prompt = _build_system_prompt(
         tank, ctx["latest_test"], ctx["inhabitants"], ctx["plants"], ctx["hardscape"],
         ctx["open_issues"], ctx["summary"], ctx["recent_obs"], ctx["schedule_rows"],
-        home_water_tests=ctx.get("home_water_tests"),
+        home_water_tests=ctx.get("home_water_tests"), goals=ctx.get("goals"),
     )
     logger.info("Chat system prompt for tank %d conv %d: %d chars", tank_id, conversation_id, len(system_prompt))
 
