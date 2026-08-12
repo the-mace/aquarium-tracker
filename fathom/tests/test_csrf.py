@@ -62,6 +62,22 @@ def test_post_from_evil_origin_is_403(client, tank_id):
     assert r.json()["detail"] == "Cross-origin request blocked"
 
 
+def test_private_log_and_env_are_owner_only(tmp_path):
+    import os
+    from security import PrivateRotatingFileHandler, tighten_env_file_mode
+
+    log_path = tmp_path / "fathom.log"
+    handler = PrivateRotatingFileHandler(log_path, maxBytes=1000, backupCount=1)
+    handler.close()
+    assert oct(log_path.stat().st_mode & 0o777) == "0o600"
+
+    env_path = tmp_path / ".env"
+    env_path.write_text("ANTHROPIC_API_KEY=test\n")
+    os.chmod(env_path, 0o644)
+    tighten_env_file_mode(env_path)
+    assert oct(env_path.stat().st_mode & 0o777) == "0o600"
+
+
 def test_security_headers_and_docs_disabled(client):
     r = client.get("/tanks")
     assert r.status_code == 200

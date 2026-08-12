@@ -1,11 +1,17 @@
-import os
 import logging
 import logging.config
-import logging.handlers
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+from security import (
+    csrf_origin_middleware,
+    security_headers_middleware,
+    tighten_env_file_mode,
+)
+
+_ENV_PATH = Path(__file__).parent.parent / ".env"
+load_dotenv(_ENV_PATH)
+tighten_env_file_mode(_ENV_PATH)
 
 logging.config.dictConfig({
     "version": 1,
@@ -19,7 +25,7 @@ logging.config.dictConfig({
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": "default"},
         "file": {
-            "class": "logging.handlers.RotatingFileHandler",
+            "class": "security.PrivateRotatingFileHandler",
             "filename": "/tmp/fathom.log",
             "maxBytes": 5_000_000,
             "backupCount": 2,
@@ -39,7 +45,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from database import init_db, init_ref_cache_db
-from security import csrf_origin_middleware, security_headers_middleware
 from routers import tanks, test_results, events, inhabitants, equipment, purchases, issues, goals, observations, chat, import_data, timeline, schedules, plants_hardscape, reference_info, today, home_water
 
 app = FastAPI(

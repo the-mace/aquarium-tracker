@@ -1,4 +1,5 @@
 """Request-level hardening: CSRF origin check, headers, AI rate limits."""
+import logging.handlers
 import os
 import time
 from collections import defaultdict
@@ -88,3 +89,24 @@ def require_ai_budget(request: Request):
     if len(bucket) >= limit:
         raise HTTPException(status_code=429, detail="Too many AI requests, try again in a minute")
     bucket.append(now)
+
+
+class PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotating file handler that keeps the log file owner-readable only."""
+
+    def _open(self):
+        stream = super()._open()
+        try:
+            os.chmod(self.baseFilename, 0o600)
+        except OSError:
+            pass
+        return stream
+
+
+def tighten_env_file_mode(path: str | os.PathLike):
+    """chmod 600 an existing .env so the API key is not world-readable."""
+    try:
+        if os.path.isfile(path):
+            os.chmod(path, 0o600)
+    except OSError:
+        pass

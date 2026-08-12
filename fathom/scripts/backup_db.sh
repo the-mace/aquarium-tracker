@@ -17,7 +17,8 @@ S3_BUCKET="${S3_BACKUP_BUCKET:-}"
 AWS_PROFILE="${AWS_PROFILE:-default}"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_NAME="fathom_${TIMESTAMP}.db.gz"
-TMP_FILE="/tmp/${BACKUP_NAME}"
+umask 077
+TMP_FILE="$(mktemp "${TMPDIR:-/tmp}/fathom_backup.XXXXXX.db.gz")"
 
 if [ ! -f "$DB_PATH" ]; then
   echo "ERROR: Database not found at $DB_PATH" >&2
