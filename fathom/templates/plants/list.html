@@ -47,6 +47,7 @@
                   onclick="openRefInfoFrom(this)">
               {% if pl.ref_image_url %}
               <img src="{{ pl.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
+                   referrerpolicy="no-referrer-when-downgrade"
                    onerror="this.style.display='none';this.parentElement.querySelector('.ref-thumb-placeholder').style.display='flex'">
               <span class="ref-thumb-placeholder" style="display:none">ℹ</span>
               {% else %}
@@ -153,6 +154,7 @@
                   onclick="openRefInfoFrom(this)">
               {% if hs.ref_image_url %}
               <img src="{{ hs.ref_image_url }}" class="ref-thumb" alt="{{ ref_display }}"
+                   referrerpolicy="no-referrer-when-downgrade"
                    onerror="this.style.display='none';this.parentElement.querySelector('.ref-thumb-placeholder').style.display='flex'">
               <span class="ref-thumb-placeholder" style="display:none">ℹ</span>
               {% else %}

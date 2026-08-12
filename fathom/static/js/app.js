@@ -261,6 +261,7 @@ function setRefModalImage(imgWrap, imageUrl, displayName) {
   const img = document.createElement('img');
   img.className = 'ref-modal-img';
   img.alt = displayName || '';
+  img.referrerPolicy = 'no-referrer-when-downgrade';
   img.addEventListener('error', () => imgWrap.replaceChildren());
   img.src = imageUrl;
   imgWrap.appendChild(img);

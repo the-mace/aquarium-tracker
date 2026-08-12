@@ -92,20 +92,49 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _head_image(url: str) -> bool:
-    """HEAD an allowlisted https URL. Returns True only for HTTP 200 + image/*."""
-    if not _image_url_allowed(url):
-        return False
+def _response_is_image(resp) -> bool:
+    content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    return resp.status == 200 and (
+        content_type.startswith("image/") or content_type in {"application/octet-stream", "binary/octet-stream", ""}
+    )
+
+
+def _open_image_url(url: str, method: str):
     if "wikimedia.org" in url:
         _wikimedia_throttle()
     opener = urllib.request.build_opener(_SafeRedirectHandler)
-    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
+    headers = {"User-Agent": _WIKIMEDIA_USER_AGENT}
+    if method == "GET":
+        headers["Range"] = "bytes=0-1023"
+    req = urllib.request.Request(url, method=method, headers=headers)
+    return opener.open(req, timeout=8)
+
+
+def _head_image(url: str) -> bool:
+    """Confirm an allowlisted https URL serves an image.
+
+    Many shop CDNs reject HEAD (403/405) but serve GET fine, so fall back to a
+    tiny ranged GET instead of treating those hosts as invalid.
+    """
+    if not _image_url_allowed(url):
+        return False
     try:
-        with opener.open(req, timeout=8) as resp:
-            content_type = resp.headers.get("Content-Type", "")
-            return resp.status == 200 and content_type.startswith("image/")
+        with _open_image_url(url, "HEAD") as resp:
+            if _response_is_image(resp):
+                return True
     except Exception as exc:
         logger.debug("Image HEAD failed for %s: %s", url, exc)
+    try:
+        with _open_image_url(url, "GET") as resp:
+            # 206 Partial Content from Range is success if the body is an image
+            status_ok = resp.status in (200, 206)
+            content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            return status_ok and (
+                content_type.startswith("image/")
+                or content_type in {"application/octet-stream", "binary/octet-stream", ""}
+            )
+    except Exception as exc:
+        logger.debug("Image GET failed for %s: %s", url, exc)
         return False
 
 # Wikimedia Commons API + DDG fallback produces better results than hand-curated URLs

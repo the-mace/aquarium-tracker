@@ -203,6 +203,32 @@ def test_image_url_allowed_rejects_non_https_and_private_hosts():
     assert not _ref._image_url_allowed("https://[fd12:3456::1]/a.jpg")
 
 
+def test_head_image_falls_back_to_get_when_head_rejected(monkeypatch):
+    class _Resp:
+        def __init__(self, status, ctype):
+            self.status = status
+            self.headers = {"Content-Type": ctype}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    calls = []
+
+    def fake_open(url, method):
+        calls.append(method)
+        if method == "HEAD":
+            raise OSError("HEAD 403")
+        return _Resp(206, "image/webp")
+
+    monkeypatch.setattr(_ref, "_image_url_allowed", lambda url: True)
+    monkeypatch.setattr(_ref, "_open_image_url", fake_open)
+    assert _ref._head_image("https://cdn.example/shop/photo.webp")
+    assert calls == ["HEAD", "GET"]
+
+
 def test_image_url_allowed_accepts_public_https(monkeypatch):
     monkeypatch.setattr(
         _ref.socket, "getaddrinfo",

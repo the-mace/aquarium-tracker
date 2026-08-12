@@ -47,19 +47,23 @@ _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline'; "
     "style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' https: data:; "
+    "img-src 'self' http: https: data:; "
     "connect-src 'self'; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
 )
 
+# Origin only on cross-origin requests — not same-origin (that strips Referer
+# from Amazon/Etsy/Shopify thumbs and they 403). Still does not leak paths.
+_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
 
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Referrer-Policy"] = _REFERRER_POLICY
     response.headers["Content-Security-Policy"] = _CSP
     return response
 

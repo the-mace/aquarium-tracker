@@ -83,7 +83,8 @@ def test_security_headers_and_docs_disabled(client):
     assert r.status_code == 200
     assert r.headers["X-Frame-Options"] == "DENY"
     assert r.headers["X-Content-Type-Options"] == "nosniff"
-    assert r.headers["Referrer-Policy"] == "same-origin"
+    assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "img-src 'self' http: https: data:" in r.headers["Content-Security-Policy"]
     assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
     assert client.get("/docs").status_code == 404
     assert client.get("/redoc").status_code == 404
