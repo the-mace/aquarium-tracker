@@ -70,6 +70,8 @@ async def add_test_result(
     notes: Optional[str] = Form(None),
     return_to: Optional[str] = Form(None),
 ):
+    from security import require_ai_budget
+    require_ai_budget(request)
     ts = timestamp or None
     ph, gh, kh, ammonia, nitrite, nitrate, tds, temp = (
         _parse_float(ph), _parse_float(gh), _parse_float(kh), _parse_float(ammonia),

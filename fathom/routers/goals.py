@@ -229,6 +229,7 @@ async def list_goals(request: Request, tank_id: int, background_tasks: Backgroun
 
 @router.post("/review")
 async def review_goal(
+    request: Request,
     tank_id: int,
     title: str = Form(...),
     description: Optional[str] = Form(None),
@@ -237,6 +238,8 @@ async def review_goal(
     depends_on: Optional[List[str]] = Form(None),
 ):
     """AI review of a draft goal before save. Does not write to the DB."""
+    from security import require_ai_budget
+    require_ai_budget(request)
     import os
     from routers.ai_analysis import (
         build_goal_review_prompt, _parse_goal_review, _claude_text, load_home_water_tests,

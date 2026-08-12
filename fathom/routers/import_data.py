@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from database import get_db, row_to_dict, rows_to_list
 from ai_config import CLAUDE_MODEL
 from routers.reference_info import maybe_fetch_reference_info, maybe_fetch_tank_dimensions, _canonical
+from security import require_ai_budget
 
 router = APIRouter(tags=["import"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -418,7 +419,8 @@ async def _extraction_sse_stream(content: str, api_key: str, existing_inhabitant
 
 
 @router.post("/tanks/{tank_id}/import")
-async def import_preview(tank_id: int, file: UploadFile = File(...)):
+async def import_preview(request: Request, tank_id: int, file: UploadFile = File(...)):
+    require_ai_budget(request)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")
@@ -462,6 +464,7 @@ async def quick_log_page(request: Request, tank_id: int):
 
 @router.post("/tanks/{tank_id}/quick-log")
 async def quick_log(tank_id: int, request: Request):
+    require_ai_budget(request)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured")

@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 from routers.schedules import compute_next_due
+from security import require_ai_budget
 
 router = APIRouter(prefix="/tanks/{tank_id}/events", tags=["events"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -32,6 +33,7 @@ async def add_event(
     timestamp: Optional[str] = Form(None),
     schedule_id: Optional[int] = Form(None),
 ):
+    require_ai_budget(request)
     with get_db() as conn:
         if timestamp:
             cur = conn.execute(

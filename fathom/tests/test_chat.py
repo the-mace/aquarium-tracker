@@ -368,3 +368,42 @@ def test_chat_cascade_deletes_with_tank(client, make_tank, monkeypatch):
     conn.close()
     assert n == 0
     assert m == 0
+
+
+def test_chat_rejects_overlong_message(client, tank_id, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+    r = client.post(f"/tanks/{tank_id}/chat", json={"message": "x" * 4001})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Message is too long"
+
+
+def test_chat_ai_error_is_generic(client, tank_id, monkeypatch):
+    import anthropic
+
+    class _Boom:
+        def __init__(self, *a, **kw):
+            self.messages = self
+
+        def create(self, **kwargs):
+            raise RuntimeError("secret provider blob xyz")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+    monkeypatch.setattr(anthropic, "Anthropic", _Boom)
+    r = client.post(f"/tanks/{tank_id}/chat", json={"message": "hello"})
+    assert r.status_code == 500
+    assert r.json()["detail"] == "AI error"
+    assert "secret" not in r.text
+
+
+def test_ai_rate_limit_returns_429(client, tank_id, monkeypatch):
+    import anthropic
+    import security
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+    monkeypatch.setenv("FATHOM_AI_RATE_LIMIT", "2")
+    monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropicSimple)
+    security.reset_ai_rate_limit()
+    assert client.post(f"/tanks/{tank_id}/chat", json={"message": "one"}).status_code == 200
+    assert client.post(f"/tanks/{tank_id}/chat", json={"message": "two"}).status_code == 200
+    r = client.post(f"/tanks/{tank_id}/chat", json={"message": "three"})
+    assert r.status_code == 429

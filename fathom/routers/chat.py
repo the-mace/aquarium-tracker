@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, get_db_readonly, get_schema_text, rows_to_list, row_to_dict
+from security import require_ai_budget
 from ai_config import CLAUDE_MODEL
 from routers.ai_analysis import (
     _fmt_tank_notes, _fmt_inhabitants, _fmt_schedule, _fmt_goals, _CURRENT_PRACTICES_RULE,
@@ -27,6 +28,7 @@ MAX_TURNS = 10
 MAX_TOOL_ROUNDS = 4
 QUERY_ROW_LIMIT = 200
 TITLE_MAX_LEN = 48
+MAX_CHAT_MESSAGE_CHARS = 4000
 
 _TANK_SCOPED_TABLES = {
     "tank_equipment", "test_results", "inhabitants", "population_events",
@@ -406,7 +408,8 @@ async def delete_conversation(tank_id: int, conversation_id: int):
 
 
 @router.post("")
-async def chat(tank_id: int, body: ChatMessage):
+async def chat(tank_id: int, body: ChatMessage, request: Request):
+    require_ai_budget(request)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise HTTPException(status_code=503, detail="AI features require ANTHROPIC_API_KEY")
@@ -414,6 +417,8 @@ async def chat(tank_id: int, body: ChatMessage):
     message = (body.message or "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
+    if len(message) > MAX_CHAT_MESSAGE_CHARS:
+        raise HTTPException(status_code=400, detail="Message is too long")
 
     now = _utc_now()
     with get_db() as conn:
@@ -525,7 +530,7 @@ async def chat(tank_id: int, body: ChatMessage):
         # otherwise leave the user message (they can retry). On failure after insert, still store nothing
         # for the assistant and keep the user message for continuity.
         logger.error("Chat error for tank %d conv %d: %s", tank_id, conversation_id, e)
-        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+        raise HTTPException(status_code=500, detail="AI error")
 
     done_at = _utc_now()
     with get_db() as conn:

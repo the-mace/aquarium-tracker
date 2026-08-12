@@ -23,6 +23,8 @@ def client(tmp_path, monkeypatch):
     _ref._dim_in_flight.clear()
     _ai._goal_progress_in_flight.clear()
     _hw._summary_in_flight = False
+    # AI rate limit is for live traffic; tests would trip it across the suite.
+    monkeypatch.setenv("FATHOM_AI_RATE_LIMIT", "0")
     from main import app
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c

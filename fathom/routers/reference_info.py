@@ -13,6 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from database import get_db, get_ref_db, row_to_dict
 from ai_config import CLAUDE_MODEL
+from security import require_ai_budget
 
 logger = logging.getLogger(__name__)
 
@@ -542,6 +543,7 @@ async def get_reference_info(entity_type: str, entity_name: str):
 
 @router.post("/reference-info/refresh")
 async def refresh_reference_info(background_tasks: BackgroundTasks, request: Request):
+    require_ai_budget(request)
     body = await request.json()
     entity_type = body.get("entity_type", "")
     entity_name = body.get("entity_name", "")

@@ -941,11 +941,14 @@ async def delete_home_water(request: Request, background_tasks: BackgroundTasks,
 
 @router.post("/extract")
 async def extract_lab_report(
+    request: Request,
     file: UploadFile = File(...),
     sample_point: Optional[str] = Form("tap"),
     water_blend: Optional[str] = Form(None),
     user_notes: Optional[str] = Form(None),
 ):
+    from security import require_ai_budget
+    require_ai_budget(request)
     """LLM-extract home water readings from a lab PDF or CSV/text file.
 
     User-supplied sample_point and water_blend are the defaults applied when the
