@@ -189,6 +189,78 @@ def test_create_tank_with_manufacturer_triggers_dimensions_fetch(client, monkeyp
     mock_fetch.assert_called_once()
 
 
+def test_image_url_allowed_rejects_non_https_and_private_hosts():
+    assert not _ref._image_url_allowed("file:///etc/passwd")
+    assert not _ref._image_url_allowed("http://example.com/a.jpg")
+    assert not _ref._image_url_allowed("ftp://example.com/a.jpg")
+    assert not _ref._image_url_allowed("data:image/png;base64,aaaa")
+    assert not _ref._image_url_allowed("https://127.0.0.1/a.jpg")
+    assert not _ref._image_url_allowed("https://192.168.50.1/a.jpg")
+    assert not _ref._image_url_allowed("https://10.0.0.5/a.jpg")
+    assert not _ref._image_url_allowed("https://169.254.169.254/latest/meta-data")
+    assert not _ref._image_url_allowed("https://localhost/a.jpg")
+    assert not _ref._image_url_allowed("https://user:pass@example.com/a.jpg")
+    assert not _ref._image_url_allowed("https://[fd12:3456::1]/a.jpg")
+
+
+def test_image_url_allowed_accepts_public_https(monkeypatch):
+    monkeypatch.setattr(
+        _ref.socket, "getaddrinfo",
+        lambda *a, **k: [(0, 0, 0, "", ("1.2.3.4", 0))],
+    )
+    assert _ref._image_url_allowed("https://upload.wikimedia.org/wikipedia/commons/a.jpg")
+
+
+def test_set_image_rejects_file_url_without_leaking_error(client):
+    r = client.post(
+        "/reference-info/set-image",
+        json={
+            "entity_type": "species",
+            "entity_name": "betta splendens",
+            "image_url": "file:///etc/passwd",
+        },
+    )
+    assert r.status_code == 400
+    err = r.json()["error"]
+    assert "allowed" in err.lower()
+    assert "Errno" not in err
+    assert "/etc/passwd" not in err
+
+
+def test_set_image_rejects_private_ip(client):
+    r = client.post(
+        "/reference-info/set-image",
+        json={
+            "entity_type": "species",
+            "entity_name": "betta splendens",
+            "image_url": "https://192.168.50.1/x.jpg",
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["error"] == "URL is not an allowed image location"
+
+
+def test_set_image_saves_when_head_ok(client, monkeypatch):
+    monkeypatch.setattr(_ref, "_image_url_allowed", lambda url: True)
+    monkeypatch.setattr(_ref, "_head_image", lambda url: True)
+    r = client.post(
+        "/reference-info/set-image",
+        json={
+            "entity_type": "species",
+            "entity_name": "betta splendens",
+            "image_url": "https://upload.wikimedia.org/foo.jpg",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+    conn = sqlite3.connect(_db.REFERENCE_CACHE_DB_PATH)
+    row = conn.execute(
+        "SELECT image_url FROM reference_info WHERE entity_name='betta splendens'"
+    ).fetchone()
+    conn.close()
+    assert row[0] == "https://upload.wikimedia.org/foo.jpg"
+
+
 def test_update_tank_with_manufacturer_triggers_dimensions_fetch(client, tank_id, monkeypatch):
     from unittest.mock import MagicMock
     mock_fetch = MagicMock()

@@ -4,6 +4,9 @@ import re
 import time
 import threading
 import logging
+import asyncio
+import ipaddress
+import socket
 import urllib.request
 import urllib.parse
 from fastapi import APIRouter, BackgroundTasks, Request
@@ -36,6 +39,73 @@ def _wikimedia_throttle():
         if wait > 0:
             time.sleep(wait)
         _last_wikimedia_request = time.monotonic()
+
+
+def _ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return bool(
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
+
+
+def _is_public_hostname(hostname: str) -> bool:
+    try:
+        return not _ip_blocked(ipaddress.ip_address(hostname))
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        if _ip_blocked(ipaddress.ip_address(info[4][0])):
+            return False
+    return True
+
+
+def _image_url_allowed(url: str) -> bool:
+    """True only for https URLs whose host resolves entirely to public unicast IPs."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme != "https":
+        return False
+    if parsed.username or parsed.password:
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    lowered = host.lower()
+    if lowered in {"localhost", "localhost.localdomain"} or lowered.endswith((".local", ".internal")):
+        return False
+    return _is_public_hostname(host)
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _image_url_allowed(newurl):
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _head_image(url: str) -> bool:
+    """HEAD an allowlisted https URL. Returns True only for HTTP 200 + image/*."""
+    if not _image_url_allowed(url):
+        return False
+    if "wikimedia.org" in url:
+        _wikimedia_throttle()
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
+    try:
+        with opener.open(req, timeout=8) as resp:
+            content_type = resp.headers.get("Content-Type", "")
+            return resp.status == 200 and content_type.startswith("image/")
+    except Exception as exc:
+        logger.debug("Image HEAD failed for %s: %s", url, exc)
+        return False
 
 # Wikimedia Commons API + DDG fallback produces better results than hand-curated URLs
 # for most entities, but reference_info is keyed at the species level, so all color
@@ -363,22 +433,12 @@ Respond ONLY with valid JSON, no explanation or markdown fences:
 
                 def _verify(candidate_list):
                     for candidate_url, candidate_source in candidate_list:
-                        try:
-                            if "wikimedia.org" in candidate_url:
-                                _wikimedia_throttle()
-                            req = urllib.request.Request(candidate_url, method="HEAD",
-                                                         headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
-                            with urllib.request.urlopen(req, timeout=8) as resp:
-                                content_type = resp.headers.get("Content-Type", "")
-                                if resp.status == 200 and content_type.startswith("image/"):
-                                    logger.info("Reference info: image verified for %s/%s (%s): %s",
-                                                entity_type, entity_name, content_type, candidate_url)
-                                    return candidate_url, candidate_source
-                                else:
-                                    logger.debug("Reference info: skipping %s (HTTP %s, %s)",
-                                                 candidate_url, resp.status, content_type)
-                        except Exception as head_exc:
-                            logger.debug("Reference info: skipping %s (HEAD failed: %s)", candidate_url, head_exc)
+                        if _head_image(candidate_url):
+                            logger.info("Reference info: image verified for %s/%s: %s",
+                                        entity_type, entity_name, candidate_url)
+                            return candidate_url, candidate_source
+                        logger.debug("Reference info: skipping %s (HEAD failed or not an image)",
+                                     candidate_url)
                     return None, None
 
                 # Try to verify a Commons candidate first
@@ -517,20 +577,12 @@ async def set_reference_image(request: Request):
         return JSONResponse({"error": "entity_type and entity_name required"}, status_code=400)
     if not image_url:
         return JSONResponse({"error": "image_url required"}, status_code=400)
+    if not _image_url_allowed(image_url):
+        return JSONResponse({"error": "URL is not an allowed image location"}, status_code=400)
 
-    try:
-        if "wikimedia.org" in image_url:
-            _wikimedia_throttle()
-        req = urllib.request.Request(image_url, method="HEAD", headers={"User-Agent": _WIKIMEDIA_USER_AGENT})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            content_type = resp.headers.get("Content-Type", "")
-            if resp.status != 200 or not content_type.startswith("image/"):
-                return JSONResponse(
-                    {"error": f"URL did not return an image (HTTP {resp.status}, Content-Type: {content_type})"},
-                    status_code=400,
-                )
-    except Exception as e:
-        return JSONResponse({"error": f"Could not reach URL: {e}"}, status_code=400)
+    ok = await asyncio.to_thread(_head_image, image_url)
+    if not ok:
+        return JSONResponse({"error": "URL did not return an image"}, status_code=400)
 
     with get_ref_db() as conn:
         conn.execute(
