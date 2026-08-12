@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 from routers.schedules import compute_next_due
-from security import require_ai_budget
+from security import clamp_limit, require_ai_budget
 
 router = APIRouter(prefix="/tanks/{tank_id}/events", tags=["events"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -14,6 +14,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 
 @router.get("", response_class=JSONResponse)
 async def list_events(tank_id: int, limit: int = 20):
+    limit = clamp_limit(limit)
     with get_db() as conn:
         events = rows_to_list(conn.execute(
             "SELECT * FROM events WHERE tank_id = ? ORDER BY timestamp DESC LIMIT ?",

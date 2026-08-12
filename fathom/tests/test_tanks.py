@@ -151,6 +151,17 @@ def test_chart_water_params_limit(client, tank_id):
     assert len(data) == 3
 
 
+def test_chart_water_params_clamps_negative_limit(client, tank_id):
+    for ph in (7.0, 7.1, 7.2):
+        client.post(
+            f"/tanks/{tank_id}/tests",
+            data={"ph": str(ph)},
+            headers={"Accept": "application/json"},
+        )
+    data = client.get(f"/tanks/{tank_id}/charts/water-params?limit=-1").json()["data"]
+    assert len(data) == 1
+
+
 def test_chart_population_shape(client, tank_id):
     body = client.get(f"/tanks/{tank_id}/charts/population").json()
     assert "events" in body and "current" in body

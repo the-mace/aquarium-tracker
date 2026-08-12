@@ -72,6 +72,19 @@ def test_list_events_limit_param(client, tank_id):
     assert len(body["events"]) == 3
 
 
+def test_list_events_clamps_negative_and_huge_limit(client, tank_id):
+    for _ in range(3):
+        client.post(
+            f"/tanks/{tank_id}/events",
+            data={"event_type": "feeding"},
+            headers={"Accept": "application/json"},
+        )
+    # LIMIT -1 would mean "no limit" in SQLite; must not dump everything.
+    assert len(client.get(f"/tanks/{tank_id}/events?limit=-1").json()["events"]) == 1
+    huge = client.get(f"/tanks/{tank_id}/events?limit=99999").json()["events"]
+    assert 1 <= len(huge) <= 500
+
+
 def test_delete_event(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/events",

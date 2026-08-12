@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import List, Optional
 from database import get_db, rows_to_list, row_to_dict
+from security import clamp_limit
 
 router = APIRouter(prefix="/tanks/{tank_id}/observations", tags=["observations"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -207,6 +208,7 @@ async def list_observations(
 
 @router.get("/json")
 async def list_observations_json(tank_id: int, limit: int = 10):
+    limit = clamp_limit(limit)
     with get_db() as conn:
         observations = rows_to_list(conn.execute(
             "SELECT * FROM observations WHERE tank_id = ? ORDER BY created_at DESC LIMIT ?",

@@ -103,6 +103,15 @@ class PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
         return stream
 
 
+def clamp_limit(limit: int, *, lo: int = 1, hi: int = 500) -> int:
+    """Keep user-supplied SQL LIMIT values in a sane positive range."""
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        return lo
+    return min(max(n, lo), hi)
+
+
 def tighten_env_file_mode(path: str | os.PathLike):
     """chmod 600 an existing .env so the API key is not world-readable."""
     try:

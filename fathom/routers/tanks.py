@@ -7,6 +7,7 @@ from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
 from routers.reference_info import maybe_fetch_tank_dimensions
 from routers.home_water import latest_wc_source_test, wc_source_baseline
+from security import clamp_limit
 
 router = APIRouter(prefix="/tanks", tags=["tanks"])
 
@@ -339,6 +340,7 @@ async def reset_tank_data(tank_id: int, confirmation: str = Form(...)):
 
 @router.get("/{tank_id}/charts/water-params")
 async def chart_water_params(tank_id: int, limit: int = 30):
+    limit = clamp_limit(limit)
     with get_db() as conn:
         rows = rows_to_list(conn.execute(
             """SELECT timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp
