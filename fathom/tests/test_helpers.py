@@ -463,6 +463,24 @@ def test_build_summary_prompt_includes_tank_notes():
     assert "KH 2-10" in prompt
 
 
+def test_prompts_include_parameter_baseline_rule():
+    """Sparse readings (e.g. new TDS pen) must not invent typical bands."""
+    tank = {"name": "Fish Tank", "water_type": "fresh", "volume_gallons": 40,
+            "notes": "TDS ~260 accepted; climb toward fill water is desired."}
+    tr = {"id": 1, "timestamp": "2026-08-12", "ph": 7.4, "gh": 3.0, "kh": 5.0,
+          "ammonia": 0.0, "nitrite": 0.0, "nitrate": 40.0, "tds": 260.0, "temp": None,
+          "notes": None}
+    rec = build_recommendation_prompt(tank, tr, [tr], [], [], [], [])
+    analysis = build_analysis_prompt(tank, [tr], [], [], [], [], [])
+    summary = build_summary_prompt(tank, [tr], [], [], [], [], "analysis text")
+    notes_p = build_notes_proposal_prompt(tank, [], [], [tr])
+    for p in (rec, analysis, summary):
+        assert "Do NOT invent a historical typical range" in p
+        assert "climb toward fill-water levels" in p
+    assert "typical bands" in notes_p
+    assert "1–2 early readings" in notes_p or "1-2 early readings" in notes_p
+
+
 def test_build_notes_proposal_prompt_includes_current_and_schedule():
     tank = {
         "name": "Shrimp Tank", "water_type": "fresh", "volume_gallons": 5,

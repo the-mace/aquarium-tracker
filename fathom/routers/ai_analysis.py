@@ -156,6 +156,23 @@ _CURRENT_PRACTICES_RULE = (
     "anomaly. Never write lines like 'no longer uses spring water/Equilibrium'."
 )
 
+# Prevent inventing "typical bands" from sparse readings (e.g. TDS pen newly acquired).
+_PARAMETER_BASELINE_RULE = (
+    "Parameter baselines and 'typical bands': "
+    "(1) Only treat a value as an accepted baseline / typical band if tank notes say so, or if "
+    "there is a clear multi-reading history (several weeks) for that parameter. "
+    "(2) Do NOT invent a historical typical range from one or two early readings of a newly "
+    "measured parameter (common when a TDS pen is first used) — sparse early readings are not "
+    "a baseline. "
+    "(3) Prefer tank notes over any range you might infer from short history. "
+    "(4) When fill/source water has higher GH (and usually higher TDS) than the tank, gradual "
+    "TDS climb toward fill-water levels across successive water changes is expected and often "
+    "desired — do not flag that as a tank-level problem or invent a lower 'prior band' to "
+    "watch against. "
+    "(5) Do not invent multi-week 'watch-items' for a parameter solely because two recent "
+    "readings differ from one earlier sparse reading."
+)
+
 
 def _fmt_test_results(rows):
     if not rows:
@@ -435,6 +452,7 @@ Water test just recorded (newest) plus recent tests for trend comparison:
 Now write the actual response. Cover only what's relevant, briefly:
 1. Open issues — one short line (e.g. "No open issues at this time."). Skip if genuinely nothing to say.
 2. Any water parameter values or trends worth flagging vs. the recent tests above (e.g. a drop/rise since the last test, or a value outside the *safe tolerance* range for the inhabitants). Use precise, species-specific tolerance ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary. Only mention parameters that are actually notable, skip the rest.
+{_PARAMETER_BASELINE_RULE}
 3. The action to take now. Usually this is simply "Proceed with the standard water change" per the schedule above — do not restate the schedule's gallons/dose/interval details, the keeper already has those. Only describe something different if this test's results or recent history genuinely call for a different action. When a water change is the plan, you may briefly note how incoming home-water GH/KH will pull tank parameters if that is actually material (skip if home water is unknown or already aligned).
 
 2-4 sentences total, plain text, no markdown, no headers, no preamble like "Recommendation:" or "Analysis:" — this text is appended directly to the test result's own notes field."""
@@ -474,6 +492,8 @@ Recent Events (last 30 days — evidence of actual practices, including water so
 {_fmt_events(events)}
 
 {_CURRENT_PRACTICES_RULE}
+
+{_PARAMETER_BASELINE_RULE}
 
 Please provide:
 1. A brief analysis of the water chemistry trends (include how tank parameters relate to fill/source water when relevant, especially after water changes)
@@ -524,6 +544,8 @@ Latest Analysis:
 
 {_CURRENT_PRACTICES_RULE}
 
+{_PARAMETER_BASELINE_RULE}
+
 Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events and home-water readings, not obsolete notes), and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
 
 
@@ -563,6 +585,7 @@ Do NOT propose an update for:
 - feeding details (those live on the schedule)
 - one-off events, temporary issues, or inhabitant count changes
 - inventing facts not supported by schedule, events, home-water readings, or test notes
+- inventing multi-reading "typical bands" for a parameter from only 1–2 early readings (especially TDS after a new pen) — only revise accepted baselines when notes are clearly wrong vs sustained history or explicit keeper acceptance
 - copying every home-water history row into notes (a single current tap baseline is enough if useful)
 
 Preserve accurate hardware/setup text that is still true (dimensions, filter media, location, etc.).
