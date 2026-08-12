@@ -62,6 +62,18 @@ def test_post_from_evil_origin_is_403(client, tank_id):
     assert r.json()["detail"] == "Cross-origin request blocked"
 
 
+def test_security_headers_and_docs_disabled(client):
+    r = client.get("/tanks")
+    assert r.status_code == 200
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["Referrer-Policy"] == "same-origin"
+    assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+
+
 def test_post_from_same_origin_still_works(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/events",

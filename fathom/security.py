@@ -42,6 +42,27 @@ async def csrf_origin_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' https: data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Content-Security-Policy"] = _CSP
+    return response
+
+
 # Hits per client IP in the last 60s. 0 disables (used by the test suite).
 _AI_RATE_WINDOW_SEC = 60.0
 _ai_hits: dict[str, list[float]] = defaultdict(list)
