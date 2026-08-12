@@ -796,3 +796,21 @@ def test_quick_log_404_for_unknown_tank(client, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     r = client.post("/tanks/9999/quick-log", json={"text": "pH 7.2"})
     assert r.status_code == 404
+
+
+def test_import_rejects_file_over_2mb(client, tank_id, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    big = b"x" * (2 * 1024 * 1024 + 1)
+    r = client.post(
+        f"/tanks/{tank_id}/import",
+        files={"file": ("big.txt", big, "text/plain")},
+    )
+    assert r.status_code == 400
+    assert "2 MB" in r.json()["detail"]
+
+
+def test_quick_log_rejects_overlong_text(client, tank_id, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    r = client.post(f"/tanks/{tank_id}/quick-log", json={"text": "p" * 100001})
+    assert r.status_code == 400
+    assert "100000" in r.json()["detail"]

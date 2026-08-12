@@ -14,6 +14,24 @@ router = APIRouter(tags=["import"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 logger = logging.getLogger(__name__)
 
+MAX_IMPORT_BYTES = 2 * 1024 * 1024
+MAX_QUICK_LOG_CHARS = 100_000
+_READ_CHUNK = 64 * 1024
+
+
+async def _read_upload_capped(upload: UploadFile, cap: int) -> bytes:
+    chunks = []
+    total = 0
+    while True:
+        chunk = await upload.read(_READ_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > cap:
+            raise HTTPException(status_code=400, detail="File too large (max 2 MB)")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
 
 @router.get("/tanks/{tank_id}/import-page", response_class=HTMLResponse)
 async def import_page(request: Request, tank_id: int):
@@ -413,7 +431,7 @@ async def import_preview(tank_id: int, file: UploadFile = File(...)):
     if not tank:
         raise HTTPException(status_code=404, detail="Tank not found")
 
-    raw = await file.read()
+    raw = await _read_upload_capped(file, MAX_IMPORT_BYTES)
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -457,7 +475,12 @@ async def quick_log(tank_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Tank not found")
 
     body = await request.json()
-    text = (body.get("text") or "").strip()
+    text = body.get("text") or ""
+    if not isinstance(text, str):
+        raise HTTPException(status_code=400, detail="No text provided")
+    if len(text) > MAX_QUICK_LOG_CHARS:
+        raise HTTPException(status_code=400, detail="Text too long (max 100000 characters)")
+    text = text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="No text provided")
 
