@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Repo-managed hook. Enable with:
+#   git config core.hooksPath scripts/git-hooks
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+exec bash "$ROOT/scripts/secret-scan.sh"

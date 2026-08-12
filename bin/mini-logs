@@ -7,7 +7,15 @@
 #   bin/mini-logs -n 500    # last 500 lines of app log
 set -euo pipefail
 
-MINI_HOST="rob@192.168.50.205"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
+MINI_HOST="${FATHOM_MINI_HOST:-mini}"
 LOG_FILE="/tmp/fathom.log"
 LINES=100
 FOLLOW=false

@@ -1,6 +1,6 @@
 # Dependabot version updates for pip + GitHub Actions.
-# Auto-merge for Dependabot PRs is handled by .github/workflows/dependabot-automerge.yml
-# (pytest must pass in that workflow before merge).
+# Auto-merge (after pytest) only for *patch* bumps — see dependabot-automerge.yml.
+# Minor/major Dependabot PRs stay open for a look.
 # Outside-contributor PRs still require an approving review (repo ruleset on main).
 version: 2
 updates:

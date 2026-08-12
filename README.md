@@ -27,6 +27,7 @@ pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # Edit .env and add your ANTHROPIC_API_KEY
+git config core.hooksPath scripts/git-hooks   # secret scan on commit (also runs in CI)
 ```
 
 ### 3. Run

@@ -14,7 +14,7 @@ class _FakeRequest:
 
 
 def test_url_host_extracts_netloc():
-    assert url_host("http://192.168.50.205:8000/tanks") == "192.168.50.205:8000"
+    assert url_host("http://192.168.1.10:8000/tanks") == "192.168.1.10:8000"
     assert url_host("https://evil.example") == "evil.example"
 
 

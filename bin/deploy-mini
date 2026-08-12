@@ -11,8 +11,18 @@
 #      commit if the health check fails
 set -euo pipefail
 
-MINI_HOST="rob@192.168.50.205"
-MINI_REPO="/Users/rob/Documents/Code/aquarium-tracker"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$REPO_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
+# SSH Host from ~/.ssh/config (recommended) or user@host. Do not put LAN
+# coordinates in the repo — set FATHOM_MINI_HOST in .env.
+MINI_HOST="${FATHOM_MINI_HOST:-mini}"
+MINI_REPO="${FATHOM_MINI_REPO:-$REPO_ROOT}"
 HEALTH_PATH="/tanks"
 HEALTH_RETRIES=5
 HEALTH_RETRY_DELAY=2
