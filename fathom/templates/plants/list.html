@@ -347,12 +347,7 @@ function openRefInfo(entityType, entityName, displayName, description, careNotes
     sciEl.style.display = scientificName ? '' : 'none';
   }
 
-  const imgWrap = document.getElementById('ref-modal-img-wrap');
-  if (imageUrl) {
-    imgWrap.innerHTML = `<img src="${imageUrl}" class="ref-modal-img" alt="${displayName}" onerror="this.parentElement.innerHTML=''">`;
-  } else {
-    imgWrap.innerHTML = '';
-  }
+  setRefModalImage(document.getElementById('ref-modal-img-wrap'), imageUrl, displayName);
 
   document.getElementById('ref-modal-description').textContent = description || 'No description available.';
 

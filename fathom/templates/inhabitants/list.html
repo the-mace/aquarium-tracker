@@ -66,7 +66,10 @@
         <td data-label="Source">{{ inh.source or '—' }}</td>
         <td class="muted" data-label="Notes">{{ inh.notes or '' }}</td>
         <td class="actions-cell">
-          <button class="btn btn-xs btn-ghost" onclick="openPopEvent({{ inh.id }}, '{{ inh.common_name or inh.species }}')">Log Event</button>
+          <button class="btn btn-xs btn-ghost"
+                  data-id="{{ inh.id }}"
+                  data-name="{{ inh.common_name or inh.species or '' }}"
+                  onclick="openPopEventFrom(this)">Log Event</button>
           <button class="btn btn-xs btn-ghost"
                   data-id="{{ inh.id }}"
                   data-count="{{ inh.count if inh.count is not none else '' }}"
@@ -76,7 +79,9 @@
                   data-notes="{{ inh.notes or '' }}"
                   onclick="openEditInhFrom(this)">Edit</button>
           <a class="btn btn-xs btn-accent" href="/tanks/{{ tank.id }}/observations?link_type=inhabitant&link_id={{ inh.id }}">💬 Observations</a>
-          <form method="post" action="/tanks/{{ tank.id }}/inhabitants/{{ inh.id }}/delete" style="display:inline" onsubmit="return confirm('Remove {{ inh.common_name or inh.species }}?')">
+          <form method="post" action="/tanks/{{ tank.id }}/inhabitants/{{ inh.id }}/delete" style="display:inline"
+                data-name="{{ inh.common_name or inh.species or '' }}"
+                onsubmit="return confirm('Remove ' + this.dataset.name + '?')">
             <button class="btn btn-xs btn-danger" type="submit">✕</button>
           </form>
         </td>
@@ -280,12 +285,7 @@ function openRefInfo(entityType, entityName, displayName, description, careNotes
     sciEl.style.display = scientificName ? '' : 'none';
   }
 
-  const imgWrap = document.getElementById('ref-modal-img-wrap');
-  if (imageUrl) {
-    imgWrap.innerHTML = `<img src="${imageUrl}" class="ref-modal-img" alt="${displayName}" onerror="this.parentElement.innerHTML=''">`;
-  } else {
-    imgWrap.innerHTML = '';
-  }
+  setRefModalImage(document.getElementById('ref-modal-img-wrap'), imageUrl, displayName);
 
   document.getElementById('ref-modal-description').textContent = description || 'No description available.';
 
@@ -336,6 +336,9 @@ function openRefInfo(entityType, entityName, displayName, description, careNotes
   openModal('modal-ref-info');
 }
 
+function openPopEventFrom(el) {
+  openPopEvent(el.dataset.id, el.dataset.name);
+}
 function openPopEvent(inhId, name) {
   document.getElementById('pop-event-form').action = `/tanks/{{ tank.id }}/inhabitants/${inhId}/event`;
   document.getElementById('pop-event-subject').textContent = name;

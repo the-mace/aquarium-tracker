@@ -238,7 +238,8 @@ function showPreview(preview, counts, flags) {
 
   const countsEl = document.getElementById('preview-counts');
   countsEl.innerHTML = Object.entries(counts)
-    .map(([k, v]) => `<span class="count-chip"><strong>${v}</strong> ${k.replace(/_/g,' ')}</span>`)
+    .filter(([k]) => k === 'tank_specs' || SECTION_CONFIG[k])
+    .map(([k, v]) => `<span class="count-chip"><strong>${esc(String(v))}</strong> ${esc(k.replace(/_/g,' '))}</span>`)
     .join('');
 
   const flagsEl = document.getElementById('preview-flags');
@@ -287,12 +288,13 @@ function renderSpecsSection(specs, specKeys) {
   const tbody = document.createElement('tbody');
 
   for (const field of specKeys) {
+    if (!Object.prototype.hasOwnProperty.call(fieldLabels, field)) continue;
     const val = specs[field];
     if (val === null || val === undefined) continue;
-    const label = fieldLabels[field] || field;
+    const label = fieldLabels[field];
     const inputType = typeof val === 'number' ? 'number' : 'text';
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${label}</td><td><input type="${inputType}" step="any" data-specs-field="${field}" value="${esc(String(val))}"></td>`;
+    tr.innerHTML = `<td>${esc(label)}</td><td><input type="${inputType}" step="any" data-specs-field="${esc(field)}" value="${esc(String(val))}"></td>`;
     tbody.appendChild(tr);
   }
 

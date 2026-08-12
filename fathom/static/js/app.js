@@ -253,6 +253,19 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/** Build the reference-info modal image without interpolating URLs/names into HTML. */
+function setRefModalImage(imgWrap, imageUrl, displayName) {
+  if (!imgWrap) return;
+  imgWrap.replaceChildren();
+  if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) return;
+  const img = document.createElement('img');
+  img.className = 'ref-modal-img';
+  img.alt = displayName || '';
+  img.addEventListener('error', () => imgWrap.replaceChildren());
+  img.src = imageUrl;
+  imgWrap.appendChild(img);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   if (typeof TANK_ID !== 'undefined') loadConversations();
 });

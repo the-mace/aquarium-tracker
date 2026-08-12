@@ -279,3 +279,16 @@ def test_update_nonexistent_inhabitant_404(client, tank_id):
         follow_redirects=False,
     )
     assert r.status_code == 404
+
+
+def test_inhabitant_list_does_not_embed_name_in_javascript(client, tank_id):
+    """Names must not be interpolated into onclick/onsubmit JS (stored XSS)."""
+    payload = "');alert(1)//"
+    _add(client, tank_id, name=payload, count=1)
+    r = client.get(f"/tanks/{tank_id}/inhabitants")
+    assert r.status_code == 200
+    assert "onclick=\"openPopEvent(" not in r.text
+    assert f"Remove {payload}" not in r.text
+    assert "openPopEventFrom(this)" in r.text
+    assert "this.dataset.name" in r.text
+    assert "setRefModalImage(" in r.text
