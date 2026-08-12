@@ -319,50 +319,85 @@ async def review_goal(
         import time
         import anthropic
         from ai_config import CLAUDE_MODEL, CLAUDE_THINKING_DISABLED
-        from routers.ai_analysis import _message_text
+        from routers.ai_analysis import (
+            _message_text, _proposed_needs_rewrite, _draft_looks_rough,
+        )
 
         logger = logging.getLogger(__name__)
         client = anthropic.Anthropic(api_key=api_key)
-        # Goal review needs reliable JSON. Adaptive thinking has burned the whole
-        # token budget mid-object ("Could not parse AI review"). Prefer thinking off.
-        raw = ""
-        for attempt_name, thinking in (
-            ("no_thinking", CLAUDE_THINKING_DISABLED),
-            ("adaptive", None),
-        ):
+
+        async def _one_review_call(messages, attempt_name):
             kwargs = {
                 "model": CLAUDE_MODEL,
                 "max_tokens": CLAUDE_MAX_TOKENS_GOAL_REVIEW,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
                 "timeout": 90.0,
+                "thinking": CLAUDE_THINKING_DISABLED,
             }
-            if thinking is not None:
-                kwargs["thinking"] = thinking
-            logger.info("Claude call: goal_review | tank=%d | thinking=%s", tank_id, attempt_name)
+            logger.info("Claude call: goal_review | tank=%d | %s", tank_id, attempt_name)
             t0 = time.monotonic()
             msg = await asyncio.to_thread(client.messages.create, **kwargs)
             elapsed = time.monotonic() - t0
             stop = getattr(msg, "stop_reason", None)
             usage = getattr(msg, "usage", None)
             logger.info(
-                "Claude done: goal_review | tank=%d | thinking=%s | in=%s out=%s elapsed=%.1fs stop=%s",
+                "Claude done: goal_review | tank=%d | %s | in=%s out=%s elapsed=%.1fs stop=%s",
                 tank_id, attempt_name,
                 getattr(usage, "input_tokens", "?"),
                 getattr(usage, "output_tokens", "?"),
                 elapsed, stop,
             )
-            raw = _message_text(msg)
-            if not raw:
-                continue
-            probe = _parse_goal_review(raw, draft)
-            if not probe.get("parse_failed"):
-                raw = raw  # keep successful body
-                break
-            logger.warning(
-                "Goal review unparseable tank=%d thinking=%s stop=%s — retry if available",
-                tank_id, attempt_name, stop,
+            return _message_text(msg)
+
+        # Prefer thinking off for reliable JSON (adaptive previously truncated mid-object).
+        raw = await _one_review_call(
+            [{"role": "user", "content": prompt}],
+            "no_thinking",
+        )
+        result = _parse_goal_review(raw, draft)
+
+        # If parse failed, one adaptive retry then re-parse.
+        if result.get("parse_failed"):
+            raw2 = await _one_review_call(
+                [{"role": "user", "content": prompt}],
+                "adaptive_retry",
             )
-            raw = ""
+            # adaptive_retry still uses thinking disabled in _one_review_call — keep it that way
+            # for reliability; name is historical.
+            if raw2:
+                result = _parse_goal_review(raw2, draft)
+
+        # Rough draft left unpolished (e.g. target still "gh 5 minimum?") → one rewrite nudge.
+        if (
+            not result.get("parse_failed")
+            and _draft_looks_rough(draft)
+            and _proposed_needs_rewrite(result.get("proposed") or {}, draft)
+        ):
+            logger.info(
+                "Goal review proposed left rough draft intact for tank %d — rewrite pass",
+                tank_id,
+            )
+            nudge = (
+                "Your previous proposed fields were too close to the rough draft. "
+                "Rewrite proposed.title / proposed.target / proposed.description into a "
+                "finished, save-ready goal: proper capitalization and punctuation; "
+                "target MUST include ideal GH/parameter range, tolerable range if useful, "
+                "and a hold timeline (no question marks, no 'minimum?'). "
+                "Species named in the draft may use standard care ranges. "
+                "Keep summary/suggestions for feedback only. Return the same JSON shape only."
+            )
+            raw3 = await _one_review_call(
+                [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": raw or "{}"},
+                    {"role": "user", "content": nudge},
+                ],
+                "rewrite_nudge",
+            )
+            if raw3:
+                result2 = _parse_goal_review(raw3, draft)
+                if not result2.get("parse_failed"):
+                    result = result2
     except Exception as e:
         return JSONResponse({
             "reasonable": False,
@@ -373,7 +408,6 @@ async def review_goal(
             "draft": draft,
         })
 
-    result = _parse_goal_review(raw, draft)
     result["draft"] = draft
     return JSONResponse(result)
 

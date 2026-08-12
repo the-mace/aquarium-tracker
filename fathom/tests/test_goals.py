@@ -127,6 +127,33 @@ def test_parse_goal_review_fallback_and_changed():
     assert not out2.get("parse_failed")
 
 
+def test_draft_looks_rough_and_proposed_needs_rewrite():
+    from routers.ai_analysis import _draft_looks_rough, _proposed_needs_rewrite
+
+    rough = {
+        "title": "Get GH ready for amano shrimp",
+        "target": "gh 5 minimum?",
+        "description": "Amanos are more hardy than the neocaridina",
+        "notes": "",
+    }
+    assert _draft_looks_rough(rough) is True
+    assert _proposed_needs_rewrite(rough, rough) is True  # same as draft
+    polished = {
+        "title": "Raise GH for Amano shrimp",
+        "target": "Ideal GH 6–8 dGH (tolerable 4–10); hold 2–4 weeks",
+        "description": "Prep water chemistry before adding Amano shrimp.",
+        "notes": "",
+    }
+    assert _proposed_needs_rewrite(polished, rough) is False
+    clean = {
+        "title": "Raise GH for Amano shrimp",
+        "target": "Ideal GH 6-8 for 4 weeks",
+        "description": "Stable hardness before stocking.",
+        "notes": "",
+    }
+    assert _draft_looks_rough(clean) is False
+
+
 def test_parse_goal_review_rejects_meta_feedback_in_proposed_fields():
     """Reviewer critique must not land in savable title/target/description."""
     from routers.ai_analysis import _looks_like_review_meta

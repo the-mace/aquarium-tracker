@@ -773,28 +773,29 @@ Your job has TWO separate outputs:
 
 2) PROPOSED GOAL FIELDS (title/target/description/notes):
 - These are the actual goal text that will be saved if the user clicks Save
-- Write a finished goal with proper capitalization and punctuation
-- Title: short and clear (e.g. "Raise GH before adding Fire Red shrimp") — not "Clarify …"
-- Target: one concrete line with ideal range, optional tolerable range, and timeline when relevant
-  Example: "Ideal GH 6–8 dGH (tolerable 5–10); hold ideal for 4+ consecutive weeks"
-- Description: 2–4 complete sentences: why, how success is judged, realistic approach given tank + fill water; if sourcing from another tank, name that tank and the stock being moved
+- ALWAYS rewrite rough drafts into polished finished goal text — summary/suggestions can discuss gaps, but proposed must still be a complete goal the user could save
+- NEVER leave proposed equal to a casual draft (lowercase starts, trailing "?", "minimum?", "good for them", fragments)
+- Title: short, clear, proper capitalization (e.g. "Raise GH for Amano shrimp") — not "Get GH ready for amano shrimp" or "Clarify …"
+- Target: ALWAYS a concrete measurable line for parameter goals. Must include ideal range AND (when useful) tolerable range AND a hold/timeline. Never leave "gh 5 minimum?" or similar.
+  Example for Amano shrimp (when draft names Amano): "Ideal GH 6–8 dGH (tolerable ~4–10 dGH); hold ideal for 2–4 consecutive weeks before adding Amano shrimp"
+  If draft suggests a minimum (e.g. "GH 5 minimum?"), convert to a proper ideal+tolerable target using species-appropriate care ranges for species named in the draft — that is care knowledge, not inventing stock
+- Description: 2–4 complete sentences with capitalization and punctuation: why, how success is judged, realistic approach (dosing/WC) given tank + fill water; if sourcing from another tank, name that tank and stock
 - Notes: optional short keeper notes only; leave "" if nothing useful
 
-SPECIES / FACTUAL ACCURACY — do not hallucinate; DO cross-reference other tanks:
+SPECIES / FACTUAL ACCURACY — do not hallucinate stock; DO use care ranges for named species; DO cross-reference other tanks:
 - Allowed species names in proposed fields only if they appear in: (a) the draft text, (b) this tank's Currently stocked list, or (c) a source tank named/implied in the draft under "Other tanks' currently stocked animals"
 - count=0 / formerly stocked on THIS tank is NOT by itself permission to name that variety
-- When draft implies a source tank (e.g. "from the shrimp tank", "shrimp tank", "other tank", "both tanks") and that tank has a clear matching animal (e.g. Fire Red Shrimp for "red shrimp"), USE that name in proposed fields — do not claim species is unknown
-- If multiple red/shrimp varieties exist on the source tank, ask which one in suggestions; if only one clear match, use it
-- Do not invent cultivars not present in draft, this tank's current stock, or the referenced source tank's current stock
-- Do not invent stock that is not listed for the referenced tank
-- Water ranges may use species-appropriate guidance once species is resolved from real data
+- When draft implies a source tank and that tank has a clear matching animal, USE that name — do not claim species is unknown
+- If multiple matching varieties on the source tank, ask which one in suggestions; if only one clear match, use it
+- Do not invent cultivars not present in draft / current stock / referenced source tank stock
+- Care parameter ranges (GH/KH/temp/pH) for a species named in the draft ARE allowed and expected (e.g. draft says "Amano" → give Amano-appropriate GH ideal/tolerable ranges even if Amano count is 0)
 
 CRITICAL — never put review feedback into proposed fields:
 - No "undefined", "needs specific…", "before this can be tracked"
 - No "draft intent is unclear", "if the goal is…", "confirm whether…"
 - No scolding about what is already stocked
-- If species is truly ambiguous after cross-referencing other tanks: reasonable=false, ask in summary/suggestions, keep proposed species generic
-- If draft is already excellent, copy it into proposed unchanged but fix capitalization/punctuation
+- Feedback belongs only in summary/suggestions; proposed is always save-ready polished goal text
+- Only copy the draft into proposed if it is already production-quality (proper capitalization, no "?", complete measurable target with ranges)
 
 Return ONLY JSON (no markdown fences, no text before or after the object):
 {{
@@ -835,6 +836,46 @@ def _looks_like_review_meta(text: str) -> bool:
         return True
     # Titles that start with review verbs
     if re.match(r"(?i)^(clarify|review|fix|define|specify|decide)\b", t):
+        return True
+    return False
+
+
+def _draft_looks_rough(draft: dict) -> bool:
+    """True if draft still needs a polished rewrite (not save-ready as-is)."""
+    title = (draft.get("title") or "").strip()
+    target = (draft.get("target") or "").strip()
+    desc = (draft.get("description") or "").strip()
+    blob = f"{title} {target} {desc}"
+    if "?" in blob:
+        return True
+    if title and title[0].islower():
+        return True
+    if target and (target[0].islower() or len(target) < 20):
+        return True
+    if re.search(r"(?i)\b(min(imum)?|good for them|better|stuff)\b", blob):
+        return True
+    # Parameter goal without a numeric range in target
+    if re.search(r"(?i)\b(gh|kh|ph|tds|temp|nitrate)\b", blob) and not re.search(r"\d", target):
+        return True
+    return False
+
+
+def _proposed_needs_rewrite(proposed: dict, draft: dict) -> bool:
+    """True if proposed still mirrors a rough draft (failed to polish)."""
+    if not _draft_looks_rough(draft):
+        return False
+    pt = (proposed.get("target") or "").strip().lower()
+    dt = (draft.get("target") or "").strip().lower()
+    ptitle = (proposed.get("title") or "").strip().lower()
+    dtitle = (draft.get("title") or "").strip().lower()
+    # Target barely changed or still has ?
+    if pt == dt or "?" in (proposed.get("target") or ""):
+        return True
+    if ptitle == dtitle and dtitle and dtitle[0:1].islower():
+        return True
+    # Target still lacks numbers when draft was a parameter goal
+    blob = f"{draft.get('title','')} {draft.get('target','')}"
+    if re.search(r"(?i)\b(gh|kh|ph|tds)\b", blob) and not re.search(r"\d", proposed.get("target") or ""):
         return True
     return False
 
