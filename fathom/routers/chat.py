@@ -28,6 +28,21 @@ MAX_TOOL_ROUNDS = 4
 QUERY_ROW_LIMIT = 200
 TITLE_MAX_LEN = 48
 
+_TANK_SCOPED_TABLES = {
+    "tank_equipment", "test_results", "inhabitants", "population_events",
+    "purchases", "events", "issues", "observations", "plants", "hardscape",
+    "tank_state_summary", "goals", "recurring_schedule", "tank_notes_proposals",
+    "chat_conversations",
+}
+_JOIN_SCOPED_TABLES = {
+    "observation_links": "observations",
+    "goal_dependencies": "goals",
+    "chat_messages": "chat_conversations",
+}
+_BLOCKED_IDENTIFIERS = {
+    "sqlite_master", "sqlite_temp_master", "sqlite_schema",
+}
+
 
 class ChatMessage(BaseModel):
     message: str
@@ -55,8 +70,10 @@ def _query_db_tool(tank_id):
             "Run a single read-only SQL SELECT query against the Fathom database for anything "
             "not already covered by the context above — e.g. full test_results history/trends, "
             "population_events (when an inhabitant was added/died/removed), purchase totals, "
-            f"older observations. This tank's id is {tank_id} — filter WHERE tank_id = {tank_id} "
-            f"unless the user is deliberately comparing tanks. Returns up to {QUERY_ROW_LIMIT} rows as JSON.\n\n"
+            f"older observations. This tank's id is {tank_id}. Every query that touches a "
+            f"tank-scoped table MUST include tank_id = {tank_id} (no other tank). "
+            f"Queries on tanks must include id = {tank_id}. Cross-tank comparison is not "
+            f"available through this tool. Returns up to {QUERY_ROW_LIMIT} rows as JSON.\n\n"
             f"Schema:\n{get_schema_text()}"
         ),
         "input_schema": {
@@ -67,10 +84,59 @@ def _query_db_tool(tank_id):
     }
 
 
-def _run_query_db(sql: str) -> dict:
+def _strip_sql_literals(sql: str) -> str:
+    """Drop string literals and comments so they cannot fake a tank_id filter."""
+    out = re.sub(r"'([^']|'')*'", "''", sql)
+    out = re.sub(r"--.*?$", " ", out, flags=re.MULTILINE)
+    out = re.sub(r"/\*.*?\*/", " ", out, flags=re.DOTALL)
+    return out
+
+
+def _sql_identifiers(sql: str) -> set[str]:
+    return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", _strip_sql_literals(sql).lower()))
+
+
+def _sql_scope_error(sql: str, tank_id: int) -> str | None:
+    """Return an error if the SELECT is not scoped to this tank."""
+    visible = _strip_sql_literals(sql)
+    ident = _sql_identifiers(sql)
+    if ident & _BLOCKED_IDENTIFIERS or any(i.startswith("pragma") for i in ident):
+        return "That table is not queryable."
+    if ident & {"union", "except", "intersect"}:
+        return "UNION/EXCEPT/INTERSECT are not allowed."
+    tid = int(tank_id)
+    needs_tank_id = bool(ident & _TANK_SCOPED_TABLES)
+    for child, parent in _JOIN_SCOPED_TABLES.items():
+        if child in ident:
+            needs_tank_id = True
+            if parent not in ident:
+                return f"Queries on {child} must join {parent} and filter tank_id = {tid}."
+    if needs_tank_id:
+        if not re.search(rf"\btank_id\s*=\s*{tid}\b", visible, re.IGNORECASE):
+            return f"Queries on tank tables must include tank_id = {tid}."
+        other_ids = [int(x) for x in re.findall(r"\btank_id\s*=\s*(\d+)", visible, re.IGNORECASE)]
+        if any(i != tid for i in other_ids):
+            return "Queries cannot target another tank."
+        if re.search(r"\btank_id\s*(?:not\s+in|in|!=|<>|>=|<=|>|<)", visible, re.IGNORECASE):
+            return "Queries on tank tables must filter tank_id with '='."
+        if re.search(rf"\btank_id\s*=\s*{tid}\s+or\b", visible, re.IGNORECASE):
+            return "Queries on tank tables cannot OR against tank_id."
+        if re.search(r"\bor\s+tank_id\b", visible, re.IGNORECASE):
+            return "Queries on tank tables cannot OR against tank_id."
+    if "tanks" in ident and not needs_tank_id:
+        if not re.search(rf"\b(?:tanks\.)?id\s*=\s*{tid}\b", visible, re.IGNORECASE):
+            return f"Queries on tanks must include id = {tid}."
+    return None
+
+
+def _run_query_db(sql: str, tank_id: int | None = None) -> dict:
     stripped = (sql or "").strip().rstrip(";")
     if not re.match(r"(?is)^\s*select\b", stripped):
         return {"error": "Only SELECT statements are allowed."}
+    if tank_id is not None:
+        scope_err = _sql_scope_error(stripped, tank_id)
+        if scope_err:
+            return {"error": scope_err}
     try:
         with get_db_readonly() as conn:
             rows = conn.execute(stripped).fetchmany(QUERY_ROW_LIMIT)
@@ -440,7 +506,7 @@ async def chat(tank_id: int, body: ChatMessage):
                 if block.type != "tool_use":
                     continue
                 logger.info("Chat tool call: chat | tank=%d | query_db: %s", tank_id, block.input.get("sql", ""))
-                result = _run_query_db(block.input.get("sql", ""))
+                result = _run_query_db(block.input.get("sql", ""), tank_id)
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,

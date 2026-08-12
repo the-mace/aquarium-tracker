@@ -246,19 +246,19 @@ def test_chat_unknown_conversation_404(client, tank_id, monkeypatch):
 
 
 def test_run_query_db_rejects_non_select(client, tank_id):
-    result = _run_query_db("DELETE FROM tanks WHERE id = 1")
+    result = _run_query_db("DELETE FROM tanks WHERE id = 1", tank_id)
     assert "error" in result
 
 
 def test_run_query_db_rejects_multi_statement(client, tank_id):
-    result = _run_query_db("SELECT * FROM tanks; DROP TABLE tanks;")
+    result = _run_query_db("SELECT * FROM tanks; DROP TABLE tanks;", tank_id)
     assert "error" in result
 
 
 def test_run_query_db_readonly_connection_blocks_write_even_if_select_prefixed(client, tank_id):
     # Even a syntactically-invalid attempt to sneak a write past the regex must fail,
     # because _run_query_db opens the DB in SQLite read-only mode regardless of SQL text.
-    result = _run_query_db("SELECT 1; UPDATE tanks SET name='hacked' WHERE id=1")
+    result = _run_query_db("SELECT 1; UPDATE tanks SET name='hacked' WHERE id=1", tank_id)
     assert "error" in result
     conn = sqlite3.connect(_db.DB_PATH)
     name = conn.execute("SELECT name FROM tanks WHERE id=?", (tank_id,)).fetchone()[0]
@@ -267,9 +267,48 @@ def test_run_query_db_readonly_connection_blocks_write_even_if_select_prefixed(c
 
 
 def test_run_query_db_returns_rows_for_valid_select(client, tank_id):
-    result = _run_query_db(f"SELECT id, name FROM tanks WHERE id = {tank_id}")
+    result = _run_query_db(f"SELECT id, name FROM tanks WHERE id = {tank_id}", tank_id)
     assert "rows" in result
     assert result["rows"][0]["id"] == tank_id
+
+
+def test_run_query_db_requires_tank_id_on_tank_tables(client, tank_id):
+    result = _run_query_db("SELECT ph FROM test_results", tank_id)
+    assert "error" in result
+    assert "tank_id" in result["error"]
+
+
+def test_run_query_db_rejects_other_tank_id(client, tank_id):
+    result = _run_query_db("SELECT ph FROM test_results WHERE tank_id = 999", tank_id)
+    assert "error" in result
+
+
+def test_run_query_db_rejects_or_bypass(client, tank_id):
+    result = _run_query_db(
+        f"SELECT ph FROM test_results WHERE tank_id = {tank_id} OR 1=1", tank_id
+    )
+    assert "error" in result
+
+
+def test_run_query_db_rejects_union_and_sqlite_master(client, tank_id):
+    assert "error" in _run_query_db(
+        f"SELECT ph FROM test_results WHERE tank_id = {tank_id} UNION SELECT name FROM tanks",
+        tank_id,
+    )
+    assert "error" in _run_query_db("SELECT sql FROM sqlite_master", tank_id)
+
+
+def test_run_query_db_allows_scoped_and_or_on_other_columns(client, tank_id):
+    result = _run_query_db(
+        f"SELECT ph FROM test_results WHERE tank_id = {tank_id} AND (ph > 6 OR gh > 4)",
+        tank_id,
+    )
+    assert "rows" in result
+
+
+def test_run_query_db_rejects_chat_messages_without_join(client, tank_id):
+    result = _run_query_db("SELECT content FROM chat_messages", tank_id)
+    assert "error" in result
 
 
 def test_chat_no_api_key_still_returns_503(client, tank_id, monkeypatch):
