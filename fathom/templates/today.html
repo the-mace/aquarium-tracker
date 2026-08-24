@@ -172,14 +172,14 @@
     </div>
     {% endif %}
 
-    {% if culture.next_action %}
+    {% if culture.next_item %}
     <div class="today-section">
       <div class="today-item">
         <span class="badge badge-warning">next</span>
         <div class="today-item-text">
-          <span>{{ culture.next_action }}</span>
-          {% if culture.next_action_date %}
-          <div class="muted today-item-notes">{{ culture.next_action_date }}</div>
+          <span>{{ culture.next_item.text }}</span>
+          {% if culture.next_item.date %}
+          <div class="muted today-item-notes">{{ culture.next_item.date }}</div>
           {% endif %}
         </div>
       </div>

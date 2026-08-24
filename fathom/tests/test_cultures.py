@@ -511,3 +511,105 @@ def test_culture_nav_on_pages(client):
     r = client.get("/cultures/new")
     assert r.status_code == 200
     assert "New culture" in r.text
+
+
+def _add_logged_feeding(client, culture_id, description="Feed Daphnia", last_done=None, next_due=None):
+    r = client.post(
+        f"/cultures/{culture_id}/schedule",
+        data={
+            "category": "feeding",
+            "description": description,
+            "tracking_mode": "logged",
+            "interval_days": "1",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201, r.text
+    sch_id = r.json()["id"]
+    if last_done is not None or next_due is not None:
+        data = {
+            "category": "feeding",
+            "description": description,
+            "tracking_mode": "logged",
+            "interval_days": "1",
+        }
+        if last_done is not None:
+            data["last_done"] = last_done
+        if next_due is not None:
+            data["next_due"] = next_due
+        r = client.post(
+            f"/cultures/{culture_id}/schedule/{sch_id}/update",
+            data=data,
+            headers=JSON,
+        )
+        assert r.status_code == 200, r.text
+    return sch_id
+
+
+def test_next_uses_upcoming_schedule_not_harvest_status(client):
+    """Harvest readiness is a badge; Next is the coming scheduled feeding."""
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    cid = _create_culture(
+        client, name="Live Food", kind="daphnia",
+        harvest_status="not_ready",
+        next_action="Don't harvest yet",
+    )
+    _add_logged_feeding(client, cid, last_done=yesterday, next_due=tomorrow)
+
+    page = client.get(f"/cultures/{cid}")
+    assert page.status_code == 200
+    assert "badge-harvest-not_ready" in page.text
+    assert "Next: Feed Daphnia" in page.text
+    assert tomorrow in page.text
+    assert "Next: Don" not in page.text
+
+    listing = client.get("/cultures")
+    assert "Next: Feed Daphnia" in listing.text
+    assert "Next: Don" not in listing.text
+
+    today = client.get("/today")
+    assert today.status_code == 200
+    assert "Live Food" in today.text
+    assert "Feed Daphnia" in today.text
+    assert "harvest" not in today.text.lower()
+    assert "badge-warning" in today.text
+
+
+def test_harvest_status_alone_is_not_next(client):
+    cid = _create_culture(
+        client, name="Live Food", kind="daphnia",
+        harvest_status="not_ready",
+        next_action="Don't harvest yet",
+    )
+    page = client.get(f"/cultures/{cid}")
+    assert "badge-harvest-not_ready" in page.text
+    assert "Next: Don" not in page.text
+    assert "culture-next-action" not in page.text
+    listing = client.get("/cultures")
+    assert "culture-next-action" not in listing.text
+    today = client.get("/today")
+    assert "Live Food" not in today.text
+
+
+def test_next_prefers_sooner_one_off_over_later_schedule(client):
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    later = (date.today() + timedelta(days=3)).isoformat()
+    cid = _create_culture(
+        client, name="Live Food",
+        next_action="mag-scraper swish if still clear",
+        next_action_date=tomorrow,
+    )
+    _add_logged_feeding(client, cid, next_due=later)
+    page = client.get(f"/cultures/{cid}")
+    assert "Next: mag-scraper swish if still clear" in page.text
+    assert "Next: Feed Daphnia" not in page.text
+
+
+def test_due_today_feeding_is_due_not_next(client):
+    cid = _create_culture(client, name="Live Food")
+    _add_logged_feeding(client, cid)  # no next_due → "not yet done" belongs in Due
+    page = client.get(f"/cultures/{cid}")
+    assert "Feed Daphnia" in page.text
+    assert "not yet done" in page.text
+    assert "Next: Feed Daphnia" not in page.text

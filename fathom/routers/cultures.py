@@ -82,6 +82,19 @@ HARVEST_STATUS_LABELS = {
     "not_ready": "Don't harvest yet",
     "ready": "OK to harvest",
 }
+# Phrases that belong on the harvest badge, not in Next — including
+# next_action values that just restated harvest status.
+_HARVEST_NEXT_PHRASES = frozenset({
+    "dont harvest",
+    "dont harvest yet",
+    "do not harvest",
+    "do not harvest yet",
+    "ok to harvest",
+    "okay to harvest",
+    "not ready",
+    "not_ready",
+    "ready",
+} | {v.lower().replace("'", "") for v in HARVEST_STATUS_LABELS.values()})
 TEMP_KINDS = ("water", "air")
 TEMP_KIND_LABELS = {"water": "Water", "air": "Air (bench)"}
 
@@ -132,6 +145,61 @@ def _fmt_cups(n: float) -> str:
     else:
         shown = f"{n:g}"
     return f"{shown} cup" if n == 1 else f"{shown} cups"
+
+
+def _normalize_action_text(text: Optional[str]) -> str:
+    collapsed = " ".join((text or "").lower().split())
+    return collapsed.replace("'", "").replace("’", "").rstrip(".…").strip()
+
+
+def _is_harvest_status_text(text: Optional[str]) -> bool:
+    """True when a next_action string is just harvest readiness, not a task."""
+    norm = _normalize_action_text(text)
+    if not norm:
+        return False
+    if norm in _HARVEST_NEXT_PHRASES:
+        return True
+    labels = {_normalize_action_text(v) for v in HARVEST_STATUS_LABELS.values()}
+    return norm in labels
+
+
+def _culture_next(culture, schedule, today_date: str):
+    """Soonest upcoming logged task, else a genuine one-off next_action.
+
+    Harvest status is a badge, not Next. Due-today / overdue / never-done
+    logged items belong in the Due panel; Next is what's coming after that.
+    """
+    candidates = []
+    for s in schedule or []:
+        if not s.get("is_active"):
+            continue
+        if s.get("tracking_mode") != "logged":
+            continue
+        due = s.get("next_due")
+        if due and due > today_date:
+            candidates.append({
+                "text": (s.get("description") or "").strip(),
+                "date": due,
+                "source": "schedule",
+            })
+    action = (culture.get("next_action") or "").strip()
+    if action and not _is_harvest_status_text(action):
+        candidates.append({
+            "text": action,
+            "date": culture.get("next_action_date") or None,
+            "source": "manual",
+        })
+    if not candidates:
+        return None
+
+    def sort_key(item):
+        # Dated first (soonest), undated last; prefer schedule over one-off ties.
+        dated = item.get("date") or "9999-99-99"
+        source_rank = 0 if item["source"] == "schedule" else 1
+        return (dated, source_rank, item["text"])
+
+    candidates.sort(key=sort_key)
+    return candidates[0]
 
 
 def _apply_schedule_dates(existing, last_done, next_due, interval_days):
@@ -405,33 +473,37 @@ def _default_mark_done_vessels(conn, culture_id: int, sched) -> List[int]:
 
 
 def load_today_cultures(conn, today_date: str):
-    """Active cultures that have something to show on Today (due, done today, or reference)."""
+    """Active cultures that have something to show on Today (due, done today, or next)."""
     cultures = rows_to_list(conn.execute(
         """SELECT c.id, c.name, c.next_action, c.next_action_date FROM cultures c
            WHERE c.status='active' ORDER BY c.name"""
     ).fetchall())
     visible = []
     for culture in cultures:
-        culture["today_schedule"] = rows_to_list(conn.execute(
+        schedule = rows_to_list(conn.execute(
             """SELECT * FROM culture_schedule
-               WHERE culture_id=? AND is_active=1 AND tracking_mode='reference_only'
+               WHERE culture_id=? AND is_active=1
                ORDER BY category, description""",
             (culture["id"],),
         ).fetchall())
-        culture["maintenance_items"] = rows_to_list(conn.execute(
-            """SELECT * FROM culture_schedule
-               WHERE culture_id=? AND is_active=1 AND tracking_mode='logged'
-                 AND (
-                   (next_due IS NOT NULL AND next_due <= ?)
-                   OR (next_due IS NULL AND interval_days IS NOT NULL)
-                   OR last_done=?
-                 )
-               ORDER BY CASE WHEN last_done=? THEN 1 ELSE 0 END,
-                 CASE WHEN next_due IS NULL THEN 1 ELSE 0 END, next_due""",
-            (culture["id"], today_date, today_date, today_date),
-        ).fetchall())
-        has_action = bool((culture.get("next_action") or "").strip())
-        if culture["today_schedule"] or culture["maintenance_items"] or has_action:
+        culture["today_schedule"] = [
+            s for s in schedule if s.get("tracking_mode") == "reference_only"
+        ]
+        due = [
+            s for s in schedule if s.get("tracking_mode") == "logged" and (
+                (s.get("next_due") and s["next_due"] <= today_date)
+                or (s.get("next_due") is None and s.get("interval_days") is not None)
+                or s.get("last_done") == today_date
+            )
+        ]
+        due.sort(key=lambda s: (
+            1 if s.get("last_done") == today_date else 0,
+            1 if s.get("next_due") is None else 0,
+            s.get("next_due") or "",
+        ))
+        culture["maintenance_items"] = due
+        culture["next_item"] = _culture_next(culture, schedule, today_date)
+        if culture["today_schedule"] or culture["maintenance_items"] or culture["next_item"]:
             visible.append(culture)
     return visible
 
@@ -471,6 +543,7 @@ async def list_cultures(request: Request):
             _CULTURE_SELECT +
             " ORDER BY CASE c.status WHEN 'active' THEN 0 ELSE 1 END, c.name"
         ).fetchall())
+        today_date = date.today().isoformat()
         for culture in cultures:
             _with_destination(culture)
             culture["vessels"] = rows_to_list(conn.execute(
@@ -479,6 +552,12 @@ async def list_cultures(request: Request):
                    ORDER BY sort_order, id""",
                 (culture["id"],),
             ).fetchall())
+            schedule = rows_to_list(conn.execute(
+                """SELECT * FROM culture_schedule
+                   WHERE culture_id=? AND is_active=1""",
+                (culture["id"],),
+            ).fetchall())
+            culture["next_item"] = _culture_next(culture, schedule, today_date)
     return templates.TemplateResponse(request, "cultures/list.html", {
         "cultures": cultures,
         **_template_labels(),
@@ -575,12 +654,14 @@ async def culture_detail(request: Request, culture_id: int):
             or s.get("last_done") == today_date
         )
     ]
+    next_item = _culture_next(culture, schedule, today_date)
     return templates.TemplateResponse(request, "cultures/detail.html", {
         "culture": culture,
         "vessels": vessels,
         "log_rows": log_rows,
         "schedule": schedule,
         "due_items": due_items,
+        "next_item": next_item,
         "dest_tanks": dest_tanks,
         "dest_cultures": dest_cultures,
         "dest_vessels": dest_vessels,

@@ -209,9 +209,9 @@
     {% if culture.isolation_notes %}
     <p class="culture-isolation">{{ culture.isolation_notes }}</p>
     {% endif %}
-    {% if culture.next_action %}
-    <p class="culture-next-action{% if culture.next_action_date and culture.next_action_date <= today_date %} culture-next-action-due{% endif %}">
-      Next: {{ culture.next_action }}{% if culture.next_action_date %} · {{ culture.next_action_date }}{% endif %}
+    {% if next_item %}
+    <p class="culture-next-action{% if next_item.date and next_item.date <= today_date %} culture-next-action-due{% endif %}">
+      Next: {{ next_item.text }}{% if next_item.date %} · {{ next_item.date }}{% endif %}
     </p>
     {% endif %}
     {% if bench_air %}
