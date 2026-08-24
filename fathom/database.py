@@ -436,7 +436,171 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_chat_messages_conv
                 ON chat_messages(conversation_id, id);
+
+            -- Live-food cultures (not tanks). One purpose per culture
+            -- (Daphnia *or* green water, not mixed): green water isn't fed,
+            -- and harvest goes to a destination tank, culture, or bin.
+            CREATE TABLE IF NOT EXISTS cultures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                kind TEXT DEFAULT 'other' CHECK(kind IN ('daphnia','green_water','other')),
+                consumer_tank_id INTEGER,
+                destination_culture_id INTEGER,
+                destination_vessel_id INTEGER,
+                isolation_notes TEXT,
+                notes TEXT,
+                harvest_status TEXT DEFAULT 'not_ready'
+                    CHECK(harvest_status IN ('not_ready','ready')),
+                next_action TEXT,
+                next_action_date TEXT,
+                status TEXT DEFAULT 'active' CHECK(status IN ('active','archived')),
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (consumer_tank_id) REFERENCES tanks(id) ON DELETE SET NULL,
+                FOREIGN KEY (destination_culture_id) REFERENCES cultures(id) ON DELETE SET NULL,
+                FOREIGN KEY (destination_vessel_id) REFERENCES culture_vessels(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS culture_vessels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                culture_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('daphnia','green_water','other')),
+                volume_gallons REAL,
+                is_lit INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'active' CHECK(status IN ('active','crashed','archived')),
+                sort_order INTEGER DEFAULT 0,
+                notes TEXT,
+                hitchhikers TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (culture_id) REFERENCES cultures(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_culture_vessels_culture
+                ON culture_vessels(culture_id, sort_order, id);
+
+            CREATE TABLE IF NOT EXISTS culture_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                culture_id INTEGER NOT NULL,
+                timestamp TEXT DEFAULT (datetime('now')),
+                kind TEXT NOT NULL CHECK(kind IN (
+                    'feed','look','harvest','seed','crash','temp','other'
+                )),
+                food TEXT CHECK(food IS NULL OR food IN (
+                    'spirulina','green_water','yeast','none'
+                )),
+                amount_text TEXT,
+                notes TEXT,
+                tint TEXT CHECK(tint IS NULL OR tint IN (
+                    'clear','faint','green','soup','milky'
+                )),
+                density TEXT CHECK(density IS NULL OR density IN (
+                    'thin','ok','dense','crash'
+                )),
+                guts TEXT CHECK(guts IS NULL OR guts IN (
+                    'empty_pink','darker','mixed'
+                )),
+                temp_f REAL,
+                temp_kind TEXT CHECK(temp_kind IS NULL OR temp_kind IN ('water','air')),
+                rh REAL,
+                rh_low REAL,
+                rh_high REAL,
+                temp_low REAL,
+                temp_high REAL,
+                held INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (culture_id) REFERENCES cultures(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_culture_log_culture_ts
+                ON culture_log(culture_id, timestamp DESC);
+
+            CREATE TABLE IF NOT EXISTS culture_log_vessels (
+                log_id INTEGER NOT NULL,
+                vessel_id INTEGER NOT NULL,
+                tint TEXT,
+                density TEXT,
+                guts TEXT,
+                amount_text TEXT,
+                notes TEXT,
+                PRIMARY KEY (log_id, vessel_id),
+                FOREIGN KEY (log_id) REFERENCES culture_log(id) ON DELETE CASCADE,
+                FOREIGN KEY (vessel_id) REFERENCES culture_vessels(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_culture_log_vessels_vessel
+                ON culture_log_vessels(vessel_id);
+
+            CREATE TABLE IF NOT EXISTS culture_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                culture_id INTEGER NOT NULL,
+                vessel_id INTEGER,
+                category TEXT NOT NULL CHECK(category IN ('feeding','look','maintenance')),
+                tracking_mode TEXT NOT NULL DEFAULT 'logged'
+                    CHECK(tracking_mode IN ('reference_only','logged')),
+                description TEXT NOT NULL,
+                interval_days INTEGER,
+                last_done TEXT,
+                next_due TEXT,
+                is_active INTEGER DEFAULT 1,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (culture_id) REFERENCES cultures(id) ON DELETE CASCADE,
+                FOREIGN KEY (vessel_id) REFERENCES culture_vessels(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_culture_schedule_culture
+                ON culture_schedule(culture_id, is_active, tracking_mode);
         """)
+
+        # Cultures: kind + harvest destination (tank / other culture / bin)
+        cultures_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cultures'"
+        ).fetchone()
+        if cultures_exists:
+            cult_cols = {row[1] for row in conn.execute("PRAGMA table_info(cultures)").fetchall()}
+            if "kind" not in cult_cols:
+                conn.execute("ALTER TABLE cultures ADD COLUMN kind TEXT DEFAULT 'other'")
+            if "destination_culture_id" not in cult_cols:
+                conn.execute("ALTER TABLE cultures ADD COLUMN destination_culture_id INTEGER REFERENCES cultures(id) ON DELETE SET NULL")
+            if "destination_vessel_id" not in cult_cols:
+                conn.execute("ALTER TABLE cultures ADD COLUMN destination_vessel_id INTEGER REFERENCES culture_vessels(id) ON DELETE SET NULL")
+            if "harvest_status" not in cult_cols:
+                conn.execute("ALTER TABLE cultures ADD COLUMN harvest_status TEXT DEFAULT 'not_ready'")
+            if "next_action" not in cult_cols:
+                conn.execute("ALTER TABLE cultures ADD COLUMN next_action TEXT")
+            if "next_action_date" not in cult_cols:
+                conn.execute("ALTER TABLE cultures ADD COLUMN next_action_date TEXT")
+            vess_cols = {row[1] for row in conn.execute("PRAGMA table_info(culture_vessels)").fetchall()}
+            if vess_cols and "hitchhikers" not in vess_cols:
+                conn.execute("ALTER TABLE culture_vessels ADD COLUMN hitchhikers TEXT")
+            log_cols = {row[1] for row in conn.execute("PRAGMA table_info(culture_log)").fetchall()}
+            if log_cols:
+                if "temp_kind" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN temp_kind TEXT")
+                if "rh" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN rh REAL")
+                if "rh_low" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN rh_low REAL")
+                if "rh_high" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN rh_high REAL")
+                if "temp_low" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN temp_low REAL")
+                if "temp_high" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN temp_high REAL")
+                if "held" not in log_cols:
+                    conn.execute("ALTER TABLE culture_log ADD COLUMN held INTEGER DEFAULT 0")
+            lv_cols = {row[1] for row in conn.execute("PRAGMA table_info(culture_log_vessels)").fetchall()}
+            if lv_cols:
+                if "tint" not in lv_cols:
+                    conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN tint TEXT")
+                if "density" not in lv_cols:
+                    conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN density TEXT")
+                if "guts" not in lv_cols:
+                    conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN guts TEXT")
+                if "amount_text" not in lv_cols:
+                    conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN amount_text TEXT")
+                if "notes" not in lv_cols:
+                    conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN notes TEXT")
 
         # Migration: water_blend on home_water_tests (softener mix context for wells)
         hw_cols = {row[1] for row in conn.execute("PRAGMA table_info(home_water_tests)").fetchall()}

@@ -45,7 +45,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from database import init_db, init_ref_cache_db
-from routers import tanks, test_results, events, inhabitants, equipment, purchases, issues, goals, observations, chat, import_data, timeline, schedules, plants_hardscape, reference_info, today, home_water
+from routers import tanks, test_results, events, inhabitants, equipment, purchases, issues, goals, observations, chat, import_data, timeline, schedules, plants_hardscape, reference_info, today, home_water, cultures
 
 app = FastAPI(
     title="Fathom",
@@ -92,6 +92,7 @@ app.include_router(plants_hardscape.router)
 app.include_router(reference_info.router)
 app.include_router(today.router)
 app.include_router(home_water.router)
+app.include_router(cultures.router)
 
 
 @app.on_event("startup")

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from database import get_db, rows_to_list
+from routers.cultures import load_today_cultures
 from routers.schedules import TIME_OF_DAY_ORDER
 
 router = APIRouter(tags=["today"])
@@ -49,8 +50,11 @@ async def today_page(request: Request):
                 (tank["id"], today_date, today_date, today_date),
             ).fetchall())
 
+        cultures = load_today_cultures(conn, today_date)
+
     return templates.TemplateResponse(request, "today.html", {
         "tanks": tanks,
+        "cultures": cultures,
         "today_date": today_date,
         "today_dow_label": date.today().strftime("%A"),
     })

@@ -1,0 +1,756 @@
+{% extends "base.html" %}
+{% block title %}{{ culture.name }} — Fathom{% endblock %}
+{% set active = "cultures" %}
+
+{% macro vessel_checks(vessels, default_mode) %}
+<div class="form-group">
+  <label>Bins</label>
+  <div class="vessel-check-list">
+    {% for v in vessels %}
+    {% set checked = (default_mode == 'daphnia' and v.role == 'daphnia' and v.status == 'active')
+                  or (default_mode == 'all_active' and v.status == 'active')
+                  or (default_mode == 'culture' and v.status == 'active') %}
+    <label class="vessel-check{% if v.status != 'active' %} muted{% endif %}">
+      <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if checked %}checked{% endif %}>
+      <span>{{ v.name }}</span>
+      {% if v.status != 'active' %}<span class="muted">({{ v.status }})</span>{% endif %}
+    </label>
+    {% else %}
+    <p class="muted">No bins to tag.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro log_time_field() %}
+<div class="form-group">
+  <label>Date &amp; Time</label>
+  <input type="datetime-local" class="dt-local">
+  <input type="hidden" name="timestamp" class="dt-utc">
+</div>
+{% endmacro %}
+
+{% macro vessel_fields(mode) %}
+<div class="form-grid">
+  <div class="form-group">
+    <label>Name *</label>
+    <input type="text" name="name" required {% if mode != 'edit' %}placeholder="e.g. Left"{% endif %}>
+  </div>
+  <div class="form-group">
+    <label>Volume (gallons)</label>
+    <input type="number" step="0.1" name="volume_gallons" placeholder="2.5">
+  </div>
+  <div class="form-group">
+    <label>Status</label>
+    <select name="status">
+      {% for s in vessel_statuses %}
+      <option value="{{ s }}">{{ s|capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if mode == 'edit' %}
+  <div class="form-group">
+    <label>Sort order</label>
+    <input type="number" name="sort_order" value="0">
+  </div>
+  {% endif %}
+</div>
+<div class="form-group">
+  <label class="today-check">
+    <input type="checkbox" name="is_lit" value="1" {% if mode != 'edit' and culture.kind == 'green_water' %}checked{% endif %}>
+    <span>Lit (LEDs on this bin)</span>
+  </label>
+</div>
+<div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+<div class="form-group">
+  <label>Hitchhikers</label>
+  <input type="text" name="hitchhikers" placeholder="e.g. 1 baby shrimp — leave in bin">
+</div>
+{% endmacro %}
+
+{% macro tint_select(name) %}
+<select name="{{ name }}">
+  <option value="">Tint —</option>
+  {% for t in tints %}<option value="{{ t }}">{{ tint_labels[t] }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro density_select(name) %}
+<select name="{{ name }}">
+  <option value="">Density —</option>
+  {% for d in densities %}<option value="{{ d }}">{{ density_labels[d] }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro guts_select(name) %}
+<select name="{{ name }}">
+  <option value="">Guts —</option>
+  {% for g in guts_values %}<option value="{{ g }}">{{ guts_labels[g] }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro look_bin_rows(vessels) %}
+<div class="form-group">
+  <label>Bins</label>
+  <div class="bin-obs-list">
+    {% for v in vessels %}
+    <div class="bin-obs-row{% if v.status != 'active' %} muted{% endif %}">
+      <label class="vessel-check">
+        <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if v.status == 'active' %}checked{% endif %}>
+        <span>{{ v.name }}</span>
+      </label>
+      {% if culture.kind == 'green_water' %}
+        {{ tint_select('tint_' ~ v.id) }}
+      {% else %}
+        {{ density_select('density_' ~ v.id) }}
+        {{ guts_select('guts_' ~ v.id) }}
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="muted">No bins to tag.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro feed_bin_rows(vessels) %}
+<div class="form-group">
+  <label>Bins</label>
+  <div class="bin-obs-list">
+    {% for v in vessels %}
+    <div class="bin-obs-row{% if v.status != 'active' %} muted{% endif %}">
+      <label class="vessel-check">
+        <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if v.status == 'active' %}checked{% endif %}>
+        <span>{{ v.name }}</span>
+      </label>
+      <input type="text" name="amount_{{ v.id }}" placeholder="amount for this bin">
+    </div>
+    {% else %}
+    <p class="muted">No bins to tag.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro schedule_fields(mode) %}
+<div class="form-grid">
+  <div class="form-group">
+    <label>Category</label>
+    <select name="category">
+      {% for c in schedule_categories %}
+      <option value="{{ c }}">{{ category_labels[c] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Tracking</label>
+    <select name="tracking_mode" {% if mode == 'edit' %}onchange="syncCultureSchedDates()"{% endif %}>
+      <option value="logged">Logged (due date)</option>
+      <option value="reference_only">Reference only</option>
+    </select>
+  </div>
+  <div class="form-group form-group-wide">
+    <label>Description *</label>
+    <input type="text" name="description" required {% if mode != 'edit' %}placeholder="e.g. Feed Daphnia"{% endif %}>
+  </div>
+  <div class="form-group">
+    <label>Every N days</label>
+    <input type="number" name="interval_days" min="1" {% if mode != 'edit' %}placeholder="1"{% else %}onchange="recomputeCultureNextDue()"{% endif %}>
+  </div>
+  <div class="form-group">
+    <label>Bin</label>
+    <select name="vessel_id">
+      <option value="">Whole station</option>
+      {% for v in vessels %}
+      <option value="{{ v.id }}">{{ v.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if mode == 'edit' %}
+  <div class="form-group">
+    <label>Active</label>
+    <select name="is_active">
+      <option value="1">Yes</option>
+      <option value="0">No</option>
+    </select>
+  </div>
+  <div class="form-group" id="edit-last-done-group">
+    <label>Last done</label>
+    <input type="date" name="last_done" onchange="recomputeCultureNextDue()">
+    <span class="muted" style="font-size:.75rem">Fixes a mistaken ✓ Done — changing this suggests a new due date.</span>
+  </div>
+  <div class="form-group" id="edit-next-due-group">
+    <label>Next due</label>
+    <input type="date" name="next_due">
+    <span class="muted" style="font-size:.75rem">Set this when plans change (e.g. fed early → push due out).</span>
+  </div>
+  {% endif %}
+</div>
+<div class="form-group"><label>Notes</label><textarea name="notes" rows="2" {% if mode != 'edit' %}placeholder="e.g. skip/hold if leftover dust"{% endif %}></textarea></div>
+{% endmacro %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <p class="muted" style="font-size:.8rem;margin-bottom:.25rem"><a href="/cultures">Cultures</a></p>
+    <h1>{{ culture.name }}</h1>
+    <div class="tank-meta-row">
+      <span class="badge badge-role-{{ culture.kind }}">{{ culture_kind_labels.get(culture.kind, culture.kind) }}</span>
+      {% if culture.destination_label %}
+      <a class="meta-chip" href="{{ culture.destination_href }}">→ {{ culture.destination_label }}</a>
+      {% else %}
+      <span class="meta-chip">No destination</span>
+      {% endif %}
+      <span class="badge badge-{{ culture.status }}">{{ culture.status }}</span>
+      {% if culture.harvest_status %}
+      <span class="badge badge-harvest-{{ culture.harvest_status }}">{{ harvest_status_labels.get(culture.harvest_status, culture.harvest_status) }}</span>
+      {% endif %}
+    </div>
+    {% if culture.isolation_notes %}
+    <p class="culture-isolation">{{ culture.isolation_notes }}</p>
+    {% endif %}
+    {% if culture.next_action %}
+    <p class="culture-next-action{% if culture.next_action_date and culture.next_action_date <= today_date %} culture-next-action-due{% endif %}">
+      Next: {{ culture.next_action }}{% if culture.next_action_date %} · {{ culture.next_action_date }}{% endif %}
+    </p>
+    {% endif %}
+    {% if bench_air %}
+    <p class="muted" style="font-size:.85rem;margin-top:.35rem">
+      Bench air
+      {% if bench_air.temp_f is not none %}{{ bench_air.temp_f }}°F{% endif %}
+      {% if bench_air.temp_low is not none and bench_air.temp_high is not none %}
+        ({{ bench_air.temp_low }}–{{ bench_air.temp_high }})
+      {% endif %}
+      {% if bench_air.rh is not none %} · {{ bench_air.rh|int }}% RH{% endif %}
+      {% if bench_air.rh_low is not none and bench_air.rh_high is not none %}
+        ({{ bench_air.rh_low|int }}–{{ bench_air.rh_high|int }})
+      {% endif %}
+      · <span class="ts-local" data-utc="{{ bench_air.timestamp }}">{{ bench_air.timestamp }}</span>
+    </p>
+    {% endif %}
+  </div>
+  <div class="header-actions">
+    <a href="/cultures/{{ culture.id }}/edit" class="btn btn-ghost">Edit</a>
+    <form method="post" action="/cultures/{{ culture.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this culture station and all of its bins, log, and schedule?')">
+      <button class="btn btn-ghost btn-danger-text" type="submit">Delete</button>
+    </form>
+  </div>
+</div>
+
+<div class="culture-actions">
+  {% if culture.kind != 'green_water' %}
+  <button class="btn btn-primary" type="button" onclick="openModal('modal-feed')">Log feeding</button>
+  {% endif %}
+  <button class="btn btn-ghost" type="button" onclick="openModal('modal-look')">Log look</button>
+  <button class="btn btn-ghost" type="button" onclick="openModal('modal-harvest')">Harvest</button>
+  <button class="btn btn-ghost" type="button" onclick="openModal('modal-other')">Other</button>
+</div>
+
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel-header">
+    <h3>Bins</h3>
+    <button class="btn btn-xs btn-ghost" type="button" onclick="openModal('modal-add-vessel')">+ Add bin</button>
+  </div>
+  {% if vessels %}
+  <div class="vessel-grid">
+    {% for v in vessels %}
+    <div class="vessel-card vessel-card-{{ v.status }}">
+      <div class="vessel-card-top">
+        <span class="vessel-name">{{ v.name }}</span>
+      </div>
+      <div class="vessel-card-meta muted">
+        {% if v.is_lit %}Lit{% else %}Unlit{% endif %}
+        {% if v.volume_gallons %} · {{ v.volume_gallons }}g{% endif %}
+        {% if v.status != 'active' %} · {{ v.status }}{% endif %}
+      </div>
+      <div class="vessel-card-last muted">
+        {% if v.last_tint or v.last_density or v.last_guts or v.last_temp_f is not none %}
+        <div class="vessel-last-obs">
+          {% if v.last_tint %}<span class="meta-chip">tint {{ tint_labels.get(v.last_tint, v.last_tint) }}</span>{% endif %}
+          {% if v.last_density %}<span class="meta-chip">{{ density_labels.get(v.last_density, v.last_density) }}</span>{% endif %}
+          {% if culture.kind != 'green_water' and v.last_guts %}<span class="meta-chip">guts {{ guts_labels.get(v.last_guts, v.last_guts) }}</span>{% endif %}
+          {% if v.last_temp_f is not none %}<span class="meta-chip">{{ v.last_temp_f }}°F</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if v.last_feed_at %}
+        <div>Last feed
+          <span class="ts-local" data-utc="{{ v.last_feed_at }}">{{ v.last_feed_at }}</span>
+          {% if v.last_feed_food %} · {{ food_labels.get(v.last_feed_food, v.last_feed_food) }}{% endif %}
+          {% if v.last_feed_amount %} · {{ v.last_feed_amount }}{% endif %}
+        </div>
+        {% endif %}
+        {% if v.last_look_at %}
+        <div>Last look <span class="ts-local" data-utc="{{ v.last_look_at }}">{{ v.last_look_at }}</span></div>
+        {% endif %}
+        {% if not v.last_feed_at and not v.last_look_at %}
+        <div>No log yet</div>
+        {% endif %}
+      </div>
+      {% if v.hitchhikers %}
+      <p class="hitchhiker-note">Hitchhiker: {{ v.hitchhikers }}</p>
+      {% endif %}
+      {% if v.notes %}
+      <p class="muted" style="font-size:.8rem;margin-top:.35rem">{{ v.notes }}</p>
+      {% endif %}
+      <div class="vessel-card-actions">
+        <button class="btn btn-xs btn-ghost" type="button" onclick="openEditVessel(this)"
+                data-id="{{ v.id }}" data-name="{{ v.name }}"
+                data-volume="{{ v.volume_gallons if v.volume_gallons is not none else '' }}"
+                data-lit="{{ v.is_lit }}" data-status="{{ v.status }}"
+                data-sort="{{ v.sort_order }}"
+                data-notes="{{ (v.notes or '')|e }}"
+                data-hitchhikers="{{ (v.hitchhikers or '')|e }}">Edit</button>
+        <form method="post" action="/cultures/{{ culture.id }}/vessels/{{ v.id }}/delete" style="display:inline" onsubmit="return confirm('Remove this bin? Log entries stay, untagged.')">
+          <button class="btn btn-xs btn-danger" type="submit">✕</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="padding:.5rem 0">No bins yet. Two of the same type is crash insurance.</p>
+  {% endif %}
+</div>
+
+{% if due_items %}
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel-header">
+    <h3>Due</h3>
+  </div>
+  <div class="today-section maint-list">
+    {% for m in due_items %}
+    {% if m.last_done == today_date %}
+    <div class="today-maint-row">
+      <div class="maint-row">
+        <label class="today-check today-check-done">
+          <input type="checkbox" checked disabled>
+          <div class="today-item-text">
+            <span class="maint-desc maint-desc-done">{{ m.description }}</span>
+          </div>
+        </label>
+        <span class="maint-due maint-done">✓ done today</span>
+      </div>
+    </div>
+    {% else %}
+    <div class="today-maint-row">
+    <form method="post" action="/cultures/{{ culture.id }}/schedule/{{ m.id }}/mark-done" class="today-maint-row" style="flex:1">
+      <div class="maint-row">
+        <label class="today-check">
+          <input type="checkbox" onchange="this.form.requestSubmit()">
+          <div class="today-item-text">
+            <span class="maint-desc">{{ m.description }}</span>
+            {% if m.notes %}
+            <div class="muted today-item-notes">{{ m.notes }}</div>
+            {% endif %}
+          </div>
+        </label>
+        {% if m.next_due and m.next_due < today_date %}
+          <span class="maint-due maint-overdue">overdue {{ m.next_due }}</span>
+        {% elif m.next_due %}
+          <span class="maint-due maint-due-today">due today</span>
+        {% else %}
+          <span class="maint-due maint-overdue">not yet done</span>
+        {% endif %}
+      </div>
+    </form>
+    {% if m.category == 'feeding' %}
+    <form method="post" action="/cultures/{{ culture.id }}/schedule/{{ m.id }}/mark-done">
+      <input type="hidden" name="outcome" value="held">
+      <button class="btn btn-xs btn-ghost" type="submit">Hold</button>
+    </form>
+    {% endif %}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="panel" style="margin-bottom:1rem">
+  <div class="panel-header">
+    <h3>Schedule</h3>
+    <button class="btn btn-xs btn-ghost" type="button" onclick="openModal('modal-add-sched')">+ Add task</button>
+  </div>
+  {% if schedule %}
+  <div class="sched-list">
+    {% for s in schedule %}
+    <div class="sched-row {% if not s.is_active %}sched-row-inactive{% endif %}">
+      <div class="sched-row-left">
+        <span class="badge badge-cat">{{ category_labels[s.category] }}</span>
+        <div class="sched-desc-col">
+          <div class="sched-desc-line">
+            <span class="sched-desc">{{ s.description }}</span>
+            {% if not s.is_active %}<span class="badge badge-inactive">inactive</span>{% endif %}
+          </div>
+          <div class="muted sched-notes">
+            {% if s.tracking_mode == 'logged' %}logged{% else %}reference{% endif %}
+            {% if s.interval_days %} · every {{ s.interval_days }}d{% endif %}
+            {% if s.vessel_name %} · {{ s.vessel_name }}{% endif %}
+            {% if s.last_done %} · done {{ s.last_done }}{% endif %}
+            {% if s.next_due %} · due {{ s.next_due }}{% endif %}
+            {% if s.notes %} · {{ s.notes }}{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="sched-row-right">
+        <div class="sched-actions">
+          {% if s.tracking_mode == 'logged' and s.is_active %}
+          <form method="post" action="/cultures/{{ culture.id }}/schedule/{{ s.id }}/mark-done" style="display:inline">
+            <button class="btn btn-xs btn-ghost" type="submit">✓ Fed</button>
+          </form>
+          {% if s.category == 'feeding' %}
+          <form method="post" action="/cultures/{{ culture.id }}/schedule/{{ s.id }}/mark-done" style="display:inline">
+            <input type="hidden" name="outcome" value="held">
+            <button class="btn btn-xs btn-ghost" type="submit">Hold</button>
+          </form>
+          {% endif %}
+          {% endif %}
+          <button class="btn btn-xs btn-ghost" type="button" onclick="openEditSched(this)"
+                  data-id="{{ s.id }}" data-category="{{ s.category }}"
+                  data-description="{{ s.description }}" data-mode="{{ s.tracking_mode }}"
+                  data-interval="{{ s.interval_days if s.interval_days is not none else '' }}"
+                  data-vessel="{{ s.vessel_id or '' }}" data-active="{{ s.is_active }}"
+                  data-last-done="{{ s.last_done or '' }}" data-next-due="{{ s.next_due or '' }}"
+                  data-notes="{{ (s.notes or '')|e }}">Edit</button>
+          <form method="post" action="/cultures/{{ culture.id }}/schedule/{{ s.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete this schedule entry?')">
+            <button class="btn btn-xs btn-danger" type="submit">✕</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="padding:.5rem 0">No recurring tasks yet. Add a logged feeding (e.g. every 1 day) so it shows on Today.</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <h3>History</h3>
+  </div>
+  {% if log_rows %}
+  <div class="cl-list">
+    {% for item in log_rows %}
+    <div class="cl-item">
+      <div class="cl-item-main">
+        <div class="cl-item-badges">
+          <span class="badge badge-kind-{{ item.kind }}">{{ kind_labels[item.kind] }}</span>
+          {% if item.held %}<span class="badge badge-kind-held">Held</span>{% endif %}
+        </div>
+        <div class="cl-item-text">
+          <div>
+            <span class="ts-local" data-utc="{{ item.timestamp }}">{{ item.timestamp }}</span>
+            {% if item.vessel_names %}<span class="muted"> · {{ item.vessel_names }}</span>{% endif %}
+          </div>
+          <div class="cl-item-detail">
+            {% if item.food %}{{ food_labels.get(item.food, item.food) }}{% endif %}
+            {% if item.amount_text %}{% if item.food %} · {% endif %}{{ item.amount_text }}{% endif %}
+            {% if item.tint %} · tint {{ tint_labels.get(item.tint, item.tint) }}{% endif %}
+            {% if item.density %} · density {{ density_labels.get(item.density, item.density) }}{% endif %}
+            {% if item.guts %} · guts {{ guts_labels.get(item.guts, item.guts) }}{% endif %}
+            {% if item.temp_kind == 'air' %} · air{% elif item.temp_kind == 'water' %} · water{% endif %}
+            {% if item.temp_f is not none %} · {{ item.temp_f }}°F{% endif %}
+            {% if item.rh is not none %} · {{ item.rh|int }}% RH{% endif %}
+          </div>
+          {% if item.bins %}
+          <div class="cl-bin-details">
+            {% for b in item.bins %}
+              {% if b.tint or b.density or b.guts or b.amount_text %}
+              <span>{{ b.vessel_name }}:
+                {%- if b.tint %} {{ tint_labels.get(b.tint, b.tint) }}{% endif %}
+                {%- if b.density %} {{ density_labels.get(b.density, b.density) }}{% endif %}
+                {%- if b.guts %} guts {{ guts_labels.get(b.guts, b.guts) }}{% endif %}
+                {%- if b.amount_text %} {{ b.amount_text }}{% endif %}
+              </span>
+              {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if item.notes %}
+          <div class="muted" style="white-space:pre-wrap">{{ item.notes }}</div>
+          {% endif %}
+        </div>
+      </div>
+      <form method="post" action="/cultures/{{ culture.id }}/log/{{ item.id }}/delete" onsubmit="return confirm('Delete this log entry?')">
+        <button class="btn btn-xs btn-ghost" type="submit">✕</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="padding:.5rem 0">No history yet. Log a feeding or look after you check the bins.</p>
+  {% endif %}
+</div>
+
+{# ── Modals ─────────────────────────────────────────────────────────────── #}
+
+{% if culture.kind != 'green_water' %}
+<div id="modal-feed" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Log feeding</h3><button class="modal-close" type="button" onclick="closeModal('modal-feed')">×</button></div>
+    <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
+      <input type="hidden" name="kind" value="feed">
+      {{ feed_bin_rows(vessels) }}
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Food</label>
+          <select name="food">
+            <option value="spirulina">Spirulina</option>
+            <option value="green_water">Green water</option>
+            <option value="yeast">Yeast</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="today-check">
+          <input type="checkbox" name="held" value="1">
+          <span>Held — checked, no food added</span>
+        </label>
+      </div>
+      {{ log_time_field() }}
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-feed')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div id="modal-look" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Log look</h3><button class="modal-close" type="button" onclick="closeModal('modal-look')">×</button></div>
+    <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
+      <input type="hidden" name="kind" value="look">
+      {{ look_bin_rows(vessels) }}
+      {% if culture.kind != 'green_water' %}
+      <div class="form-group">
+        <label class="today-check">
+          <input type="checkbox" name="held" value="1">
+          <span>Hold food (checked, didn't feed)</span>
+        </label>
+      </div>
+      {% endif %}
+      {{ log_time_field() }}
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" placeholder="{% if culture.kind == 'green_water' %}e.g. still clear, no milky bloom{% else %}e.g. leftover dust — hold food{% endif %}"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-look')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-harvest" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Harvest</h3><button class="modal-close" type="button" onclick="closeModal('modal-harvest')">×</button></div>
+    <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
+      <input type="hidden" name="kind" value="harvest">
+      {{ vessel_checks(vessels, 'all_active') }}
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Cups</label>
+          <input type="number" name="cups" step="0.25" min="0" placeholder="e.g. 1">
+        </div>
+      </div>
+      {% if culture.destination_label %}
+      <p class="muted" style="font-size:.85rem;margin:.25rem 0 .75rem">Goes to <strong>{{ culture.destination_label }}</strong>{% if culture.destination_kind == 'tank' %} (display tank){% elif culture.destination_kind in ('culture', 'vessel') %} as a feed{% endif %}.</p>
+      {% else %}
+      <p class="muted" style="font-size:.85rem;margin:.25rem 0 .75rem">No destination set — this logs the harvest only. Edit the culture to send it to a tank, culture, or bin.</p>
+      {% endif %}
+      {{ log_time_field() }}
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      {% if culture.destination_kind == 'tank' %}
+      <div class="form-group">
+        <label class="today-check">
+          <input type="checkbox" name="log_on_tank" value="1" checked>
+          <span>Also log as a feeding on {{ culture.destination_label }}</span>
+        </label>
+        <p class="muted" style="font-size:.78rem;margin:.25rem 0 0">Does not run AI analysis.</p>
+      </div>
+      {% endif %}
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-harvest')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-other" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Other log</h3><button class="modal-close" type="button" onclick="closeModal('modal-other')">×</button></div>
+    <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
+      {{ vessel_checks(vessels, 'none') }}
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Kind</label>
+          <select name="kind" onchange="syncOtherLogForm(this.form)">
+            <option value="seed">Seed</option>
+            <option value="crash">Crash</option>
+            <option value="temp">Temp</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group" id="other-cups-group">
+          <label>Cups</label>
+          <input type="number" name="cups" step="0.25" min="0" placeholder="e.g. 1">
+        </div>
+        <div class="form-group">
+          <label>Temp kind</label>
+          <select name="temp_kind" onchange="syncOtherLogForm(this.form)">
+            <option value="water">Water</option>
+            <option value="air">Air (bench)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Temp now (°F)</label>
+          <input type="number" step="0.1" name="temp_f">
+        </div>
+        <div class="form-group other-air-only">
+          <label>Temp low–high</label>
+          <div style="display:flex;gap:.35rem">
+            <input type="number" step="0.1" name="temp_low" placeholder="low">
+            <input type="number" step="0.1" name="temp_high" placeholder="high">
+          </div>
+        </div>
+        <div class="form-group other-air-only">
+          <label>RH now %</label>
+          <input type="number" step="1" name="rh">
+        </div>
+        <div class="form-group other-air-only">
+          <label>RH low–high</label>
+          <div style="display:flex;gap:.35rem">
+            <input type="number" step="1" name="rh_low" placeholder="low">
+            <input type="number" step="1" name="rh_high" placeholder="high">
+          </div>
+        </div>
+      </div>
+      {{ log_time_field() }}
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-other')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-add-vessel" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add bin</h3><button class="modal-close" type="button" onclick="closeModal('modal-add-vessel')">×</button></div>
+    <form method="post" action="/cultures/{{ culture.id }}/vessels">
+      {{ vessel_fields(none) }}
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-vessel')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-edit-vessel" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit bin</h3><button class="modal-close" type="button" onclick="closeModal('modal-edit-vessel')">×</button></div>
+    <form id="edit-vessel-form" method="post" action="">
+      {{ vessel_fields('edit') }}
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-vessel')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-add-sched" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Add schedule</h3><button class="modal-close" type="button" onclick="closeModal('modal-add-sched')">×</button></div>
+    <form method="post" action="/cultures/{{ culture.id }}/schedule">
+      {{ schedule_fields(none) }}
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-sched')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-edit-sched" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3>Edit schedule</h3><button class="modal-close" type="button" onclick="closeModal('modal-edit-sched')">×</button></div>
+    <form id="edit-sched-form" method="post" action="">
+      {{ schedule_fields('edit') }}
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-sched')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function prefillDtLocal() {
+  var now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  var val = now.toISOString().slice(0, 16);
+  document.querySelectorAll('input.dt-local').forEach(function (el) {
+    if (!el.value) el.value = val;
+  });
+}
+document.addEventListener('DOMContentLoaded', function () { prefillDtLocal(); });
+
+function openEditVessel(btn) {
+  const f = document.getElementById('edit-vessel-form');
+  f.action = '/cultures/{{ culture.id }}/vessels/' + btn.dataset.id + '/update';
+  f.querySelector('[name=name]').value = btn.dataset.name || '';
+  f.querySelector('[name=volume_gallons]').value = btn.dataset.volume || '';
+  f.querySelector('[name=is_lit]').checked = btn.dataset.lit === '1';
+  f.querySelector('[name=status]').value = btn.dataset.status || 'active';
+  f.querySelector('[name=sort_order]').value = btn.dataset.sort || '0';
+  f.querySelector('[name=notes]').value = btn.dataset.notes || '';
+  const hitch = f.querySelector('[name=hitchhikers]');
+  if (hitch) hitch.value = btn.dataset.hitchhikers || '';
+  openModal('modal-edit-vessel');
+}
+
+function syncOtherLogForm(form) {
+  const kind = form.querySelector('[name=kind]').value;
+  const tempKind = form.querySelector('[name=temp_kind]').value;
+  const cups = form.querySelector('#other-cups-group');
+  if (cups) cups.style.display = kind === 'seed' ? '' : 'none';
+  form.querySelectorAll('.other-air-only').forEach(function (el) {
+    el.style.display = (kind === 'temp' && tempKind === 'air') ? '' : 'none';
+  });
+}
+document.addEventListener('DOMContentLoaded', function () {
+  const otherForm = document.querySelector('#modal-other form');
+  if (otherForm) syncOtherLogForm(otherForm);
+});
+
+function openEditSched(btn) {
+  const f = document.getElementById('edit-sched-form');
+  f.action = '/cultures/{{ culture.id }}/schedule/' + btn.dataset.id + '/update';
+  f.querySelector('[name=category]').value = btn.dataset.category || 'feeding';
+  f.querySelector('[name=description]').value = btn.dataset.description || '';
+  f.querySelector('[name=tracking_mode]').value = btn.dataset.mode || 'logged';
+  f.querySelector('[name=interval_days]').value = btn.dataset.interval || '';
+  f.querySelector('[name=vessel_id]').value = btn.dataset.vessel || '';
+  f.querySelector('[name=is_active]').value = btn.dataset.active === '0' ? '0' : '1';
+  f.querySelector('[name=notes]').value = btn.dataset.notes || '';
+  f.querySelector('[name=last_done]').value = btn.dataset.lastDone || '';
+  f.querySelector('[name=next_due]').value = btn.dataset.nextDue || '';
+  syncCultureSchedDates();
+  openModal('modal-edit-sched');
+}
+
+function syncCultureSchedDates() {
+  const f = document.getElementById('edit-sched-form');
+  if (!f) return;
+  const logged = f.querySelector('[name=tracking_mode]').value === 'logged';
+  const lastG = document.getElementById('edit-last-done-group');
+  const nextG = document.getElementById('edit-next-due-group');
+  if (lastG) lastG.style.display = logged ? '' : 'none';
+  if (nextG) nextG.style.display = logged ? '' : 'none';
+}
+
+function recomputeCultureNextDue() {
+  const f = document.getElementById('edit-sched-form');
+  if (!f) return;
+  const last = f.querySelector('[name=last_done]').value;
+  const intervalRaw = f.querySelector('[name=interval_days]').value;
+  if (!last || !intervalRaw) return;
+  const from = new Date(last + 'T12:00:00');
+  if (isNaN(from.getTime())) return;
+  const days = parseInt(intervalRaw, 10);
+  if (!days) return;
+  from.setDate(from.getDate() + days);
+  const y = from.getFullYear();
+  const m = String(from.getMonth() + 1).padStart(2, '0');
+  const d = String(from.getDate()).padStart(2, '0');
+  f.querySelector('[name=next_due]').value = y + '-' + m + '-' + d;
+}
+
+</script>
+{% endblock %}

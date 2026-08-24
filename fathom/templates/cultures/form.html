@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{% if action == 'edit' %}Edit {{ culture.name }}{% else %}New culture{% endif %} — Fathom{% endblock %}
+{% set active = "cultures" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{% if action == 'edit' %}Edit {{ culture.name }}{% else %}New culture{% endif %}</h1>
+</div>
+
+<form method="post" action="{% if action == 'edit' %}/cultures/{{ culture.id }}/edit{% else %}/cultures{% endif %}" class="form-card">
+  <div class="form-section">
+    <h3>Station</h3>
+    <div class="form-grid">
+      <div class="form-group form-group-wide">
+        <label>Name *</label>
+        <input type="text" name="name" value="{{ culture.name if culture else '' }}" required placeholder="e.g. Green water">
+      </div>
+      <div class="form-group">
+        <label>Kind</label>
+        <select name="kind">
+          {% for k in culture_kinds %}
+          <option value="{{ k }}" {% if culture and culture.kind == k %}selected{% elif not culture and k == 'other' %}selected{% endif %}>{{ culture_kind_labels[k] }}</option>
+          {% endfor %}
+        </select>
+        <p class="muted" style="font-size:.75rem;margin:.25rem 0 0">One purpose per culture. Green water is not fed; Daphnia are.</p>
+      </div>
+      <div class="form-group">
+        <label>Destination</label>
+        <select name="destination">
+          <option value="">— none —</option>
+          {% if dest_tanks %}
+          <optgroup label="Tanks">
+            {% for t in dest_tanks %}
+            <option value="tank:{{ t.id }}" {% if culture and culture.destination_value == 'tank:' ~ t.id %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if dest_cultures %}
+          <optgroup label="Cultures">
+            {% for d in dest_cultures %}
+            <option value="culture:{{ d.id }}" {% if culture and culture.destination_value == 'culture:' ~ d.id %}selected{% endif %}>{{ d.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if dest_vessels %}
+          <optgroup label="Bins">
+            {% for v in dest_vessels %}
+            <option value="vessel:{{ v.id }}" {% if culture and culture.destination_value == 'vessel:' ~ v.id %}selected{% endif %}>{{ v.culture_name }} / {{ v.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        </select>
+        <p class="muted" style="font-size:.75rem;margin:.25rem 0 0">Where harvest goes — a display tank, another culture, or a specific bin.</p>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          {% for s in culture_statuses %}
+          <option value="{{ s }}" {% if culture and culture.status == s %}selected{% elif not culture and s == 'active' %}selected{% endif %}>{{ s|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Harvest</label>
+        <select name="harvest_status">
+          {% for h in harvest_statuses %}
+          <option value="{{ h }}" {% if culture and culture.harvest_status == h %}selected{% elif not culture and h == 'not_ready' %}selected{% endif %}>{{ harvest_status_labels[h] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group form-group-wide">
+        <label>Next action</label>
+        <input type="text" name="next_action" value="{{ culture.next_action if culture and culture.next_action else '' }}" placeholder="e.g. mag-scraper swish if still clear">
+      </div>
+      <div class="form-group">
+        <label>Next action date</label>
+        <input type="date" name="next_action_date" value="{{ culture.next_action_date if culture and culture.next_action_date else '' }}">
+      </div>
+      <div class="form-group form-group-wide">
+        <label>Isolation notes</label>
+        <input type="text" name="isolation_notes" value="{{ culture.isolation_notes if culture and culture.isolation_notes else '' }}" placeholder="Optional">
+      </div>
+      <div class="form-group form-group-wide">
+        <label>Notes</label>
+        <textarea name="notes" rows="3">{{ culture.notes if culture and culture.notes else '' }}</textarea>
+      </div>
+    </div>
+  </div>
+  <div class="form-actions">
+    <a href="{% if culture %}/cultures/{{ culture.id }}{% else %}/cultures{% endif %}" class="btn btn-ghost">Cancel</a>
+    <button class="btn btn-primary" type="submit">{% if action == 'edit' %}Save{% else %}Create{% endif %}</button>
+  </div>
+</form>
+{% endblock %}
