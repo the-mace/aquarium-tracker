@@ -435,8 +435,10 @@
     {% for item in log_rows %}
     <div class="cl-item">
       <div class="cl-item-main">
-        <span class="badge badge-kind-{{ item.kind }}">{{ kind_labels[item.kind] }}</span>
-        {% if item.held %}<span class="badge badge-kind-held">Held</span>{% endif %}
+        <div class="cl-item-badges">
+          <span class="badge badge-kind-{{ item.kind }}">{{ kind_labels[item.kind] }}</span>
+          {% if item.held %}<span class="badge badge-kind-held">Held</span>{% endif %}
+        </div>
         <div class="cl-item-text">
           <div>
             <span class="ts-local" data-utc="{{ item.timestamp }}">{{ item.timestamp }}</span>
