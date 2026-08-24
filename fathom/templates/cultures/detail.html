@@ -2,19 +2,29 @@
 {% block title %}{{ culture.name }} — Fathom{% endblock %}
 {% set active = "cultures" %}
 
+{% macro bin_standing_fields(v) %}
+<div class="bin-obs-extra">
+  <input type="text" name="hitchhikers_{{ v.id }}" value="{{ v.hitchhikers or '' }}" placeholder="Hitchhikers — leave in bin">
+  <input type="text" name="notes_{{ v.id }}" placeholder="Notes for this bin">
+</div>
+{% endmacro %}
+
 {% macro vessel_checks(vessels, default_mode) %}
 <div class="form-group">
   <label>Bins</label>
-  <div class="vessel-check-list">
+  <div class="bin-obs-list">
     {% for v in vessels %}
     {% set checked = (default_mode == 'daphnia' and v.role == 'daphnia' and v.status == 'active')
                   or (default_mode == 'all_active' and v.status == 'active')
                   or (default_mode == 'culture' and v.status == 'active') %}
-    <label class="vessel-check{% if v.status != 'active' %} muted{% endif %}">
-      <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if checked %}checked{% endif %}>
-      <span>{{ v.name }}</span>
-      {% if v.status != 'active' %}<span class="muted">({{ v.status }})</span>{% endif %}
-    </label>
+    <div class="bin-obs-block{% if v.status != 'active' %} muted{% endif %}">
+      <label class="vessel-check">
+        <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if checked %}checked{% endif %}>
+        <span>{{ v.name }}</span>
+        {% if v.status != 'active' %}<span class="muted">({{ v.status }})</span>{% endif %}
+      </label>
+      {{ bin_standing_fields(v) }}
+    </div>
     {% else %}
     <p class="muted">No bins to tag.</p>
     {% endfor %}
@@ -94,17 +104,20 @@
   <label>Bins</label>
   <div class="bin-obs-list">
     {% for v in vessels %}
-    <div class="bin-obs-row{% if v.status != 'active' %} muted{% endif %}">
-      <label class="vessel-check">
-        <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if v.status == 'active' %}checked{% endif %}>
-        <span>{{ v.name }}</span>
-      </label>
-      {% if culture.kind == 'green_water' %}
-        {{ tint_select('tint_' ~ v.id) }}
-      {% else %}
-        {{ density_select('density_' ~ v.id) }}
-        {{ guts_select('guts_' ~ v.id) }}
-      {% endif %}
+    <div class="bin-obs-block{% if v.status != 'active' %} muted{% endif %}">
+      <div class="bin-obs-row">
+        <label class="vessel-check">
+          <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if v.status == 'active' %}checked{% endif %}>
+          <span>{{ v.name }}</span>
+        </label>
+        {% if culture.kind == 'green_water' %}
+          {{ tint_select('tint_' ~ v.id) }}
+        {% else %}
+          {{ density_select('density_' ~ v.id) }}
+          {{ guts_select('guts_' ~ v.id) }}
+        {% endif %}
+      </div>
+      {{ bin_standing_fields(v) }}
     </div>
     {% else %}
     <p class="muted">No bins to tag.</p>
@@ -118,12 +131,15 @@
   <label>Bins</label>
   <div class="bin-obs-list">
     {% for v in vessels %}
-    <div class="bin-obs-row{% if v.status != 'active' %} muted{% endif %}">
-      <label class="vessel-check">
-        <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if v.status == 'active' %}checked{% endif %}>
-        <span>{{ v.name }}</span>
-      </label>
-      <input type="text" name="amount_{{ v.id }}" placeholder="amount for this bin">
+    <div class="bin-obs-block{% if v.status != 'active' %} muted{% endif %}">
+      <div class="bin-obs-row">
+        <label class="vessel-check">
+          <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if v.status == 'active' %}checked{% endif %}>
+          <span>{{ v.name }}</span>
+        </label>
+        <input type="text" name="amount_{{ v.id }}" placeholder="amount for this bin">
+      </div>
+      {{ bin_standing_fields(v) }}
     </div>
     {% else %}
     <p class="muted">No bins to tag.</p>
@@ -221,7 +237,7 @@
       {% if bench_air.temp_low is not none and bench_air.temp_high is not none %}
         ({{ bench_air.temp_low }}–{{ bench_air.temp_high }})
       {% endif %}
-      {% if bench_air.rh is not none %} · {{ bench_air.rh|int }}% RH{% endif %}
+      {% if bench_air.rh is not none %} · {{ bench_air.rh|int }}% relative humidity{% endif %}
       {% if bench_air.rh_low is not none and bench_air.rh_high is not none %}
         ({{ bench_air.rh_low|int }}–{{ bench_air.rh_high|int }})
       {% endif %}
@@ -282,6 +298,9 @@
         {% endif %}
         {% if v.last_look_at %}
         <div>Last look <span class="ts-local" data-utc="{{ v.last_look_at }}">{{ v.last_look_at }}</span></div>
+        {% endif %}
+        {% if v.last_bin_notes %}
+        <p class="vessel-last-notes">{{ v.last_bin_notes }}</p>
         {% endif %}
         {% if not v.last_feed_at and not v.last_look_at %}
         <div>No log yet</div>
@@ -453,17 +472,18 @@
             {% if item.guts %} · guts {{ guts_labels.get(item.guts, item.guts) }}{% endif %}
             {% if item.temp_kind == 'air' %} · air{% elif item.temp_kind == 'water' %} · water{% endif %}
             {% if item.temp_f is not none %} · {{ item.temp_f }}°F{% endif %}
-            {% if item.rh is not none %} · {{ item.rh|int }}% RH{% endif %}
+            {% if item.rh is not none %} · {{ item.rh|int }}% relative humidity{% endif %}
           </div>
           {% if item.bins %}
           <div class="cl-bin-details">
             {% for b in item.bins %}
-              {% if b.tint or b.density or b.guts or b.amount_text %}
+              {% if b.tint or b.density or b.guts or b.amount_text or b.notes %}
               <span>{{ b.vessel_name }}:
                 {%- if b.tint %} {{ tint_labels.get(b.tint, b.tint) }}{% endif %}
                 {%- if b.density %} {{ density_labels.get(b.density, b.density) }}{% endif %}
                 {%- if b.guts %} guts {{ guts_labels.get(b.guts, b.guts) }}{% endif %}
                 {%- if b.amount_text %} {{ b.amount_text }}{% endif %}
+                {%- if b.notes %} {{ b.notes }}{% endif %}
               </span>
               {% endif %}
             {% endfor %}
@@ -474,9 +494,12 @@
           {% endif %}
         </div>
       </div>
-      <form method="post" action="/cultures/{{ culture.id }}/log/{{ item.id }}/delete" onsubmit="return confirm('Delete this log entry?')">
-        <button class="btn btn-xs btn-ghost" type="submit">✕</button>
-      </form>
+      <div class="cl-item-actions">
+        <button class="btn btn-xs btn-ghost" type="button" onclick='openEditLog({{ item|tojson }})'>Edit</button>
+        <form method="post" action="/cultures/{{ culture.id }}/log/{{ item.id }}/delete" onsubmit="return confirm('Delete this log entry?')">
+          <button class="btn btn-xs btn-ghost" type="submit">✕</button>
+        </form>
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -611,11 +634,11 @@
           </div>
         </div>
         <div class="form-group other-air-only">
-          <label>RH now %</label>
+          <label>Relative humidity now %</label>
           <input type="number" step="1" name="rh">
         </div>
         <div class="form-group other-air-only">
-          <label>RH low–high</label>
+          <label>Humidity low–high</label>
           <div style="display:flex;gap:.35rem">
             <input type="number" step="1" name="rh_low" placeholder="low">
             <input type="number" step="1" name="rh_high" placeholder="high">
@@ -665,6 +688,108 @@
     <form id="edit-sched-form" method="post" action="">
       {{ schedule_fields('edit') }}
       <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-sched')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="modal-edit-log" class="modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header"><h3 id="edit-log-title">Edit log</h3><button class="modal-close" type="button" onclick="closeModal('modal-edit-log')">×</button></div>
+    <form id="edit-log-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
+      <input type="hidden" name="kind" id="edit-log-kind">
+      <div class="form-group">
+        <label>Bins</label>
+        <div class="bin-obs-list">
+          {% for v in vessels %}
+          <div class="bin-obs-block{% if v.status != 'active' %} muted{% endif %}">
+            <div class="bin-obs-row">
+              <label class="vessel-check">
+                <input type="checkbox" name="vessel_ids" value="{{ v.id }}">
+                <span>{{ v.name }}</span>
+              </label>
+              <span class="edit-log-look">
+                {% if culture.kind == 'green_water' %}
+                  {{ tint_select('tint_' ~ v.id) }}
+                {% else %}
+                  {{ density_select('density_' ~ v.id) }}
+                  {{ guts_select('guts_' ~ v.id) }}
+                {% endif %}
+              </span>
+              <span class="edit-log-feed">
+                <input type="text" name="amount_{{ v.id }}" placeholder="amount for this bin">
+              </span>
+            </div>
+            {{ bin_standing_fields(v) }}
+          </div>
+          {% else %}
+          <p class="muted">No bins to tag.</p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group" id="edit-log-food-group">
+          <label>Food</label>
+          <select name="food">
+            <option value="">—</option>
+            <option value="spirulina">Spirulina</option>
+            <option value="green_water">Green water</option>
+            <option value="yeast">Yeast</option>
+            <option value="none">None</option>
+          </select>
+        </div>
+        <div class="form-group" id="edit-log-cups-group">
+          <label>Cups</label>
+          <input type="number" name="cups" step="0.25" min="0" placeholder="e.g. 1">
+        </div>
+        <div class="form-group" id="edit-log-amount-group">
+          <label>Amount</label>
+          <input type="text" name="amount_text">
+        </div>
+      </div>
+      {% if culture.kind != 'green_water' %}
+      <div class="form-group" id="edit-log-held-group">
+        <label class="today-check">
+          <input type="checkbox" name="held" value="1">
+          <span>Held — checked, no food added</span>
+        </label>
+      </div>
+      {% endif %}
+      <div id="edit-log-temp-block">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Temp kind</label>
+            <select name="temp_kind" onchange="syncEditLogForm(this.form)">
+              <option value="water">Water</option>
+              <option value="air">Air (bench)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Temp now (°F)</label>
+            <input type="number" step="0.1" name="temp_f">
+          </div>
+          <div class="form-group edit-log-air-only">
+            <label>Temp low–high</label>
+            <div style="display:flex;gap:.35rem">
+              <input type="number" step="0.1" name="temp_low" placeholder="low">
+              <input type="number" step="0.1" name="temp_high" placeholder="high">
+            </div>
+          </div>
+          <div class="form-group edit-log-air-only">
+            <label>Relative humidity now %</label>
+            <input type="number" step="1" name="rh">
+          </div>
+          <div class="form-group edit-log-air-only">
+            <label>Humidity low–high</label>
+            <div style="display:flex;gap:.35rem">
+              <input type="number" step="1" name="rh_low" placeholder="low">
+              <input type="number" step="1" name="rh_high" placeholder="high">
+            </div>
+          </div>
+        </div>
+      </div>
+      {{ log_time_field() }}
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-log')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
 </div>
@@ -751,6 +876,135 @@ function recomputeCultureNextDue() {
   const m = String(from.getMonth() + 1).padStart(2, '0');
   const d = String(from.getDate()).padStart(2, '0');
   f.querySelector('[name=next_due]').value = y + '-' + m + '-' + d;
+}
+
+const KIND_LABELS = {{ kind_labels | tojson }};
+
+function cupsFromAmount(text) {
+  if (!text) return '';
+  const m = String(text).trim().match(/^(\d+(?:\.\d+)?)\s*cups?$/i);
+  return m ? m[1] : '';
+}
+
+function setField(form, name, value) {
+  const el = form.querySelector('[name="' + name + '"]');
+  if (!el) return;
+  if (el.type === 'checkbox') el.checked = !!value;
+  else el.value = value == null ? '' : value;
+}
+
+function setBlockDisabled(el, disabled) {
+  if (!el) return;
+  el.querySelectorAll('input, select, textarea').forEach(function (c) {
+    c.disabled = disabled;
+  });
+}
+
+function syncEditLogForm(form) {
+  if (!form) return;
+  const kind = form.querySelector('[name=kind]').value;
+  const isFeed = kind === 'feed';
+  const isLook = kind === 'look';
+  const isHarvest = kind === 'harvest' || kind === 'seed';
+  const isTemp = kind === 'temp';
+  form.querySelectorAll('.edit-log-feed').forEach(function (el) {
+    el.style.display = isFeed ? '' : 'none';
+  });
+  form.querySelectorAll('.edit-log-look').forEach(function (el) {
+    el.style.display = isLook ? '' : 'none';
+    el.querySelectorAll('input, select, textarea').forEach(function (c) {
+      c.disabled = !isLook;
+    });
+  });
+  const food = document.getElementById('edit-log-food-group');
+  if (food) food.style.display = isFeed ? '' : 'none';
+  setBlockDisabled(food, !isFeed);
+  const held = document.getElementById('edit-log-held-group');
+  if (held) held.style.display = (isFeed || isLook) ? '' : 'none';
+  const cups = document.getElementById('edit-log-cups-group');
+  const amount = document.getElementById('edit-log-amount-group');
+  const showCups = isHarvest && (!cups || cups.dataset.show !== '0');
+  const showAmount = isHarvest && amount && amount.dataset.show === '1';
+  if (cups) cups.style.display = showCups ? '' : 'none';
+  if (amount) amount.style.display = showAmount ? '' : 'none';
+  setBlockDisabled(cups, !showCups);
+  setBlockDisabled(amount, isHarvest ? !showAmount : false);
+  const temp = document.getElementById('edit-log-temp-block');
+  if (temp) temp.style.display = isTemp ? '' : 'none';
+  setBlockDisabled(temp, !isTemp);
+  const tempKindEl = form.querySelector('[name=temp_kind]');
+  const tempKind = tempKindEl ? tempKindEl.value : 'water';
+  form.querySelectorAll('.edit-log-air-only').forEach(function (el) {
+    el.style.display = (isTemp && tempKind === 'air') ? '' : 'none';
+  });
+}
+
+function openEditLog(item) {
+  const f = document.getElementById('edit-log-form');
+  f.reset();
+  f.action = '/cultures/{{ culture.id }}/log/' + item.id + '/update';
+  document.getElementById('edit-log-title').textContent = 'Edit ' + (KIND_LABELS[item.kind] || item.kind);
+  f.querySelector('[name=kind]').value = item.kind || '';
+  setField(f, 'food', item.food || '');
+  setField(f, 'notes', item.notes || '');
+  setField(f, 'held', !!item.held);
+  setField(f, 'temp_kind', item.temp_kind || 'water');
+  setField(f, 'temp_f', item.temp_f);
+  setField(f, 'temp_low', item.temp_low);
+  setField(f, 'temp_high', item.temp_high);
+  setField(f, 'rh', item.rh);
+  setField(f, 'rh_low', item.rh_low);
+  setField(f, 'rh_high', item.rh_high);
+  const dt = f.querySelector('.dt-local');
+  if (dt) dt.value = utcToLocalInputValue(item.timestamp || '');
+
+  const cupsGroup = document.getElementById('edit-log-cups-group');
+  const amountGroup = document.getElementById('edit-log-amount-group');
+  const cupsVal = cupsFromAmount(item.amount_text);
+  if (item.kind === 'harvest' || item.kind === 'seed') {
+    if (cupsVal) {
+      setField(f, 'cups', cupsVal);
+      setField(f, 'amount_text', '');
+      if (cupsGroup) cupsGroup.dataset.show = '1';
+      if (amountGroup) amountGroup.dataset.show = '0';
+    } else if (item.amount_text) {
+      setField(f, 'cups', '');
+      setField(f, 'amount_text', item.amount_text);
+      if (cupsGroup) cupsGroup.dataset.show = '0';
+      if (amountGroup) amountGroup.dataset.show = '1';
+    } else {
+      setField(f, 'cups', '');
+      setField(f, 'amount_text', '');
+      if (cupsGroup) cupsGroup.dataset.show = '1';
+      if (amountGroup) amountGroup.dataset.show = '0';
+    }
+  } else {
+    setField(f, 'cups', '');
+    setField(f, 'amount_text', item.amount_text || '');
+    if (cupsGroup) cupsGroup.dataset.show = '0';
+    if (amountGroup) amountGroup.dataset.show = '0';
+  }
+
+  const bins = item.bins || [];
+  const byId = {};
+  bins.forEach(function (b) { byId[String(b.vessel_id)] = b; });
+  f.querySelectorAll('[name=vessel_ids]').forEach(function (cb) {
+    const b = byId[cb.value];
+    cb.checked = !!b;
+    const tint = f.querySelector('[name="tint_' + cb.value + '"]');
+    const density = f.querySelector('[name="density_' + cb.value + '"]');
+    const guts = f.querySelector('[name="guts_' + cb.value + '"]');
+    const amt = f.querySelector('[name="amount_' + cb.value + '"]');
+    if (!cb.checked) return;
+    if (tint) tint.value = (b && b.tint) || item.tint || '';
+    if (density) density.value = (b && b.density) || item.density || '';
+    if (guts) guts.value = (b && b.guts) || item.guts || '';
+    if (amt) amt.value = (b && b.amount_text) || '';
+    const binNotes = f.querySelector('[name="notes_' + cb.value + '"]');
+    if (binNotes) binNotes.value = (b && b.notes) || '';
+  });
+  syncEditLogForm(f);
+  openModal('modal-edit-log');
 }
 
 </script>

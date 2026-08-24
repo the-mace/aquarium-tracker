@@ -386,6 +386,14 @@ def _vessels(conn, culture_id: int):
                      JOIN culture_log_vessels lv ON lv.log_id = l.id
                      WHERE lv.vessel_id = v.id AND l.kind = 'feed' AND COALESCE(l.held,0)=0
                      ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
+    latest_temp = """SELECT {col} FROM culture_log l
+                     JOIN culture_log_vessels lv ON lv.log_id = l.id
+                     WHERE lv.vessel_id = v.id AND l.temp_f IS NOT NULL
+                     ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
+    latest_bin_note = """SELECT lv.notes FROM culture_log l
+                     JOIN culture_log_vessels lv ON lv.log_id = l.id
+                     WHERE lv.vessel_id = v.id AND COALESCE(lv.notes,'') != ''
+                     ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
     return rows_to_list(conn.execute(
         f"""SELECT v.*,
                   ({latest_feed.format(col='l.timestamp')}) AS last_feed_at,
@@ -395,7 +403,8 @@ def _vessels(conn, culture_id: int):
                   ({latest_look.format(col='COALESCE(lv.tint, l.tint)')}) AS last_tint,
                   ({latest_look.format(col='COALESCE(lv.density, l.density)')}) AS last_density,
                   ({latest_look.format(col='COALESCE(lv.guts, l.guts)')}) AS last_guts,
-                  ({latest_look.format(col='l.temp_f')}) AS last_temp_f
+                  ({latest_bin_note}) AS last_bin_notes,
+                  ({latest_temp.format(col='l.temp_f')}) AS last_temp_f
            FROM culture_vessels v
            WHERE v.culture_id = ?
            ORDER BY v.sort_order, v.id""",
@@ -431,6 +440,63 @@ def _tag_log_vessels(conn, log_id: int, vessel_ids: List[int], details=None):
             (log_id, vid, d.get("tint"), d.get("density"), d.get("guts"),
              d.get("amount_text"), d.get("notes")),
         )
+
+
+def _replace_log_vessels(conn, log_id: int, vessel_ids: List[int], details=None):
+    conn.execute("DELETE FROM culture_log_vessels WHERE log_id=?", (log_id,))
+    _tag_log_vessels(conn, log_id, vessel_ids, details)
+
+
+def _log_values_from_form(form, *, default_kind=None, existing=None):
+    """Parse shared culture_log fields from a create/update form.
+
+    Fields omitted from the POST (disabled inputs) keep their existing value
+    on update. Unchecked checkboxes are omitted too — `held` is the exception
+    and always means off when missing.
+    """
+    existing = existing or {}
+    kind = _choice(form.get("kind"), LOG_KINDS) or default_kind or existing.get("kind")
+
+    def choice_field(key, allowed):
+        if key in form:
+            return _choice(form.get(key), allowed)
+        return existing.get(key)
+
+    def float_field(key):
+        if key in form:
+            return _float_or_none(form.get(key))
+        return existing.get(key)
+
+    if "cups" in form and _float_or_none(form.get("cups")) is not None:
+        amount = _fmt_cups(_float_or_none(form.get("cups")))
+    elif "amount_text" in form:
+        amount = _blank(form.get("amount_text"))
+    else:
+        amount = existing.get("amount_text")
+
+    held = form.get("held") in ("1", "on", "true")
+    if kind == "feed" and held:
+        kind = "look"
+    timestamp = _blank(form.get("timestamp")) if "timestamp" in form else existing.get("timestamp")
+    notes = _blank(form.get("notes")) if "notes" in form else existing.get("notes")
+    return {
+        "kind": kind,
+        "timestamp": timestamp,
+        "food": choice_field("food", FOODS),
+        "amount_text": amount,
+        "notes": notes,
+        "tint": choice_field("tint", TINTS),
+        "density": choice_field("density", DENSITIES),
+        "guts": choice_field("guts", GUTS),
+        "temp_f": float_field("temp_f"),
+        "temp_kind": choice_field("temp_kind", TEMP_KINDS),
+        "rh": float_field("rh"),
+        "rh_low": float_field("rh_low"),
+        "rh_high": float_field("rh_high"),
+        "temp_low": float_field("temp_low"),
+        "temp_high": float_field("temp_high"),
+        "held": held,
+    }
 
 
 def _insert_log(conn, culture_id: int, *, kind: str, timestamp=None, food=None,
@@ -843,18 +909,43 @@ def _form_list(form, key):
     return [str(v) for v in form.getlist(key)]
 
 
-def _vessel_details_from_form(form, ids):
+def _vessel_details_from_form(form, ids, existing_by_id=None):
+    existing_by_id = existing_by_id or {}
     details = []
     for vid in ids:
+        prev = existing_by_id.get(vid) or {}
+        notes_key = f"notes_{vid}"
+        hitch_key = f"hitchhikers_{vid}"
         details.append({
             "id": vid,
             "tint": _choice(form.get(f"tint_{vid}"), TINTS),
             "density": _choice(form.get(f"density_{vid}"), DENSITIES),
             "guts": _choice(form.get(f"guts_{vid}"), GUTS),
             "amount_text": _blank(form.get(f"amount_{vid}")),
-            "notes": _blank(form.get(f"notes_{vid}")),
+            "notes": _blank(form.get(notes_key)) if notes_key in form else prev.get("notes"),
+            "hitchhikers_set": hitch_key in form,
+            "hitchhikers": _blank(form.get(hitch_key)) if hitch_key in form else None,
         })
     return details
+
+
+def _apply_log_vessel_state(conn, kind, details):
+    """Write log fields that belong on the bin card (hitchhikers, crash)."""
+    for d in details or []:
+        if kind == "crash":
+            conn.execute(
+                """UPDATE culture_vessels
+                   SET status='crashed', updated_at=datetime('now')
+                   WHERE id=?""",
+                (d["id"],),
+            )
+        if d.get("hitchhikers_set"):
+            conn.execute(
+                """UPDATE culture_vessels
+                   SET hitchhikers=?, updated_at=datetime('now')
+                   WHERE id=?""",
+                (d.get("hitchhikers"), d["id"]),
+            )
 
 
 def _attach_log_bins(conn, log_rows):
@@ -888,43 +979,26 @@ def _latest_bench_air(conn):
 @router.post("/{culture_id}/log")
 async def add_log(request: Request, culture_id: int):
     form = await request.form()
-    kind = _choice(form.get("kind"), LOG_KINDS)
-    cups_n = _float_or_none(form.get("cups"))
-    amount = _fmt_cups(cups_n) if cups_n is not None else _blank(form.get("amount_text"))
-    held = form.get("held") in ("1", "on", "true")
-    if kind == "feed" and held:
-        kind = "look"
+    values = _log_values_from_form(form)
+    kind = values["kind"]
+    amount = values["amount_text"]
     with get_db() as conn:
         culture = _culture_or_404(conn, culture_id)
         ids = _valid_vessel_ids(conn, culture_id, _form_list(form, "vessel_ids"))
         details = _vessel_details_from_form(form, ids)
         log_id = _insert_log(
             conn, culture_id,
-            kind=kind,
-            timestamp=_blank(form.get("timestamp")),
-            food=_choice(form.get("food"), FOODS),
-            amount_text=amount,
-            notes=_blank(form.get("notes")),
-            tint=_choice(form.get("tint"), TINTS),
-            density=_choice(form.get("density"), DENSITIES),
-            guts=_choice(form.get("guts"), GUTS),
-            temp_f=_float_or_none(form.get("temp_f")),
-            temp_kind=_choice(form.get("temp_kind"), TEMP_KINDS),
-            rh=_float_or_none(form.get("rh")),
-            rh_low=_float_or_none(form.get("rh_low")),
-            rh_high=_float_or_none(form.get("rh_high")),
-            temp_low=_float_or_none(form.get("temp_low")),
-            temp_high=_float_or_none(form.get("temp_high")),
-            held=held,
             vessel_ids=ids,
             vessel_details=details,
+            **values,
         )
+        _apply_log_vessel_state(conn, kind, details)
         tank_event_id = None
         feed_log_id = None
         dest_kind = culture.get("destination_kind")
         pour_to_bins = dest_kind in ("culture", "vessel")
-        ts = _blank(form.get("timestamp"))
-        user_notes = _blank(form.get("notes"))
+        ts = values["timestamp"]
+        user_notes = values["notes"]
         log_on_tank = form.get("log_on_tank")
         if kind == "harvest" and pour_to_bins:
             dest_cid, dest_ids = _resolve_pour_targets(conn, culture)
@@ -974,6 +1048,52 @@ async def add_log(request: Request, culture_id: int):
         if feed_log_id is not None:
             body["feed_log_id"] = feed_log_id
         return JSONResponse(body, status_code=201)
+    return RedirectResponse(url=f"/cultures/{culture_id}", status_code=303)
+
+
+@router.post("/{culture_id}/log/{log_id}/update")
+async def update_log(request: Request, culture_id: int, log_id: int):
+    form = await request.form()
+    with get_db() as conn:
+        _culture_or_404(conn, culture_id)
+        existing = row_to_dict(conn.execute(
+            "SELECT * FROM culture_log WHERE id=? AND culture_id=?",
+            (log_id, culture_id),
+        ).fetchone())
+        if not existing:
+            raise HTTPException(status_code=404, detail="Log entry not found")
+        values = _log_values_from_form(
+            form, default_kind=existing["kind"], existing=existing,
+        )
+        if not values["kind"]:
+            values["kind"] = existing["kind"]
+        if not values["timestamp"]:
+            values["timestamp"] = existing["timestamp"]
+        ids = _valid_vessel_ids(conn, culture_id, _form_list(form, "vessel_ids"))
+        existing_bins = rows_to_list(conn.execute(
+            "SELECT * FROM culture_log_vessels WHERE log_id=?", (log_id,)
+        ).fetchall())
+        existing_by_id = {b["vessel_id"]: b for b in existing_bins}
+        details = _vessel_details_from_form(form, ids, existing_by_id)
+        conn.execute(
+            """UPDATE culture_log
+               SET timestamp=?, kind=?, food=?, amount_text=?, notes=?,
+                   tint=?, density=?, guts=?, temp_f=?, temp_kind=?,
+                   rh=?, rh_low=?, rh_high=?, temp_low=?, temp_high=?, held=?,
+                   updated_at=datetime('now')
+               WHERE id=? AND culture_id=?""",
+            (values["timestamp"], values["kind"], values["food"], values["amount_text"],
+             values["notes"], values["tint"], values["density"], values["guts"],
+             values["temp_f"], values["temp_kind"], values["rh"], values["rh_low"],
+             values["rh_high"], values["temp_low"], values["temp_high"],
+             1 if values["held"] else 0, log_id, culture_id),
+        )
+        _replace_log_vessels(conn, log_id, ids, details)
+        _apply_log_vessel_state(conn, values["kind"], details)
+        # Harvest side effects (tank feeding / dest-culture feed) stay as they
+        # were — this only edits the culture history row itself.
+    if _wants_json(request):
+        return JSONResponse({"status": "updated"})
     return RedirectResponse(url=f"/cultures/{culture_id}", status_code=303)
 
 

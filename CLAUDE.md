@@ -275,7 +275,7 @@ Not tanks. One **culture** has one purpose (Daphnia *or* green water — not mix
 - Look/feed logs can store **per-bin** tint/density/guts/amount on `culture_log_vessels`.
 - Feeding schedule mark-done can **Hold** (look, `held=1`) instead of logging a feed.
 - Harvest is measured in **cups**. Destination tank → optional `events.event_type='feeding'` on that tank (no AI). Destination culture/bin → `feed` on the *destination* culture (`food=green_water`).
-- Cultures have `harvest_status` (don't harvest yet / OK) as a **status badge**, not a Next item. **Next** is the soonest upcoming logged `culture_schedule` task (`next_due` after today), falling back to a one-off `next_action` only when that text isn't harvest-status wording. Bench **air** readings (temp/RH min–max) show on every culture page.
+- Cultures have `harvest_status` (don't harvest yet / OK) as a **status badge**, not a Next item. **Next** is the soonest upcoming logged `culture_schedule` task (`next_due` after today), falling back to a one-off `next_action` only when that text isn't harvest-status wording. Bench **air** readings (temp / relative humidity min–max) show on every culture page.
 - Logged culture schedule entries can edit **last done / next due**, same rules as tank maintenance.
 - Do not model bins as tanks (`tanks.kind`, fake inhabitants, water tests). Culture log writes never trigger tank AI.
 - No committed seed data. Create cultures on the mini after deploy.

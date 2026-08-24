@@ -285,7 +285,8 @@ def test_crashed_vessel_in_history_not_default_feed_checked(client):
     assert "this bin crashed" in r.text
     # Feed modal: live daphnia checked, crashed not.
     feed_start = r.text.find('id="modal-feed"')
-    feed_html = r.text[feed_start:feed_start + 2500]
+    feed_end = r.text.find('id="modal-look"', feed_start)
+    feed_html = r.text[feed_start:feed_end if feed_end > 0 else feed_start + 8000]
     assert f'value="{live}"' in feed_html
     assert f'value="{crashed}"' in feed_html
     assert f'value="{live}" checked' in feed_html or f'value="{live}"  checked' in feed_html
@@ -429,6 +430,152 @@ def test_green_water_look_has_tint_not_guts(client):
     assert "Tint —" in page.text
 
 
+def test_look_hitchhikers_update_bin_overview(client):
+    cid = _create_culture(client, kind="daphnia")
+    left = _add_vessel(client, cid, "Left")
+    right = _add_vessel(
+        client, cid, "Right",
+        hitchhikers="1 transparent baby shrimp — leave in bin",
+    )
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(left), str(right)],
+            f"density_{right}": "thin",
+            f"hitchhikers_{right}": "1 ramshorn (baby) snail — leave in bin",
+            f"notes_{right}": "one ramshorn in the right tub",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        by_id = {
+            row["id"]: dict(row)
+            for row in conn.execute(
+                "SELECT id, hitchhikers FROM culture_vessels WHERE culture_id=?", (cid,)
+            ).fetchall()
+        }
+        note = dict(conn.execute(
+            "SELECT notes FROM culture_log_vessels WHERE log_id=? AND vessel_id=?",
+            (r.json()["id"], right),
+        ).fetchone())
+    assert by_id[right]["hitchhikers"] == "1 ramshorn (baby) snail — leave in bin"
+    assert by_id[left]["hitchhikers"] is None
+    assert note["notes"] == "one ramshorn in the right tub"
+
+    page = client.get(f"/cultures/{cid}")
+    assert "1 ramshorn (baby) snail — leave in bin" in page.text
+    assert "one ramshorn in the right tub" in page.text
+    assert "transparent baby shrimp" not in page.text
+
+
+def test_look_without_hitchhikers_field_leaves_existing(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right", hitchhikers="1 baby shrimp — leave in bin")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "look", "vessel_ids": [str(v)], f"density_{v}": "ok"},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT hitchhikers FROM culture_vessels WHERE id=?", (v,)
+        ).fetchone())
+    assert row["hitchhikers"] == "1 baby shrimp — leave in bin"
+
+
+def test_look_empty_hitchhikers_clears_bin(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right", hitchhikers="1 baby shrimp")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(v)],
+            f"hitchhikers_{v}": "",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT hitchhikers FROM culture_vessels WHERE id=?", (v,)
+        ).fetchone())
+    assert row["hitchhikers"] is None
+
+
+def test_feed_hitchhikers_update_bin_overview(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right", hitchhikers="old shrimp")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "feed",
+            "food": "spirulina",
+            "vessel_ids": [str(v)],
+            f"hitchhikers_{v}": "1 ramshorn snail — leave in bin",
+            f"notes_{v}": "saw a snail while feeding",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT hitchhikers FROM culture_vessels WHERE id=?", (v,)
+        ).fetchone())
+    assert row["hitchhikers"] == "1 ramshorn snail — leave in bin"
+    page = client.get(f"/cultures/{cid}")
+    assert "1 ramshorn snail — leave in bin" in page.text
+    assert "saw a snail while feeding" in page.text
+    assert "old shrimp" not in page.text
+
+
+def test_crash_log_marks_bin_crashed(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "crash", "vessel_ids": [str(v)], "notes": "died off"},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT status FROM culture_vessels WHERE id=?", (v,)
+        ).fetchone())
+    assert row["status"] == "crashed"
+    page = client.get(f"/cultures/{cid}")
+    assert "crashed" in page.text
+
+
+def test_temp_log_on_bin_shows_on_card_and_spells_out_humidity(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "temp",
+            "temp_kind": "air",
+            "temp_f": "70.5",
+            "temp_low": "68.7",
+            "temp_high": "73.2",
+            "rh": "65",
+            "rh_low": "56",
+            "rh_high": "66",
+            "vessel_ids": [str(v)],
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    page = client.get(f"/cultures/{cid}")
+    assert "relative humidity" in page.text
+    assert "65% relative humidity" in page.text
+    assert "70.5°F" in page.text
+    assert "% RH" not in page.text
+
+
 def test_look_per_bin_density_and_guts(client):
     cid = _create_culture(client, kind="daphnia")
     left = _add_vessel(client, cid, "Left")
@@ -503,6 +650,203 @@ def test_seed_uses_cups(client):
             "SELECT amount_text FROM culture_log WHERE id=?", (r.json()["id"],)
         ).fetchone())
     assert row["amount_text"] == "1 cup"
+
+
+def test_update_log_look_per_bin_notes_and_timestamp(client):
+    cid = _create_culture(client, kind="daphnia")
+    left = _add_vessel(client, cid, "Left")
+    right = _add_vessel(client, cid, "Right")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(left), str(right)],
+            f"density_{left}": "thin",
+            f"guts_{left}": "mixed",
+            "notes": "first look",
+            "timestamp": "2026-08-01 12:00:00",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    log_id = r.json()["id"]
+
+    r = client.post(
+        f"/cultures/{cid}/log/{log_id}/update",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(left)],
+            f"density_{left}": "dense",
+            f"guts_{left}": "darker",
+            "notes": "corrected look",
+            "timestamp": "2026-08-02 15:30:00",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "updated"
+
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT kind, notes, timestamp, density FROM culture_log WHERE id=?",
+            (log_id,),
+        ).fetchone())
+        tagged = [d["vessel_id"] for d in conn.execute(
+            """SELECT vessel_id, density, guts FROM culture_log_vessels
+               WHERE log_id=? ORDER BY vessel_id""",
+            (log_id,),
+        ).fetchall()]
+        detail = dict(conn.execute(
+            "SELECT density, guts FROM culture_log_vessels WHERE log_id=? AND vessel_id=?",
+            (log_id, left),
+        ).fetchone())
+    assert row["kind"] == "look"
+    assert row["notes"] == "corrected look"
+    assert row["timestamp"] == "2026-08-02 15:30:00"
+    assert tagged == [left]
+    assert detail["density"] == "dense"
+    assert detail["guts"] == "darker"
+
+    page = client.get(f"/cultures/{cid}")
+    assert page.status_code == 200
+    assert "corrected look" in page.text
+    assert "openEditLog(" in page.text
+    assert 'id="modal-edit-log"' in page.text
+    assert f"/cultures/{cid}/log/{log_id}/update" not in page.text or "Edit" in page.text
+
+
+def test_update_log_feed_food_and_blank_timestamp_keeps_existing(client):
+    cid = _create_culture(client, kind="daphnia")
+    v1 = _add_vessel(client, cid, "Left")
+    v2 = _add_vessel(client, cid, "Right")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "feed",
+            "food": "spirulina",
+            "amount_text": "~1/32 tsp",
+            "vessel_ids": [str(v1), str(v2)],
+            "timestamp": "2026-08-10 09:00:00",
+        },
+        headers=JSON,
+    )
+    log_id = r.json()["id"]
+    r = client.post(
+        f"/cultures/{cid}/log/{log_id}/update",
+        data={
+            "kind": "feed",
+            "food": "yeast",
+            "amount_text": "pinch",
+            "vessel_ids": [str(v1)],
+            f"amount_{v1}": "a pinch each",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT food, amount_text, timestamp FROM culture_log WHERE id=?",
+            (log_id,),
+        ).fetchone())
+        tagged = [row[0] for row in conn.execute(
+            "SELECT vessel_id FROM culture_log_vessels WHERE log_id=?", (log_id,)
+        ).fetchall()]
+        amt = dict(conn.execute(
+            "SELECT amount_text FROM culture_log_vessels WHERE log_id=? AND vessel_id=?",
+            (log_id, v1),
+        ).fetchone())
+    assert row["food"] == "yeast"
+    assert row["amount_text"] == "pinch"
+    assert row["timestamp"] == "2026-08-10 09:00:00"
+    assert tagged == [v1]
+    assert amt["amount_text"] == "a pinch each"
+
+
+def test_update_feed_held_becomes_look(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "feed", "food": "spirulina", "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    log_id = r.json()["id"]
+    r = client.post(
+        f"/cultures/{cid}/log/{log_id}/update",
+        data={"kind": "feed", "food": "spirulina", "held": "1", "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT kind, held, food FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+    assert row["kind"] == "look"
+    assert row["held"] == 1
+    assert row["food"] == "spirulina"
+
+
+def test_update_log_harvest_does_not_create_another_tank_event(client, make_tank, monkeypatch):
+    called = []
+    monkeypatch.setattr(_ai, "run_ai_analysis", lambda *a, **kw: called.append(a))
+    tid = make_tank(name="Fish Tank")
+    cid = _create_culture(client, kind="daphnia", destination=f"tank:{tid}")
+    v = _add_vessel(client, cid, "Left")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "harvest",
+            "cups": "1",
+            "notes": "first net",
+            "vessel_ids": [str(v)],
+            "log_on_tank": "1",
+        },
+        headers=JSON,
+    )
+    log_id = r.json()["id"]
+    tank_event_id = r.json()["tank_event_id"]
+    r = client.post(
+        f"/cultures/{cid}/log/{log_id}/update",
+        data={"kind": "harvest", "cups": "2", "notes": "first net", "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        log = dict(conn.execute(
+            "SELECT amount_text, notes FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+        n_events = conn.execute(
+            "SELECT COUNT(*) AS n FROM events WHERE tank_id=?", (tid,)
+        ).fetchone()["n"]
+        ev = dict(conn.execute(
+            "SELECT notes FROM events WHERE id=?", (tank_event_id,)
+        ).fetchone())
+    assert log["amount_text"] == "2 cups"
+    assert n_events == 1
+    assert "1 cup" in ev["notes"]
+    assert called == []
+
+
+def test_update_log_404_wrong_culture(client):
+    a = _create_culture(client, name="A")
+    b = _create_culture(client, name="B")
+    r = client.post(
+        f"/cultures/{a}/log",
+        data={"kind": "other", "notes": "misc"},
+        headers=JSON,
+    )
+    log_id = r.json()["id"]
+    r = client.post(
+        f"/cultures/{b}/log/{log_id}/update",
+        data={"kind": "other", "notes": "nope"},
+        headers=JSON,
+    )
+    assert r.status_code == 404
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT notes FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+    assert row["notes"] == "misc"
 
 
 def test_culture_nav_on_pages(client):

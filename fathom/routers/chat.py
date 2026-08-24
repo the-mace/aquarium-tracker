@@ -405,7 +405,7 @@ def _fmt_bench_air(row):
     if row.get("temp_low") is not None and row.get("temp_high") is not None:
         bits.append(f"({row['temp_low']}–{row['temp_high']})")
     if row.get("rh") is not None:
-        bits.append(f"{int(row['rh'])}% RH")
+        bits.append(f"{int(row['rh'])}% relative humidity")
     if row.get("rh_low") is not None and row.get("rh_high") is not None:
         bits.append(f"({int(row['rh_low'])}–{int(row['rh_high'])})")
     return f"  {ts}: " + (" ".join(bits) if bits else "(no numeric readings)")

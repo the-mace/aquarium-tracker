@@ -53,7 +53,7 @@ Open `http://localhost:8000`. `bin/stop` kills a local uvicorn process.
 
 - **Today** (`/today`): feeding/dosing for the current weekday plus maintenance due across tanks **and** live-food cultures
 - **Home water** (`/home-water`): shared tap/source tests (fill water for changes). Optional lab-report upload. Used as incoming-water context for tank AI — not tank chemistry
-- **Cultures** (`/cultures`): live-food stations, **not** display tanks. One purpose per station (Daphnia *or* green water — green water is grown as feed, not fed itself). Each station has bins, a feed/look/harvest log, a recurring schedule, harvest destination (tank, another culture, or a specific bin), and harvest-status badges. Logged culture tasks also show on Today. Culture log writes never trigger tank AI
+- **Cultures** (`/cultures`): live-food stations, **not** display tanks. One purpose per station (Daphnia *or* green water — green water is grown as feed, not fed itself). Each station has bins, a feed/look/harvest log (history entries are editable; logging updates that bin's hitchhikers, last look/feed/temp, and marks a crash), a recurring schedule, harvest destination (tank, another culture, or a specific bin), and harvest-status badges. Logged culture tasks also show on Today. Culture log writes never trigger tank AI
 
 ### Per tank
 
