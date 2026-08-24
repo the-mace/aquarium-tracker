@@ -50,8 +50,12 @@ def get_db_readonly():
         conn.close()
 
 
-def get_schema_text():
-    """Table/column listing for the main DB, used to give the chat AI query-tool context."""
+def get_schema_text(table_names=None):
+    """Table/column listing for the main DB, used to give the chat AI query-tool context.
+
+    If table_names is given, only those tables are included.
+    """
+    wanted = set(table_names) if table_names else None
     with get_db_readonly() as conn:
         tables = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -59,6 +63,8 @@ def get_schema_text():
         lines = []
         for row in tables:
             name = row[0]
+            if wanted is not None and name not in wanted:
+                continue
             cols = conn.execute(f"PRAGMA table_info({name})").fetchall()
             col_desc = ", ".join(f"{c[1]} {c[2]}" for c in cols)
             lines.append(f"{name}({col_desc})")
@@ -818,6 +824,52 @@ def init_db():
                 DROP TABLE observations;
                 ALTER TABLE observations_new RENAME TO observations;
                 CREATE INDEX IF NOT EXISTS idx_observations_tank ON observations(tank_id, created_at);
+            """)
+
+        # Migration: culture Ask AI — conversations may belong to a tank XOR a culture.
+        chat_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_conversations)").fetchall()}
+        if chat_cols and "culture_id" not in chat_cols:
+            # Rebuild both chat tables. Drop the child first so ON DELETE CASCADE
+            # on chat_messages does not wipe copied rows.
+            conn.executescript("""
+                DROP TABLE IF EXISTS chat_messages_new;
+                DROP TABLE IF EXISTS chat_conversations_new;
+                CREATE TABLE chat_conversations_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tank_id INTEGER,
+                    culture_id INTEGER,
+                    title TEXT NOT NULL DEFAULT 'New conversation',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (tank_id) REFERENCES tanks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (culture_id) REFERENCES cultures(id) ON DELETE CASCADE,
+                    CHECK (
+                        (tank_id IS NOT NULL AND culture_id IS NULL)
+                        OR (tank_id IS NULL AND culture_id IS NOT NULL)
+                    )
+                );
+                INSERT INTO chat_conversations_new (id, tank_id, culture_id, title, created_at, updated_at)
+                    SELECT id, tank_id, NULL, title, created_at, updated_at FROM chat_conversations;
+                CREATE TABLE chat_messages_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id INTEGER NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY (conversation_id) REFERENCES chat_conversations_new(id) ON DELETE CASCADE
+                );
+                INSERT INTO chat_messages_new (id, conversation_id, role, content, created_at)
+                    SELECT id, conversation_id, role, content, created_at FROM chat_messages;
+                DROP TABLE chat_messages;
+                DROP TABLE chat_conversations;
+                ALTER TABLE chat_conversations_new RENAME TO chat_conversations;
+                ALTER TABLE chat_messages_new RENAME TO chat_messages;
+                CREATE INDEX IF NOT EXISTS idx_chat_conversations_tank
+                    ON chat_conversations(tank_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_chat_conversations_culture
+                    ON chat_conversations(culture_id, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_chat_messages_conv
+                    ON chat_messages(conversation_id, id);
             """)
 
 

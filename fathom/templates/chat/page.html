@@ -1,5 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{% if conversation %}{{ conversation.title }}{% else %}New conversation{% endif %} — {{ tank.name }} — Fathom{% endblock %}
+{% set is_culture = culture is defined and culture %}
+{% set subject_name = culture.name if is_culture else tank.name %}
+{% set chat_base = ('/cultures/' ~ culture.id ~ '/chat') if is_culture else ('/tanks/' ~ tank.id ~ '/chat') %}
+{% set chat_hint = 'your cultures' if is_culture else 'this tank' %}
+{% set chat_empty_title = 'Ask anything about your cultures' if is_culture else 'Ask anything about this tank' %}
+{% set chat_empty_body = 'Bins, feeding, harvest, green water and live food — AI can look up every culture station.' if is_culture else 'Water parameters, inhabitants, schedule, history — AI can look up your data.' %}
+{% block title %}{% if conversation %}{{ conversation.title }}{% else %}New conversation{% endif %} — {{ subject_name }} — Fathom{% endblock %}
 {% set active = "chat" %}
 
 {% block content %}
@@ -7,10 +13,10 @@
   <div class="page-header">
     <div>
       <h1 id="chat-page-title">{% if conversation %}{{ conversation.title }}{% else %}New conversation{% endif %}</h1>
-      <p class="muted" style="margin:0">Ask AI about {{ tank.name }}</p>
+      <p class="muted" style="margin:0">Ask AI about {{ subject_name }}</p>
     </div>
     <div class="header-actions">
-      <a href="/tanks/{{ tank.id }}/chat/new" class="btn btn-ghost">+ New conversation</a>
+      <a href="{{ chat_base }}/new" class="btn btn-ghost">+ New conversation</a>
       {% if conversation %}
       <button type="button" class="btn btn-ghost btn-danger-text" onclick="deleteActiveChat()">Delete</button>
       {% else %}
@@ -30,13 +36,13 @@
       {% else %}
         <div class="chat-page-empty" id="chat-page-empty">
           <div class="empty-icon">💬</div>
-          <h2>Ask anything about this tank</h2>
-          <p>Water parameters, inhabitants, schedule, history — AI can look up your data.</p>
+          <h2>{{ chat_empty_title }}</h2>
+          <p>{{ chat_empty_body }}</p>
         </div>
       {% endif %}
     </div>
     <div class="chat-input-row chat-page-input-row">
-      <input type="text" id="chat-page-input" placeholder="Ask anything about this tank…" autofocus
+      <input type="text" id="chat-page-input" placeholder="Ask anything about {{ chat_hint }}…" autofocus
              onkeydown="if(event.key==='Enter')sendChat()">
       <button type="button" class="btn btn-primary" onclick="sendChat()">Send</button>
     </div>

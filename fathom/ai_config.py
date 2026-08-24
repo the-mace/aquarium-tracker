@@ -33,3 +33,7 @@ CLAUDE_MAX_TOKENS_GOAL_PROGRESS = 2048
 # budget and truncated mid-JSON → "Could not parse AI review". Budget leaves
 # room for thinking + full rewrite, or use thinking-off for this call site.
 CLAUDE_MAX_TOKENS_GOAL_REVIEW = 4096
+# Chat was hardcoded at 1024; prod 2026-08-24 (Fish Tank Ask AI / Otos) burned
+# the whole budget on adaptive thinking after query_db and returned no TextBlock,
+# which the UI surfaced as the misleading "allotted lookups" fallback.
+CLAUDE_MAX_TOKENS_CHAT = 4096

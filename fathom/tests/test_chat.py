@@ -407,3 +407,141 @@ def test_ai_rate_limit_returns_429(client, tank_id, monkeypatch):
     assert client.post(f"/tanks/{tank_id}/chat", json={"message": "two"}).status_code == 200
     r = client.post(f"/tanks/{tank_id}/chat", json={"message": "three"})
     assert r.status_code == 429
+
+
+class _ThinkingBlock:
+    """Mirrors anthropic.types.ThinkingBlock: type=thinking, no .text attribute."""
+
+    type = "thinking"
+
+    def __init__(self, thinking="internal reasoning…"):
+        self.thinking = thinking
+        self.signature = "sig"
+
+
+class _RecordingMessages:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self._respond(kwargs)
+
+    def _respond(self, kwargs):
+        raise NotImplementedError
+
+
+def _install_recording(monkeypatch, messages):
+    import anthropic
+
+    class _FakeAnthropic:
+        def __init__(self, *a, **kw):
+            self.messages = messages
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+    monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropic)
+    return messages
+
+
+def test_chat_uses_thinking_sized_max_tokens(client, tank_id, monkeypatch):
+    from ai_config import CLAUDE_MAX_TOKENS_CHAT
+
+    class _Msgs(_RecordingMessages):
+        def _respond(self, kwargs):
+            return _FakeMessage([_FakeTextBlock("ok")], stop_reason="end_turn")
+
+    msgs = _install_recording(monkeypatch, _Msgs())
+    r = client.post(f"/tanks/{tank_id}/chat", json={"message": "How is the tank?"})
+    assert r.status_code == 200
+    assert msgs.calls[0]["max_tokens"] == CLAUDE_MAX_TOKENS_CHAT
+    assert "thinking" not in msgs.calls[0]
+
+
+def test_chat_retries_when_thinking_burns_budget(client, tank_id, monkeypatch):
+    """Prod 2026-08-24: query_db round succeeded, then adaptive thinking used
+    the whole 1024-token budget and returned no TextBlock — UI showed the
+    misleading 'allotted lookups' fallback."""
+    from ai_config import CLAUDE_THINKING_DISABLED, CLAUDE_MAX_TOKENS_CHAT
+
+    recovered = (
+        "Otos have a documented death history; seeing 3 is consistent with "
+        "the current count after losses."
+    )
+
+    class _Msgs(_RecordingMessages):
+        def _respond(self, kwargs):
+            n = len(self.calls)
+            if n == 1:
+                return _FakeMessage(
+                    [_FakeToolUseBlock("tool_1", "query_db", {
+                        "sql": f"SELECT event_type FROM population_events WHERE tank_id = {tank_id}",
+                    })],
+                    stop_reason="tool_use",
+                )
+            if n == 2:
+                return _FakeMessage(
+                    [_ThinkingBlock("spent entire budget thinking")],
+                    stop_reason="max_tokens",
+                )
+            return _FakeMessage([_FakeTextBlock(recovered)], stop_reason="end_turn")
+
+    msgs = _install_recording(monkeypatch, _Msgs())
+    r = client.post(
+        f"/tanks/{tank_id}/chat",
+        json={"message": "Something happened to my Otos. Natural deaths or under feeding?"},
+    )
+    assert r.status_code == 200
+    assert recovered in r.json()["reply"]
+    assert "allotted lookups" not in r.json()["reply"]
+    assert len(msgs.calls) == 3
+    assert "thinking" not in msgs.calls[0]
+    assert "thinking" not in msgs.calls[1]
+    assert msgs.calls[2].get("thinking") == CLAUDE_THINKING_DISABLED
+    assert msgs.calls[0]["max_tokens"] == CLAUDE_MAX_TOKENS_CHAT
+    assert msgs.calls[2]["max_tokens"] == CLAUDE_MAX_TOKENS_CHAT
+
+
+def test_chat_answers_after_tool_round_cap(client, tank_id, monkeypatch):
+    """When every tools-on turn keeps requesting query_db, omit tools and answer."""
+
+    class _Msgs(_RecordingMessages):
+        def _respond(self, kwargs):
+            if kwargs.get("tools"):
+                n = len(self.calls)
+                return _FakeMessage(
+                    [_FakeToolUseBlock(f"tool_{n}", "query_db", {"sql": "SELECT 1"})],
+                    stop_reason="tool_use",
+                )
+            return _FakeMessage(
+                [_FakeTextBlock("Here's what I found from the lookups I already ran.")],
+                stop_reason="end_turn",
+            )
+
+    msgs = _install_recording(monkeypatch, _Msgs())
+    r = client.post(f"/tanks/{tank_id}/chat", json={"message": "Tell me everything about this tank."})
+    assert r.status_code == 200
+    assert "Here's what I found" in r.json()["reply"]
+    assert "allotted lookups" not in r.json()["reply"]
+    assert len(msgs.calls) == 5  # 4 tool rounds + 1 no-tools synthesis
+    assert all(c.get("tools") for c in msgs.calls[:4])
+    assert "tools" not in msgs.calls[4]
+
+
+def test_chat_thinking_exhausted_uses_generic_fallback(client, tank_id, monkeypatch):
+    from ai_config import CLAUDE_THINKING_DISABLED
+
+    class _Msgs(_RecordingMessages):
+        def _respond(self, kwargs):
+            return _FakeMessage(
+                [_ThinkingBlock("still no text")],
+                stop_reason="max_tokens",
+            )
+
+    msgs = _install_recording(monkeypatch, _Msgs())
+    r = client.post(f"/tanks/{tank_id}/chat", json={"message": "How are the otos?"})
+    assert r.status_code == 200
+    assert "allotted lookups" not in r.json()["reply"]
+    assert "wasn't able to generate a reply" in r.json()["reply"]
+    assert len(msgs.calls) == 2
+    assert "thinking" not in msgs.calls[0]
+    assert msgs.calls[1].get("thinking") == CLAUDE_THINKING_DISABLED

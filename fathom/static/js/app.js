@@ -39,6 +39,24 @@ let activeConversationId = null;
 let chatMsgCounter = 0;
 let chatSending = false;
 
+function chatConfig() {
+  if (typeof CULTURE_ID !== 'undefined') {
+    return {
+      id: CULTURE_ID,
+      name: (typeof CULTURE_NAME !== 'undefined' && CULTURE_NAME) ? CULTURE_NAME : 'this culture',
+      base: `/cultures/${CULTURE_ID}/chat`,
+    };
+  }
+  if (typeof TANK_ID !== 'undefined') {
+    return {
+      id: TANK_ID,
+      name: (typeof TANK_NAME !== 'undefined' && TANK_NAME) ? TANK_NAME : 'this tank',
+      base: `/tanks/${TANK_ID}/chat`,
+    };
+  }
+  return null;
+}
+
 function isChatPage() {
   return !!document.getElementById('chat-page');
 }
@@ -83,11 +101,12 @@ function closeChatPanel() {
 
 function _updateChatChrome() {
   const { title, deleteBtn, isPage } = chatEls();
+  const cfg = chatConfig();
   if (!isPage && title) {
-    const tankLabel = (typeof TANK_NAME !== 'undefined' && TANK_NAME) ? TANK_NAME : 'this tank';
+    const label = cfg ? cfg.name : 'this tank';
     title.textContent = activeConversationId
-      ? (title.dataset.convTitle || `Ask AI about ${tankLabel}`)
-      : `Ask AI about ${tankLabel}`;
+      ? (title.dataset.convTitle || `Ask AI about ${label}`)
+      : `Ask AI about ${label}`;
   }
   if (deleteBtn) deleteBtn.style.display = activeConversationId ? '' : 'none';
   document.querySelectorAll('.chat-conv-item').forEach(el => {
@@ -97,9 +116,10 @@ function _updateChatChrome() {
 
 /** Dashboard "Ask AI" button — opens the right-side popup for a quick new chat. */
 function startNewChat() {
-  if (typeof TANK_ID === 'undefined') return;
+  const cfg = chatConfig();
+  if (!cfg) return;
   if (isChatPage()) {
-    window.location.href = `/tanks/${TANK_ID}/chat/new`;
+    window.location.href = `${cfg.base}/new`;
     return;
   }
   activeConversationId = null;
@@ -112,7 +132,7 @@ function startNewChat() {
 }
 
 async function deleteActiveChat() {
-  if (!activeConversationId || typeof TANK_ID === 'undefined') return;
+  if (!activeConversationId || !chatConfig()) return;
   if (!confirm('Delete this conversation? This cannot be undone.')) return;
   await deleteConversation(activeConversationId);
 }
@@ -122,10 +142,11 @@ async function deleteConversation(conversationId, event) {
     event.preventDefault();
     event.stopPropagation();
   }
-  if (typeof TANK_ID === 'undefined') return;
+  const cfg = chatConfig();
+  if (!cfg) return;
   if (event && !confirm('Delete this conversation? This cannot be undone.')) return;
   try {
-    const res = await fetch(`/tanks/${TANK_ID}/chat/conversations/${conversationId}`, {
+    const res = await fetch(`${cfg.base}/conversations/${conversationId}`, {
       method: 'DELETE',
     });
     if (!res.ok) {
@@ -134,7 +155,7 @@ async function deleteConversation(conversationId, event) {
     }
     if (activeConversationId === conversationId) {
       if (isChatPage()) {
-        window.location.href = `/tanks/${TANK_ID}/chat/new`;
+        window.location.href = `${cfg.base}/new`;
         return;
       }
       activeConversationId = null;
@@ -151,7 +172,8 @@ async function deleteConversation(conversationId, event) {
 }
 
 async function sendChat() {
-  if (typeof TANK_ID === 'undefined' || chatSending) return;
+  const cfg = chatConfig();
+  if (!cfg || chatSending) return;
   const ui = chatEls();
   const input = ui.input;
   const msg = input?.value.trim();
@@ -168,7 +190,7 @@ async function sendChat() {
   try {
     const payload = { message: msg };
     if (activeConversationId) payload.conversation_id = activeConversationId;
-    const res = await fetch(`/tanks/${TANK_ID}/chat`, {
+    const res = await fetch(cfg.base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -185,10 +207,10 @@ async function sendChat() {
     }
     // Full-page new chat: update URL + show delete once we have an id
     if (ui.isPage && wasNew && data.conversation_id) {
-      history.replaceState({}, '', `/tanks/${TANK_ID}/chat/c/${data.conversation_id}`);
+      history.replaceState({}, '', `${cfg.base}/c/${data.conversation_id}`);
       const pageRoot = document.getElementById('chat-page');
       if (pageRoot) pageRoot.dataset.conversationId = String(data.conversation_id);
-      document.title = `${data.title} — ${typeof TANK_NAME !== 'undefined' ? TANK_NAME : 'Fathom'} — Fathom`;
+      document.title = `${data.title} — ${cfg.name} — Fathom`;
     }
     _updateChatChrome();
     await loadConversations();
@@ -208,12 +230,13 @@ function _currentConversationId() {
 }
 
 async function loadConversations() {
-  if (typeof TANK_ID === 'undefined') return;
+  const cfg = chatConfig();
+  if (!cfg) return;
   const list = document.getElementById('chat-conv-list');
   if (!list) return;
   const currentId = _currentConversationId();
   try {
-    const res = await fetch(`/tanks/${TANK_ID}/chat/conversations`);
+    const res = await fetch(`${cfg.base}/conversations`);
     if (!res.ok) return;
     const data = await res.json();
     const convs = data.conversations || [];
@@ -224,7 +247,7 @@ async function loadConversations() {
     list.innerHTML = convs.map(c => {
       const active = Number(c.id) === currentId ? ' active' : '';
       const title = escHtml(c.title || 'Conversation');
-      return `<a href="/tanks/${TANK_ID}/chat/c/${c.id}" class="chat-conv-item${active}" data-id="${c.id}" title="${title}">
+      return `<a href="${cfg.base}/c/${c.id}" class="chat-conv-item${active}" data-id="${c.id}" title="${title}">
         <span class="chat-conv-title">${title}</span>
         <button type="button" class="chat-conv-delete" onclick="deleteConversation(${c.id}, event)" title="Delete" aria-label="Delete conversation">×</button>
       </a>`;
@@ -272,7 +295,7 @@ function setRefModalImage(imgWrap, imageUrl, displayName) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  if (typeof TANK_ID !== 'undefined') loadConversations();
+  if (chatConfig()) loadConversations();
 });
 
 /* ── Dashboard init ─────────────────────────────────────────────────────── */

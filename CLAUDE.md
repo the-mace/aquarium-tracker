@@ -20,6 +20,8 @@ pip install -r requirements.txt
 
 Do **not** assume a clean `git status` means you're current with remote. Prefer `git pull --ff-only` (or `git fetch` + compare to `origin/main`) at session start, before creating branches, and before committing/pushing. If local work has diverged from an auto-merged Dependabot commit, rebase or merge `main` rather than force-pushing over remote history.
 
+**README.md is the public feature list.** When adding or changing a user-facing feature (new section, route, or major workflow), update `README.md` in the same change — Features and Project Structure at minimum. `CLAUDE.md` is session/architecture context, not a substitute.
+
 ## What this is
 
 Fathom is a personal aquarium tracking web app with AI-powered analysis. Single user, self-hosted. No auth, no multi-tenancy.
@@ -29,7 +31,7 @@ Fathom is a personal aquarium tracking web app with AI-powered analysis. Single 
 - **Backend**: Python 3 + FastAPI, uvicorn
 - **Database**: SQLite at `fathom/data/fathom.db` (gitignored)
 - **Templates**: Jinja2, plain HTML/CSS/JS
-- **Charts**: Chart.js 4.4.0 via CDN
+- **Charts**: Chart.js (vendored `fathom/static/js/chart.umd.min.js`)
 - **AI**: Anthropic Python SDK `0.115.0`, model `claude-sonnet-5` (see `fathom/ai_config.py` + "AI model strategy" below)
 - **Env**: python-dotenv, `.env` at repo root (gitignored)
 
@@ -74,7 +76,7 @@ Because the mini now holds real data someone actually depends on:
 aquarium-tracker/
 ├── fathom/
 │   ├── main.py              # App entry, router includes, startup init_db()
-│   ├── database.py          # Schema (10 tables), get_db() context manager, helpers
+│   ├── database.py          # Schema, get_db() context manager, helpers
 │   ├── routers/
 │   │   ├── tanks.py         # Tank CRUD, dashboard, chart data endpoints
 │   │   ├── test_results.py  # Water test CRUD, triggers AI analysis
@@ -83,18 +85,23 @@ aquarium-tracker/
 │   │   ├── equipment.py     # Equipment per tank
 │   │   ├── purchases.py     # Purchase tracking
 │   │   ├── issues.py        # Issue tracker with status workflow
+│   │   ├── goals.py         # Goals + optional cross-tank dependencies
 │   │   ├── observations.py  # Manual + AI observations
-│   │   ├── chat.py          # AI chat (in-memory session, 10-turn limit)
-│   │   ├── import_data.py   # File upload → Claude extraction → bulk insert
+│   │   ├── timeline.py      # Mixed chronological feed
+│   │   ├── chat.py          # Ask AI (tanks + cultures; persisted conversations)
+│   │   ├── import_data.py   # File upload + Quick Log → Claude extraction
 │   │   ├── schedules.py     # Recurring schedule CRUD + mark-done
+│   │   ├── plants_hardscape.py
+│   │   ├── reference_info.py
+│   │   ├── today.py         # Cross-tank + culture due/schedule
+│   │   ├── home_water.py    # Shared fill-water tests
 │   │   ├── cultures.py      # Live-food cultures (one purpose each; dest tank/culture/bin)
 │   │   └── ai_analysis.py   # BackgroundTask: auto-analysis on test/event save
 │   ├── templates/
-│   │   ├── base.html        # Sidebar nav, Chart.js CDN
-│   │   ├── tanks/           # list, detail, form, import, schedule
+│   │   ├── base.html        # Sidebar nav
+│   │   ├── tanks/           # list, detail, form, import, quick_log, schedule, timeline
 │   │   ├── cultures/        # live-food station list, detail, form
-│   │   ├── inhabitants/     # list with inline edit modal
-│   │   ├── observations/    # list
+│   │   ├── chat/            # full-page Ask AI
 │   │   └── ...              # other section templates
 │   ├── static/
 │   │   ├── css/style.css    # Dark ocean theme (--bg: #0a0f1e, --primary: #00c4a0)
@@ -102,10 +109,11 @@ aquarium-tracker/
 │   ├── data/                # SQLite DB lives here (gitignored)
 │   └── scripts/
 │       └── backup_db.sh     # gzip + aws s3 cp backup
+├── bin/                     # run, stop, deploy-mini, mini-logs
 ├── .env                     # ANTHROPIC_API_KEY, AWS config (gitignored)
 ├── .env.example             # Template for .env
 ├── requirements.txt
-├── README.md
+├── README.md                # Public feature list — update when adding features
 └── CLAUDE.md                # This file
 ```
 
@@ -154,9 +162,11 @@ Routes (prefix-free router): `GET /reference-info?entity_type=…&entity_name=�
 Web search tool requires anthropic SDK ≥ 0.115.0.
 
 ### Chat (`chat.py`)
-`POST /tanks/{id}/chat` — in-memory `_conversations` dict keyed by tank_id, max 10 turns. System prompt injects tank summary + 3 recent observations. Returns 503 if no API key. `DELETE /tanks/{id}/chat` clears history.
+`POST /tanks/{id}/chat` — persisted `chat_conversations` keyed by tank_id, max 10 turns. System prompt injects tank summary + 3 recent observations. Returns 503 if no API key.
 
-**`query_db` tool**: the system prompt context is a snapshot only (latest test, current inhabitants, 5 recent observations, etc.) — for anything needing history (full test trends, `population_events`, purchase totals) Claude is given a `query_db` tool that runs a single read-only SQL `SELECT` against the DB (schema auto-generated via `database.get_schema_text()`, so it never drifts from the actual tables). Safety is two-layered: `_run_query_db` regex-rejects anything not starting with `SELECT`, and the query itself executes over `database.get_db_readonly()` — a SQLite URI `mode=ro` connection, so even a bypassed regex can't write. Up to `MAX_TOOL_ROUNDS=4` tool round-trips per message; only the final text reply is persisted into `_conversations` (intermediate tool_use/tool_result exchanges are not kept, to avoid bloating future-turn token usage).
+`POST /cultures/{id}/chat` — same UI (sidebar + popup + full page at `/cultures/{id}/chat/new`) at the culture-station level. Conversations are stored with `culture_id` (not `tank_id`). Knowledge is **all** culture stations (green water feeds live food), not only the one being viewed — bins, log, schedule, harvest destinations as names. No tank chemistry, livestock, or home-water. `query_db` is limited to culture tables and may query every station.
+
+**`query_db` tool**: the system prompt context is a snapshot only (latest test, current inhabitants, 5 recent observations, etc.) — for anything needing history (full test trends, `population_events`, purchase totals) Claude is given a `query_db` tool that runs a single read-only SQL `SELECT` against the DB (schema auto-generated via `database.get_schema_text()`, so it never drifts from the actual tables). Safety is two-layered: `_run_query_db` regex-rejects anything not starting with `SELECT`, and the query itself executes over `database.get_db_readonly()` — a SQLite URI `mode=ro` connection, so even a bypassed regex can't write. Up to `MAX_TOOL_ROUNDS=4` tool round-trips per message; after the cap, one more call is made with tools omitted so the model has to answer from what it already has. Shared `_claude_chat_reply` uses `CLAUDE_MAX_TOKENS_CHAT` (4096, room for Sonnet 5 adaptive thinking) and retries once with `CLAUDE_THINKING_DISABLED` if a turn returns no TextBlock — the 1024-token budget previously burned entirely on thinking (Fish Tank Ask AI, 2026-08-24) and surfaced as a misleading "allotted lookups" fallback. Only the final text reply is persisted; intermediate tool_use/tool_result exchanges are not kept.
 
 ### Import (`import_data.py`)
 `POST /tanks/{id}/import` — uploads a file (HTML or plain text/markdown), strips HTML if needed, sends to Claude for structured extraction, returns JSON preview. `POST /tanks/{id}/import/confirm` bulk-inserts the confirmed preview. Claude extracts: test_results, events, purchases, inhabitants, equipment.
@@ -175,6 +185,7 @@ Import robustness: strips markdown code fences, falls back to regex `{...}` extr
 ## Key decisions & gotchas
 
 - **No React, no build step** — all templates are Jinja2 + vanilla JS. Keep it that way.
+- **README stays current** — user-facing features go in `README.md` in the same change (see "Before starting any work").
 - **SQLite WAL mode + foreign_keys ON** — set in `get_connection()` in `database.py`.
 - **Router prefix issue** — `import_data.py` uses `APIRouter(tags=["import"])` with no prefix; routes include full paths like `/tanks/{id}/import`. Other routers use `prefix="/tanks"`.
 - **Observations delete** — JS calls `POST /tanks/{id}/observations/{obs_id}/delete` (not DELETE verb, form-based).
@@ -322,7 +333,7 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-490 pytest integration tests in `fathom/tests/`. Run with:
+519 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q

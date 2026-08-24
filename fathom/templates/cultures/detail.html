@@ -230,6 +230,7 @@
     {% endif %}
   </div>
   <div class="header-actions">
+    <button class="btn btn-ghost" type="button" onclick="startNewChat()">Ask AI</button>
     <a href="/cultures/{{ culture.id }}/edit" class="btn btn-ghost">Edit</a>
     <form method="post" action="/cultures/{{ culture.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this culture station and all of its bins, log, and schedule?')">
       <button class="btn btn-ghost btn-danger-text" type="submit">Delete</button>

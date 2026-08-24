@@ -21,6 +21,7 @@ from ai_config import (
     CLAUDE_THINKING_DISABLED,
     ANALYSIS_FAILURE_PREFIX,
     CLAUDE_MAX_TOKENS_ANALYSIS,
+    CLAUDE_MAX_TOKENS_CHAT,
 )
 from routers.ai_analysis import run_ai_analysis as _real_run_ai_analysis
 
@@ -435,4 +436,5 @@ def test_thinking_block_has_no_text_attr():
 def test_claude_budgets_leave_room_for_thinking():
     """Budgets must be well above pre-Sonnet-5 text-only sizes."""
     assert CLAUDE_MAX_TOKENS_ANALYSIS >= 4096
+    assert CLAUDE_MAX_TOKENS_CHAT >= 4096
     assert ANALYSIS_FAILURE_PREFIX.startswith("AI analysis failed")
