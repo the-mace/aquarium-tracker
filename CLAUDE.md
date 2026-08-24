@@ -87,10 +87,12 @@ aquarium-tracker/
 │   │   ├── chat.py          # AI chat (in-memory session, 10-turn limit)
 │   │   ├── import_data.py   # File upload → Claude extraction → bulk insert
 │   │   ├── schedules.py     # Recurring schedule CRUD + mark-done
+│   │   ├── cultures.py      # Live-food cultures (one purpose each; dest tank/culture/bin)
 │   │   └── ai_analysis.py   # BackgroundTask: auto-analysis on test/event save
 │   ├── templates/
 │   │   ├── base.html        # Sidebar nav, Chart.js CDN
 │   │   ├── tanks/           # list, detail, form, import, schedule
+│   │   ├── cultures/        # live-food station list, detail, form
 │   │   ├── inhabitants/     # list with inline edit modal
 │   │   ├── observations/    # list
 │   │   └── ...              # other section templates
@@ -127,6 +129,11 @@ All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
 | `plants` | Active plants per tank (species, common_name, added_date, source, notes, status active/removed) |
 | `hardscape` | Hardscape items (item, quantity, source, cost, added_date, notes) |
 | `reference_info` | Species/plant/hardscape descriptions + care notes + image URLs from Claude web search. UNIQUE(entity_type, entity_name). |
+| `cultures` | Live-food stations (not tanks). Optional `consumer_tank_id` (SET NULL on tank delete). |
+| `culture_vessels` | Bins in a station (`daphnia` / `green_water` / `other`). |
+| `culture_log` | Feed / look / harvest / seed / crash / temp history. |
+| `culture_log_vessels` | Junction so one log row can tag multiple bins. |
+| `culture_schedule` | Station-scoped due tasks (logged or reference). Sibling of `recurring_schedule`, not tank-scoped. |
 
 ## AI features
 
@@ -249,6 +256,20 @@ Import prompt includes rule 10 for parsing `recurring_schedule` from narrative t
 
 Management page: `/tanks/{id}/schedule`
 
+## Cultures (live food bins)
+
+Not tanks. One **culture** has one purpose (Daphnia *or* green water — not mixed: green water is not fed). **Vessels** are the bins of that culture (role is inherited from culture kind, not chosen per bin). Harvest **destination** is a tank, another culture, or a specific bin. Sidebar next to Home Water (`/cultures`). Logged schedule items appear on **Today**.
+
+- Green-water cultures have no "Log feeding" action. Daphnia cultures do. Green-water **looks** record tint per bin (no guts). Daphnia looks record density + guts per bin.
+- Look/feed logs can store **per-bin** tint/density/guts/amount on `culture_log_vessels`.
+- Feeding schedule mark-done can **Hold** (look, `held=1`) instead of logging a feed.
+- Harvest is measured in **cups**. Destination tank → optional `events.event_type='feeding'` on that tank (no AI). Destination culture/bin → `feed` on the *destination* culture (`food=green_water`).
+- Cultures have `harvest_status` (don't harvest yet / OK) and a **next action** (+ date). Bench **air** readings (temp/RH min–max) show on every culture page.
+- Logged culture schedule entries can edit **last done / next due**, same rules as tank maintenance.
+- Do not model bins as tanks (`tanks.kind`, fake inhabitants, water tests). Culture log writes never trigger tank AI.
+- No committed seed data. Create cultures on the mini after deploy.
+- Procedures / one-off ops notes stay local — not in this file.
+
 ## Quick Log (added 2026-06-30)
 
 Primary logging workflow — textarea instead of file upload:
@@ -301,13 +322,13 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-293 pytest integration tests in `fathom/tests/`. Run with:
+490 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`).
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`), cultures (station/vessel CRUD, feed log tagging two bins, harvest→tank feeding without AI, schedule mark-done + Today, cascade delete, consumer-tank SET NULL, crashed vessel excluded from default feed select).
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
 

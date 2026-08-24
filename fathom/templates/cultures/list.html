@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Cultures — Fathom{% endblock %}
+{% set active = "cultures" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Cultures</h1>
+    <p class="muted" style="font-size:.85rem;margin-top:.25rem">One purpose per station (Daphnia <em>or</em> green water), with bins and a harvest destination. Not display tanks.</p>
+  </div>
+  <a href="/cultures/new" class="btn btn-primary">+ New culture</a>
+</div>
+
+{% if cultures %}
+<div class="tank-grid">
+  {% for c in cultures %}
+  <a href="/cultures/{{ c.id }}" class="tank-card">
+    <div class="tank-card-header">
+      <span class="tank-name">{{ c.name }}</span>
+      <span class="badge badge-role-{{ c.kind }}">{{ culture_kind_labels.get(c.kind, c.kind) }}</span>
+    </div>
+    <div class="tank-card-meta">
+      {% if c.destination_label %}
+      <span class="meta-chip">→ {{ c.destination_label }}</span>
+      {% else %}
+      <span class="meta-chip">No destination</span>
+      {% endif %}
+    </div>
+    {% if c.vessels %}
+    <div class="culture-vessel-chips">
+      {% for v in c.vessels %}
+      <span class="badge {% if v.status != 'active' %}badge-inactive{% else %}badge-role-{{ c.kind }}{% endif %}">{{ v.name }}</span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="tank-card-notes">No bins yet</p>
+    {% endif %}
+    {% if c.isolation_notes %}
+    <p class="tank-card-notes">{{ c.isolation_notes[:80] }}{% if c.isolation_notes|length > 80 %}…{% endif %}</p>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">⬡</div>
+  <h2>No culture stations yet</h2>
+  <p>Add a Daphnia culture or a green-water culture. Harvest destination can be a tank, another culture, or a bin.</p>
+  <a href="/cultures/new" class="btn btn-primary">+ Add a culture station</a>
+</div>
+{% endif %}
+{% endblock %}

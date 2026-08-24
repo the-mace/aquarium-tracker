@@ -3,6 +3,10 @@ function goToTank(event, tankId) {
   if (event.target.closest('a, input, label, button, form')) return;
   window.location.href = `/tanks/${tankId}`;
 }
+function goToCulture(event, cultureId) {
+  if (event.target.closest('a, input, label, button, form')) return;
+  window.location.href = `/cultures/${cultureId}`;
+}
 
 /* ── Mobile nav drawer ─────────────────────────────────────────────────── */
 function openSidebar() {
