@@ -548,6 +548,10 @@
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
       <input type="hidden" name="kind" value="look">
       {{ look_bin_rows(vessels) }}
+      <div class="form-group">
+        <label>Water temp (°F)</label>
+        <input type="number" step="0.1" name="temp_f" placeholder="e.g. 72">
+      </div>
       {% if culture.kind != 'green_water' %}
       <div class="form-group">
         <label class="today-check">
@@ -754,36 +758,34 @@
         </label>
       </div>
       {% endif %}
-      <div id="edit-log-temp-block">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Temp kind</label>
-            <select name="temp_kind" onchange="syncEditLogForm(this.form)">
-              <option value="water">Water</option>
-              <option value="air">Air (bench)</option>
-            </select>
+      <div class="form-grid" id="edit-log-temp-grid">
+        <div class="form-group" id="edit-log-temp-kind-group">
+          <label>Temp kind</label>
+          <select name="temp_kind" onchange="syncEditLogForm(this.form)">
+            <option value="water">Water</option>
+            <option value="air">Air (bench)</option>
+          </select>
+        </div>
+        <div class="form-group" id="edit-log-temp-f-group">
+          <label id="edit-log-temp-f-label">Temp now (°F)</label>
+          <input type="number" step="0.1" name="temp_f">
+        </div>
+        <div class="form-group edit-log-air-only">
+          <label>Temp low–high</label>
+          <div style="display:flex;gap:.35rem">
+            <input type="number" step="0.1" name="temp_low" placeholder="low">
+            <input type="number" step="0.1" name="temp_high" placeholder="high">
           </div>
-          <div class="form-group">
-            <label>Temp now (°F)</label>
-            <input type="number" step="0.1" name="temp_f">
-          </div>
-          <div class="form-group edit-log-air-only">
-            <label>Temp low–high</label>
-            <div style="display:flex;gap:.35rem">
-              <input type="number" step="0.1" name="temp_low" placeholder="low">
-              <input type="number" step="0.1" name="temp_high" placeholder="high">
-            </div>
-          </div>
-          <div class="form-group edit-log-air-only">
-            <label>Relative humidity now %</label>
-            <input type="number" step="1" name="rh">
-          </div>
-          <div class="form-group edit-log-air-only">
-            <label>Humidity low–high</label>
-            <div style="display:flex;gap:.35rem">
-              <input type="number" step="1" name="rh_low" placeholder="low">
-              <input type="number" step="1" name="rh_high" placeholder="high">
-            </div>
+        </div>
+        <div class="form-group edit-log-air-only">
+          <label>Relative humidity now %</label>
+          <input type="number" step="1" name="rh">
+        </div>
+        <div class="form-group edit-log-air-only">
+          <label>Humidity low–high</label>
+          <div style="display:flex;gap:.35rem">
+            <input type="number" step="1" name="rh_low" placeholder="low">
+            <input type="number" step="1" name="rh_high" placeholder="high">
           </div>
         </div>
       </div>
@@ -929,13 +931,24 @@ function syncEditLogForm(form) {
   if (amount) amount.style.display = showAmount ? '' : 'none';
   setBlockDisabled(cups, !showCups);
   setBlockDisabled(amount, isHarvest ? !showAmount : false);
-  const temp = document.getElementById('edit-log-temp-block');
-  if (temp) temp.style.display = isTemp ? '' : 'none';
-  setBlockDisabled(temp, !isTemp);
+  const showTempF = isTemp || isLook;
+  const tempGrid = document.getElementById('edit-log-temp-grid');
+  if (tempGrid) tempGrid.style.display = showTempF ? '' : 'none';
+  const tempF = document.getElementById('edit-log-temp-f-group');
+  if (tempF) tempF.style.display = showTempF ? '' : 'none';
+  setBlockDisabled(tempF, !showTempF);
+  const tempFLabel = document.getElementById('edit-log-temp-f-label');
+  if (tempFLabel) tempFLabel.textContent = isLook ? 'Water temp (°F)' : 'Temp now (°F)';
+  const tempKindGroup = document.getElementById('edit-log-temp-kind-group');
+  if (tempKindGroup) tempKindGroup.style.display = isTemp ? '' : 'none';
+  setBlockDisabled(tempKindGroup, !isTemp);
   const tempKindEl = form.querySelector('[name=temp_kind]');
   const tempKind = tempKindEl ? tempKindEl.value : 'water';
   form.querySelectorAll('.edit-log-air-only').forEach(function (el) {
     el.style.display = (isTemp && tempKind === 'air') ? '' : 'none';
+    el.querySelectorAll('input, select, textarea').forEach(function (c) {
+      c.disabled = !(isTemp && tempKind === 'air');
+    });
   });
 }
 

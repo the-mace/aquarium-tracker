@@ -479,6 +479,13 @@ def _log_values_from_form(form, *, default_kind=None, existing=None):
         kind = "look"
     timestamp = _blank(form.get("timestamp")) if "timestamp" in form else existing.get("timestamp")
     notes = _blank(form.get("notes")) if "notes" in form else existing.get("notes")
+    temp_f = float_field("temp_f")
+    temp_kind = choice_field("temp_kind", TEMP_KINDS)
+    # Look logs only record water temp (no air/RH). Infer or clear temp_kind
+    # from whether a reading was given, so an empty look field doesn't leave
+    # a stray kind and a filled one doesn't need a hidden temp_kind input.
+    if kind == "look" and "temp_f" in form:
+        temp_kind = "water" if temp_f is not None else None
     return {
         "kind": kind,
         "timestamp": timestamp,
@@ -488,8 +495,8 @@ def _log_values_from_form(form, *, default_kind=None, existing=None):
         "tint": choice_field("tint", TINTS),
         "density": choice_field("density", DENSITIES),
         "guts": choice_field("guts", GUTS),
-        "temp_f": float_field("temp_f"),
-        "temp_kind": choice_field("temp_kind", TEMP_KINDS),
+        "temp_f": temp_f,
+        "temp_kind": temp_kind,
         "rh": float_field("rh"),
         "rh_low": float_field("rh_low"),
         "rh_high": float_field("rh_high"),
@@ -517,6 +524,55 @@ def _insert_log(conn, culture_id: int, *, kind: str, timestamp=None, food=None,
     log_id = cur.lastrowid
     _tag_log_vessels(conn, log_id, vessel_ids or [], vessel_details)
     return log_id
+
+
+def _log_calendar_date(timestamp: Optional[str]) -> date:
+    """Calendar day for last_done from a UTC log timestamp (server-local)."""
+    text = (timestamp or "").strip()
+    if len(text) >= 19:
+        try:
+            naive = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+            return naive.replace(tzinfo=timezone.utc).astimezone().date()
+        except ValueError:
+            pass
+    if len(text) >= 10:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            pass
+    return date.today()
+
+
+def _advance_logged_schedules(conn, culture_id: int, *, category: str,
+                              vessel_ids=None, timestamp=None):
+    """Bump last_done / next_due on matching logged schedule rows.
+
+    Station-wide tasks (no vessel_id) always match. Per-bin tasks match when
+    that bin was tagged. An older backdated log does not rewind last_done.
+    """
+    done = _log_calendar_date(timestamp)
+    done_s = done.isoformat()
+    tagged = set(vessel_ids or [])
+    rows = rows_to_list(conn.execute(
+        """SELECT * FROM culture_schedule
+           WHERE culture_id=? AND is_active=1 AND tracking_mode='logged'
+             AND category=?""",
+        (culture_id, category),
+    ).fetchall())
+    for sched in rows:
+        vid = sched.get("vessel_id")
+        if vid is not None and vid not in tagged:
+            continue
+        last = sched.get("last_done")
+        if last and last > done_s:
+            continue
+        next_due = compute_next_due(None, sched.get("interval_days"), done)
+        conn.execute(
+            """UPDATE culture_schedule
+               SET last_done=?, next_due=?, updated_at=datetime('now')
+               WHERE id=?""",
+            (done_s, next_due, sched["id"]),
+        )
 
 
 def _vessel_role_for_culture(culture) -> str:
@@ -993,6 +1049,11 @@ async def add_log(request: Request, culture_id: int):
             **values,
         )
         _apply_log_vessel_state(conn, kind, details)
+        if kind == "feed":
+            _advance_logged_schedules(
+                conn, culture_id, category="feeding",
+                vessel_ids=ids, timestamp=values["timestamp"],
+            )
         tank_event_id = None
         feed_log_id = None
         dest_kind = culture.get("destination_kind")
@@ -1012,6 +1073,10 @@ async def add_log(request: Request, culture_id: int):
                     amount_text=amount,
                     notes=feed_notes,
                     vessel_ids=dest_ids,
+                )
+                _advance_logged_schedules(
+                    conn, dest_cid, category="feeding",
+                    vessel_ids=dest_ids, timestamp=ts,
                 )
         elif (
             kind == "harvest"

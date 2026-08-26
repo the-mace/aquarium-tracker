@@ -113,6 +113,65 @@ def test_log_look_with_tint_and_density(client):
     assert "Thin" in page.text
 
 
+def test_look_form_includes_water_temp(client):
+    cid = _create_culture(client, kind="daphnia")
+    _add_vessel(client, cid, "Left")
+    page = client.get(f"/cultures/{cid}")
+    look_start = page.text.find('id="modal-look"')
+    look_end = page.text.find('id="modal-harvest"', look_start)
+    look_html = page.text[look_start:look_end]
+    assert "Water temp (°F)" in look_html
+    assert 'name="temp_f"' in look_html
+    assert 'name="temp_kind"' not in look_html
+    assert 'name="rh"' not in look_html
+
+
+def test_log_look_with_water_temp(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(v)],
+            f"density_{v}": "ok",
+            "temp_f": "72.5",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT kind, temp_f, temp_kind, rh FROM culture_log WHERE id=?",
+            (r.json()["id"],),
+        ).fetchone())
+    assert row["kind"] == "look"
+    assert row["temp_f"] == 72.5
+    assert row["temp_kind"] == "water"
+    assert row["rh"] is None
+    page = client.get(f"/cultures/{cid}")
+    assert "72.5°F" in page.text
+    assert " · water" in page.text
+
+
+def test_log_look_blank_water_temp_does_not_set_kind(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "look", "vessel_ids": [str(v)], "temp_f": ""},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT temp_f, temp_kind FROM culture_log WHERE id=?",
+            (r.json()["id"],),
+        ).fetchone())
+    assert row["temp_f"] is None
+    assert row["temp_kind"] is None
+
+
 def test_harvest_logs_tank_feeding_without_ai(client, make_tank, monkeypatch):
     called = []
     monkeypatch.setattr(_ai, "run_ai_analysis", lambda *a, **kw: called.append(a))
@@ -207,6 +266,249 @@ def test_schedule_mark_done_writes_log_and_next_due(client):
     assert sched["next_due"] == tomorrow
     assert dict(logs)["kind"] == "feed"
     assert tagged == [v]
+
+
+def test_log_feed_updates_feeding_schedule(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    sch_id = _add_logged_feeding(client, cid, last_done="2026-08-01", next_due="2026-08-02")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "feed", "food": "spirulina", "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    with get_db() as conn:
+        sched = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (sch_id,)
+        ).fetchone())
+    assert sched["last_done"] == today
+    assert sched["next_due"] == tomorrow
+    page = client.get(f"/cultures/{cid}")
+    assert "done today" in page.text
+    assert f"due {tomorrow}" in page.text
+
+
+def test_log_feed_uses_log_timestamp_date(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    sch_id = _add_logged_feeding(client, cid, last_done="2026-08-01", next_due="2026-08-02")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "feed",
+            "food": "spirulina",
+            "vessel_ids": [str(v)],
+            "timestamp": "2026-08-10 12:00:00",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        sched = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (sch_id,)
+        ).fetchone())
+    assert sched["last_done"] == "2026-08-10"
+    assert sched["next_due"] == "2026-08-11"
+
+
+def test_log_feed_does_not_rewind_newer_last_done(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    sch_id = _add_logged_feeding(client, cid, last_done=today, next_due=tomorrow)
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "feed",
+            "food": "spirulina",
+            "vessel_ids": [str(v)],
+            "timestamp": "2026-08-01 12:00:00",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        sched = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (sch_id,)
+        ).fetchone())
+    assert sched["last_done"] == today
+    assert sched["next_due"] == tomorrow
+
+
+def test_log_look_does_not_update_feeding_schedule(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    sch_id = _add_logged_feeding(client, cid, last_done="2026-08-01", next_due="2026-08-02")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "look", "vessel_ids": [str(v)], f"density_{v}": "ok"},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        sched = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (sch_id,)
+        ).fetchone())
+    assert sched["last_done"] == "2026-08-01"
+    assert sched["next_due"] == "2026-08-02"
+
+
+def test_log_feed_skips_reference_and_look_schedules(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    feed_id = _add_logged_feeding(client, cid, last_done="2026-08-01", next_due="2026-08-02")
+    r = client.post(
+        f"/cultures/{cid}/schedule",
+        data={
+            "category": "feeding",
+            "description": "Typical pinch",
+            "tracking_mode": "reference_only",
+        },
+        headers=JSON,
+    )
+    ref_id = r.json()["id"]
+    r = client.post(
+        f"/cultures/{cid}/schedule",
+        data={
+            "category": "look",
+            "description": "Check density",
+            "tracking_mode": "logged",
+            "interval_days": "1",
+            "last_done": "2026-08-01",
+            "next_due": "2026-08-02",
+        },
+        headers=JSON,
+    )
+    look_id = r.json()["id"]
+    # last_done/next_due on create are ignored — set via update
+    client.post(
+        f"/cultures/{cid}/schedule/{look_id}/update",
+        data={
+            "category": "look",
+            "description": "Check density",
+            "tracking_mode": "logged",
+            "interval_days": "1",
+            "last_done": "2026-08-01",
+            "next_due": "2026-08-02",
+        },
+        headers=JSON,
+    )
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "feed", "food": "spirulina", "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    today = date.today().isoformat()
+    with get_db() as conn:
+        feed = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (feed_id,)
+        ).fetchone())
+        ref = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (ref_id,)
+        ).fetchone())
+        look = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (look_id,)
+        ).fetchone())
+    assert feed["last_done"] == today
+    assert ref["last_done"] is None
+    assert look["last_done"] == "2026-08-01"
+    assert look["next_due"] == "2026-08-02"
+
+
+def test_log_feed_updates_only_tagged_bin_schedule(client):
+    cid = _create_culture(client, kind="daphnia")
+    left = _add_vessel(client, cid, "Left")
+    right = _add_vessel(client, cid, "Right")
+    r = client.post(
+        f"/cultures/{cid}/schedule",
+        data={
+            "category": "feeding",
+            "description": "Feed Left",
+            "tracking_mode": "logged",
+            "interval_days": "1",
+            "vessel_id": str(left),
+        },
+        headers=JSON,
+    )
+    left_sch = r.json()["id"]
+    r = client.post(
+        f"/cultures/{cid}/schedule",
+        data={
+            "category": "feeding",
+            "description": "Feed Right",
+            "tracking_mode": "logged",
+            "interval_days": "1",
+            "vessel_id": str(right),
+        },
+        headers=JSON,
+    )
+    right_sch = r.json()["id"]
+    for sch_id, desc, vid in (
+        (left_sch, "Feed Left", left),
+        (right_sch, "Feed Right", right),
+    ):
+        client.post(
+            f"/cultures/{cid}/schedule/{sch_id}/update",
+            data={
+                "category": "feeding",
+                "description": desc,
+                "tracking_mode": "logged",
+                "interval_days": "1",
+                "vessel_id": str(vid),
+                "last_done": "2026-08-01",
+                "next_due": "2026-08-02",
+            },
+            headers=JSON,
+        )
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "feed", "food": "spirulina", "vessel_ids": [str(left)]},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    today = date.today().isoformat()
+    with get_db() as conn:
+        left_row = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (left_sch,)
+        ).fetchone())
+        right_row = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (right_sch,)
+        ).fetchone())
+    assert left_row["last_done"] == today
+    assert right_row["last_done"] == "2026-08-01"
+    assert right_row["next_due"] == "2026-08-02"
+
+
+def test_harvest_feed_updates_destination_feeding_schedule(client, make_tank):
+    tid = make_tank(name="Fish Tank")
+    daph_cid = _create_culture(client, name="Daphnia", kind="daphnia", destination=f"tank:{tid}")
+    _add_vessel(client, daph_cid, "Daphnia 1")
+    sch_id = _add_logged_feeding(
+        client, daph_cid, last_done="2026-08-01", next_due="2026-08-02"
+    )
+    green_cid = _create_culture(
+        client, name="Green water", kind="green_water", destination=f"culture:{daph_cid}"
+    )
+    green = _add_vessel(client, green_cid, "Green A")
+    r = client.post(
+        f"/cultures/{green_cid}/log",
+        data={"kind": "harvest", "cups": "0.5", "vessel_ids": [str(green)]},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    with get_db() as conn:
+        sched = dict(conn.execute(
+            "SELECT last_done, next_due FROM culture_schedule WHERE id=?", (sch_id,)
+        ).fetchone())
+    assert sched["last_done"] == today
+    assert sched["next_due"] == tomorrow
 
 
 def test_today_shows_due_culture_item_and_mark_done(client):
@@ -428,6 +730,9 @@ def test_green_water_look_has_tint_not_guts(client):
     assert "Guts —" not in page.text
     assert 'name="guts"' not in page.text
     assert "Tint —" in page.text
+    look_start = page.text.find('id="modal-look"')
+    look_end = page.text.find('id="modal-harvest"', look_start)
+    assert "Water temp (°F)" in page.text[look_start:look_end]
 
 
 def test_look_hitchhikers_update_bin_overview(client):
@@ -713,6 +1018,61 @@ def test_update_log_look_per_bin_notes_and_timestamp(client):
     assert "openEditLog(" in page.text
     assert 'id="modal-edit-log"' in page.text
     assert f"/cultures/{cid}/log/{log_id}/update" not in page.text or "Edit" in page.text
+
+
+def test_update_log_look_water_temp(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Left")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(v)],
+            f"density_{v}": "ok",
+            "temp_f": "70",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    log_id = r.json()["id"]
+
+    r = client.post(
+        f"/cultures/{cid}/log/{log_id}/update",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(v)],
+            f"density_{v}": "ok",
+            "temp_f": "73.5",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT temp_f, temp_kind FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+    assert row["temp_f"] == 73.5
+    assert row["temp_kind"] == "water"
+    page = client.get(f"/cultures/{cid}")
+    assert "73.5°F" in page.text
+
+    r = client.post(
+        f"/cultures/{cid}/log/{log_id}/update",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(v)],
+            f"density_{v}": "ok",
+            "temp_f": "",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT temp_f, temp_kind FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+    assert row["temp_f"] is None
+    assert row["temp_kind"] is None
 
 
 def test_update_log_feed_food_and_blank_timestamp_keeps_existing(client):

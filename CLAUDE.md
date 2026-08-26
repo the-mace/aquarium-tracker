@@ -271,9 +271,9 @@ Management page: `/tanks/{id}/schedule`
 
 Not tanks. One **culture** has one purpose (Daphnia *or* green water — not mixed: green water is not fed). **Vessels** are the bins of that culture (role is inherited from culture kind, not chosen per bin). Harvest **destination** is a tank, another culture, or a specific bin. Sidebar next to Home Water (`/cultures`). Logged schedule items appear on **Today**.
 
-- Green-water cultures have no "Log feeding" action. Daphnia cultures do. Green-water **looks** record tint per bin (no guts). Daphnia looks record density + guts per bin.
+- Green-water cultures have no "Log feeding" action. Daphnia cultures do. Green-water **looks** record tint per bin (no guts). Daphnia looks record density + guts per bin. Look logs can also store **water temp** (`culture_log.temp_f`, `temp_kind=water`) — not bench air/RH; those stay on dedicated `kind=temp` rows.
 - Look/feed logs can store **per-bin** tint/density/guts/amount on `culture_log_vessels`.
-- Feeding schedule mark-done can **Hold** (look, `held=1`) instead of logging a feed.
+- Feeding schedule mark-done can **Hold** (look, `held=1`) instead of logging a feed. Logging a feeding (or a harvest that feeds another culture) also advances matching logged feeding schedules (`last_done` / `next_due`) — same as ✓ Fed. Per-bin tasks only move if that bin was tagged; a backdated log does not rewind a newer last_done.
 - Harvest is measured in **cups**. Destination tank → optional `events.event_type='feeding'` on that tank (no AI). Destination culture/bin → `feed` on the *destination* culture (`food=green_water`).
 - Cultures have `harvest_status` (don't harvest yet / OK) as a **status badge**, not a Next item. **Next** is the soonest upcoming logged `culture_schedule` task (`next_due` after today), falling back to a one-off `next_action` only when that text isn't harvest-status wording. Bench **air** readings (temp / relative humidity min–max) show on every culture page.
 - Logged culture schedule entries can edit **last done / next due**, same rules as tank maintenance.
