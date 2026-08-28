@@ -1561,6 +1561,7 @@ p { margin-bottom: .5rem; }
 .vessel-card-archived { opacity: .55; }
 .vessel-card-top { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
 .vessel-name { font-weight: 650; }
+.vessel-heat { color: var(--warning); }
 .vessel-card-actions { display: flex; gap: .35rem; margin-top: .4rem; }
 .vessel-last-obs { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .25rem; }
 .vessel-last-obs .meta-chip { font-size: .72rem; }

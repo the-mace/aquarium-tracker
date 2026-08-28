@@ -71,7 +71,18 @@
     <span>Lit (LEDs on this bin)</span>
   </label>
 </div>
-<div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+<div class="form-group">
+  <label class="today-check">
+    <input type="checkbox" name="is_heated" value="1">
+    <span>Heated (small heater on this bin)</span>
+  </label>
+</div>
+<div class="form-group">
+  <label>Heater set to (°F)</label>
+  <input type="number" step="1" name="heater_set_f" placeholder="e.g. 78">
+  <span class="muted" style="font-size:.75rem">What the heater is set to — measured water temp still goes on a look.</span>
+</div>
+<div class="form-group"><label>Notes</label><textarea name="notes" rows="2" placeholder="e.g. 10W hygger betta heater — growth experiment vs unheated right bin"></textarea></div>
 <div class="form-group">
   <label>Hitchhikers</label>
   <input type="text" name="hitchhikers" placeholder="e.g. 1 baby shrimp — leave in bin">
@@ -277,6 +288,11 @@
       </div>
       <div class="vessel-card-meta muted">
         {% if v.is_lit %}Lit{% else %}Unlit{% endif %}
+        {% if v.is_heated %}
+          · <span class="vessel-heat">Heated{% if v.heater_set_f is not none %} {{ v.heater_set_f }}°F{% endif %}</span>
+        {% else %}
+          · Unheated
+        {% endif %}
         {% if v.volume_gallons %} · {{ v.volume_gallons }}g{% endif %}
         {% if v.status != 'active' %} · {{ v.status }}{% endif %}
       </div>
@@ -316,7 +332,9 @@
         <button class="btn btn-xs btn-ghost" type="button" onclick="openEditVessel(this)"
                 data-id="{{ v.id }}" data-name="{{ v.name }}"
                 data-volume="{{ v.volume_gallons if v.volume_gallons is not none else '' }}"
-                data-lit="{{ v.is_lit }}" data-status="{{ v.status }}"
+                data-lit="{{ v.is_lit }}" data-heated="{{ v.is_heated }}"
+                data-heater-set="{{ v.heater_set_f if v.heater_set_f is not none else '' }}"
+                data-status="{{ v.status }}"
                 data-sort="{{ v.sort_order }}"
                 data-notes="{{ (v.notes or '')|e }}"
                 data-hitchhikers="{{ (v.hitchhikers or '')|e }}">Edit</button>
@@ -815,6 +833,8 @@ function openEditVessel(btn) {
   f.querySelector('[name=name]').value = btn.dataset.name || '';
   f.querySelector('[name=volume_gallons]').value = btn.dataset.volume || '';
   f.querySelector('[name=is_lit]').checked = btn.dataset.lit === '1';
+  f.querySelector('[name=is_heated]').checked = btn.dataset.heated === '1';
+  f.querySelector('[name=heater_set_f]').value = btn.dataset.heaterSet || '';
   f.querySelector('[name=status]').value = btn.dataset.status || 'active';
   f.querySelector('[name=sort_order]').value = btn.dataset.sort || '0';
   f.querySelector('[name=notes]').value = btn.dataset.notes || '';

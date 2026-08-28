@@ -139,6 +139,10 @@ def _choice(value: Optional[str], allowed) -> Optional[str]:
     return text
 
 
+def _flag(value: Optional[str]) -> int:
+    return 1 if value in ("1", "on", "true") else 0
+
+
 def _fmt_cups(n: float) -> str:
     if float(n) == int(n):
         shown = str(int(n))
@@ -669,7 +673,7 @@ async def list_cultures(request: Request):
         for culture in cultures:
             _with_destination(culture)
             culture["vessels"] = rows_to_list(conn.execute(
-                """SELECT id, name, role, status, is_lit
+                """SELECT id, name, role, status, is_lit, is_heated, heater_set_f
                    FROM culture_vessels WHERE culture_id=?
                    ORDER BY sort_order, id""",
                 (culture["id"],),
@@ -872,6 +876,8 @@ async def add_vessel(
     name: str = Form(...),
     volume_gallons: Optional[str] = Form(None),
     is_lit: Optional[str] = Form(None),
+    is_heated: Optional[str] = Form(None),
+    heater_set_f: Optional[str] = Form(None),
     status: str = Form("active"),
     notes: Optional[str] = Form(None),
     hitchhikers: Optional[str] = Form(None),
@@ -881,7 +887,9 @@ async def add_vessel(
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
     status = _choice(status, VESSEL_STATUSES) or "active"
-    lit = 1 if is_lit in ("1", "on", "true") else 0
+    lit = _flag(is_lit)
+    heated = _flag(is_heated)
+    set_f = _int_or_none(heater_set_f)
     with get_db() as conn:
         culture = _culture_or_404(conn, culture_id)
         role = _vessel_role_for_culture(culture)
@@ -894,10 +902,11 @@ async def add_vessel(
             order = row["n"]
         cur = conn.execute(
             """INSERT INTO culture_vessels
-               (culture_id, name, role, volume_gallons, is_lit, status, sort_order, notes, hitchhikers)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (culture_id, name, role, _float_or_none(volume_gallons), lit, status, order,
-             _blank(notes), _blank(hitchhikers)),
+               (culture_id, name, role, volume_gallons, is_lit, is_heated, heater_set_f,
+                status, sort_order, notes, hitchhikers)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (culture_id, name, role, _float_or_none(volume_gallons), lit, heated, set_f,
+             status, order, _blank(notes), _blank(hitchhikers)),
         )
         vessel_id = cur.lastrowid
     if _wants_json(request):
@@ -913,6 +922,8 @@ async def update_vessel(
     name: str = Form(...),
     volume_gallons: Optional[str] = Form(None),
     is_lit: Optional[str] = Form(None),
+    is_heated: Optional[str] = Form(None),
+    heater_set_f: Optional[str] = Form(None),
     status: str = Form("active"),
     notes: Optional[str] = Form(None),
     hitchhikers: Optional[str] = Form(None),
@@ -922,7 +933,9 @@ async def update_vessel(
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
     status = _choice(status, VESSEL_STATUSES) or "active"
-    lit = 1 if is_lit in ("1", "on", "true") else 0
+    lit = _flag(is_lit)
+    heated = _flag(is_heated)
+    set_f = _int_or_none(heater_set_f)
     with get_db() as conn:
         culture = _culture_or_404(conn, culture_id)
         role = _vessel_role_for_culture(culture)
@@ -937,10 +950,10 @@ async def update_vessel(
             order = existing["sort_order"]
         conn.execute(
             """UPDATE culture_vessels
-               SET name=?, role=?, volume_gallons=?, is_lit=?, status=?, sort_order=?,
-                   notes=?, hitchhikers=?, updated_at=datetime('now')
+               SET name=?, role=?, volume_gallons=?, is_lit=?, is_heated=?, heater_set_f=?,
+                   status=?, sort_order=?, notes=?, hitchhikers=?, updated_at=datetime('now')
                WHERE id=?""",
-            (name, role, _float_or_none(volume_gallons), lit, status, order,
+            (name, role, _float_or_none(volume_gallons), lit, heated, set_f, status, order,
              _blank(notes), _blank(hitchhikers), vessel_id),
         )
     if _wants_json(request):

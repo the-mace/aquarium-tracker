@@ -29,7 +29,7 @@
     {% if c.vessels %}
     <div class="culture-vessel-chips">
       {% for v in c.vessels %}
-      <span class="badge {% if v.status != 'active' %}badge-inactive{% else %}badge-role-{{ c.kind }}{% endif %}">{{ v.name }}</span>
+      <span class="badge {% if v.status != 'active' %}badge-inactive{% else %}badge-role-{{ c.kind }}{% endif %}">{{ v.name }}{% if v.is_heated %} · heated{% if v.heater_set_f is not none %} {{ v.heater_set_f }}°F{% endif %}{% endif %}</span>
       {% endfor %}
     </div>
     {% else %}

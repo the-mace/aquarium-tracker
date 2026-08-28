@@ -474,6 +474,8 @@ def init_db():
                 role TEXT NOT NULL CHECK(role IN ('daphnia','green_water','other')),
                 volume_gallons REAL,
                 is_lit INTEGER DEFAULT 0,
+                is_heated INTEGER DEFAULT 0,
+                heater_set_f INTEGER,
                 status TEXT DEFAULT 'active' CHECK(status IN ('active','crashed','archived')),
                 sort_order INTEGER DEFAULT 0,
                 notes TEXT,
@@ -579,6 +581,10 @@ def init_db():
             vess_cols = {row[1] for row in conn.execute("PRAGMA table_info(culture_vessels)").fetchall()}
             if vess_cols and "hitchhikers" not in vess_cols:
                 conn.execute("ALTER TABLE culture_vessels ADD COLUMN hitchhikers TEXT")
+            if vess_cols and "is_heated" not in vess_cols:
+                conn.execute("ALTER TABLE culture_vessels ADD COLUMN is_heated INTEGER DEFAULT 0")
+            if vess_cols and "heater_set_f" not in vess_cols:
+                conn.execute("ALTER TABLE culture_vessels ADD COLUMN heater_set_f INTEGER")
             log_cols = {row[1] for row in conn.execute("PRAGMA table_info(culture_log)").fetchall()}
             if log_cols:
                 if "temp_kind" not in log_cols:

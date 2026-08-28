@@ -103,6 +103,8 @@ def test_system_prompt_includes_multi_turn_style_rules():
     assert "Do not restate" in prompt
     assert "meta filler" in prompt
     assert "natural continuation" in prompt
+    assert "named products" in prompt
+    assert "do not refuse" in prompt
 
 
 def test_chat_uses_query_db_tool_and_answers(client, tank_id, monkeypatch):

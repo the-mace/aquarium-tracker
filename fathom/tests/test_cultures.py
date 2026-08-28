@@ -62,6 +62,69 @@ def test_bin_role_follows_culture_kind(client):
     assert row["role"] == "green_water"
 
 
+def test_heated_bin_shows_setpoint_on_card_and_list(client):
+    cid = _create_culture(client, "Daphnia", kind="daphnia")
+    _add_vessel(client, cid, "Left", is_heated="1", heater_set_f="78")
+    _add_vessel(client, cid, "Right")
+
+    with get_db() as conn:
+        rows = {
+            row["name"]: dict(row)
+            for row in conn.execute(
+                "SELECT name, is_heated, heater_set_f FROM culture_vessels WHERE culture_id=?",
+                (cid,),
+            )
+        }
+    assert rows["Left"]["is_heated"] == 1
+    assert rows["Left"]["heater_set_f"] == 78
+    assert rows["Right"]["is_heated"] == 0
+    assert rows["Right"]["heater_set_f"] is None
+
+    page = client.get(f"/cultures/{cid}")
+    assert page.status_code == 200
+    assert "Heated" in page.text
+    assert "78°F" in page.text
+    assert "Unheated" in page.text
+    assert 'name="is_heated"' in page.text
+    assert 'name="heater_set_f"' in page.text
+
+    listing = client.get("/cultures")
+    assert listing.status_code == 200
+    assert "Left · heated 78°F" in listing.text
+    assert "Right · heated" not in listing.text
+
+
+def test_update_vessel_heater_setpoint(client):
+    cid = _create_culture(client, "Green", kind="green_water")
+    vid = _add_vessel(client, cid, "Left", is_lit="1")
+    r = client.post(
+        f"/cultures/{cid}/vessels/{vid}/update",
+        data={
+            "name": "Left",
+            "is_lit": "1",
+            "is_heated": "1",
+            "heater_set_f": "76",
+            "status": "active",
+            "notes": "10W hygger betta heater — growth experiment vs right bin",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 200
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT is_heated, heater_set_f, notes FROM culture_vessels WHERE id=?",
+            (vid,),
+        ).fetchone())
+    assert row["is_heated"] == 1
+    assert row["heater_set_f"] == 76
+    assert "10W hygger" in row["notes"]
+
+    page = client.get(f"/cultures/{cid}")
+    assert "Heated" in page.text
+    assert "76°F" in page.text
+    assert "10W hygger betta heater" in page.text
+
+
 def test_log_feed_tags_two_vessels(client):
     cid = _create_culture(client)
     v1 = _add_vessel(client, cid, "Daphnia 1")

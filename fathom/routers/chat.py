@@ -77,7 +77,10 @@ _CONVERSATION_STYLE = (
     "\"Based on everything above\", \"Here is a comprehensive answer\"). Jump straight into the "
     "answer.\n"
     "- Prefer a natural continuation over a standalone re-briefing. Use snapshot data when it "
-    "changes the answer; do not re-list inventory or re-walk prior reasoning by default."
+    "changes the answer; do not re-list inventory or re-walk prior reasoning by default.\n"
+    "- Equipment and named products (heaters, lights, wattage vs volume) are in scope. You cannot "
+    "browse listings or verify a SKU; do not refuse or say that is outside what you can do. "
+    "Answer feasibility from general knowledge plus the snapshot."
 )
 
 
@@ -321,7 +324,10 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         "answer.\n"
         "- Prefer a natural continuation over a standalone re-briefing. Use snapshot data when it "
         "changes the answer; do not re-list inventory, re-summarize water params, or re-walk prior "
-        "reasoning by default."
+        "reasoning by default.\n"
+        "- Equipment and named products (heaters, lights, wattage vs volume) are in scope. You cannot "
+        "browse listings or verify a SKU; do not refuse or say that is outside what you can do. "
+        "Answer feasibility from general knowledge plus the snapshot."
     )
     return "\n".join(parts)
 
@@ -515,6 +521,13 @@ def _fmt_culture_station(station, current_id=None):
         for v in vessels:
             bits = [v.get("name") or "bin"]
             bits.append("lit" if v.get("is_lit") else "unlit")
+            if v.get("is_heated"):
+                heat = "heated"
+                if v.get("heater_set_f") is not None:
+                    heat += f" {v['heater_set_f']}°F"
+                bits.append(heat)
+            else:
+                bits.append("unheated")
             if v.get("volume_gallons") is not None:
                 bits.append(f"{v['volume_gallons']}g")
             if v.get("status") and v["status"] != "active":
@@ -598,6 +611,9 @@ def _build_culture_system_prompt(current, stations, bench_air=None):
         "culture or bin. Green-water cultures are not fed; Daphnia cultures are.",
         "Do not discuss display tanks, tank water chemistry, tank livestock, or home-water tests. "
         "If asked about a tank, say this chat is for cultures only.",
+        "Equipment for these stations is in scope (heaters, lights, named products, wattage vs "
+        "bin volume). You cannot look up listings; still answer from general knowledge and the "
+        "snapshot. Do not refuse a product question as out of scope.",
         f"\nThe user is currently viewing: {current.get('name')} (id={current.get('id')}, {kind}).",
         "\nLatest bench air (shared culture-station environment, not a tank):\n"
         + _fmt_bench_air(bench_air),
