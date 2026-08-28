@@ -167,6 +167,22 @@ def _is_harvest_status_text(text: Optional[str]) -> bool:
     return norm in labels
 
 
+def _schedule_bin_label(sched):
+    """Tag for Today / Due: the named bin, or 'all bins' for station-wide tasks."""
+    name = (sched.get("vessel_name") or "").strip()
+    if name:
+        return name
+    if sched.get("vessel_id"):
+        return "bin"
+    return "all bins"
+
+
+def _with_schedule_bin_labels(rows):
+    for s in rows or []:
+        s["bin_label"] = _schedule_bin_label(s)
+    return rows
+
+
 def _culture_next(culture, schedule, today_date: str):
     """Soonest upcoming logged task, else a genuine one-off next_action.
 
@@ -185,6 +201,8 @@ def _culture_next(culture, schedule, today_date: str):
                 "text": (s.get("description") or "").strip(),
                 "date": due,
                 "source": "schedule",
+                "bin_label": _schedule_bin_label(s),
+                "vessel_name": (s.get("vessel_name") or "").strip() or None,
             })
     action = (culture.get("next_action") or "").strip()
     if action and not _is_harvest_status_text(action):
@@ -606,12 +624,14 @@ def load_today_cultures(conn, today_date: str):
     ).fetchall())
     visible = []
     for culture in cultures:
-        schedule = rows_to_list(conn.execute(
-            """SELECT * FROM culture_schedule
-               WHERE culture_id=? AND is_active=1
-               ORDER BY category, description""",
+        schedule = _with_schedule_bin_labels(rows_to_list(conn.execute(
+            """SELECT s.*, v.name AS vessel_name
+               FROM culture_schedule s
+               LEFT JOIN culture_vessels v ON v.id = s.vessel_id
+               WHERE s.culture_id=? AND s.is_active=1
+               ORDER BY s.category, s.description""",
             (culture["id"],),
-        ).fetchall())
+        ).fetchall()))
         culture["today_schedule"] = [
             s for s in schedule if s.get("tracking_mode") == "reference_only"
         ]
@@ -678,11 +698,13 @@ async def list_cultures(request: Request):
                    ORDER BY sort_order, id""",
                 (culture["id"],),
             ).fetchall())
-            schedule = rows_to_list(conn.execute(
-                """SELECT * FROM culture_schedule
-                   WHERE culture_id=? AND is_active=1""",
+            schedule = _with_schedule_bin_labels(rows_to_list(conn.execute(
+                """SELECT s.*, v.name AS vessel_name
+                   FROM culture_schedule s
+                   LEFT JOIN culture_vessels v ON v.id = s.vessel_id
+                   WHERE s.culture_id=? AND s.is_active=1""",
                 (culture["id"],),
-            ).fetchall())
+            ).fetchall()))
             culture["next_item"] = _culture_next(culture, schedule, today_date)
     return templates.TemplateResponse(request, "cultures/list.html", {
         "cultures": cultures,
@@ -763,14 +785,14 @@ async def culture_detail(request: Request, culture_id: int):
         ).fetchall())
         _attach_log_bins(conn, log_rows)
         bench_air = _latest_bench_air(conn)
-        schedule = rows_to_list(conn.execute(
+        schedule = _with_schedule_bin_labels(rows_to_list(conn.execute(
             """SELECT s.*, v.name AS vessel_name
                FROM culture_schedule s
                LEFT JOIN culture_vessels v ON v.id = s.vessel_id
                WHERE s.culture_id = ?
                ORDER BY s.tracking_mode DESC, s.category, s.description""",
             (culture_id,),
-        ).fetchall())
+        ).fetchall()))
         dest_tanks, dest_cultures, dest_vessels = _destination_options(conn, culture_id)
     due_items = [
         s for s in schedule

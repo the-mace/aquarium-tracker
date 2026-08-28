@@ -107,6 +107,7 @@
       {% for s in culture.today_schedule %}
       <div class="today-item">
         <span class="badge badge-cat">{{ s.category }}</span>
+        {% if s.bin_label %}<span class="badge badge-bin">{{ s.bin_label }}</span>{% endif %}
         <div class="today-item-text">
           <span>{{ s.description }}</span>
           {% if s.notes %}
@@ -127,7 +128,10 @@
           <label class="today-check today-check-done">
             <input type="checkbox" checked disabled>
             <div class="today-item-text">
-              <span class="maint-desc maint-desc-done">{{ m.description }}</span>
+              <div class="today-item-line">
+                {% if m.bin_label %}<span class="badge badge-bin">{{ m.bin_label }}</span>{% endif %}
+                <span class="maint-desc maint-desc-done">{{ m.description }}</span>
+              </div>
               {% if m.notes %}
               <div class="muted today-item-notes">{{ m.notes }}</div>
               {% endif %}
@@ -144,7 +148,10 @@
           <label class="today-check">
             <input type="checkbox" onchange="this.form.requestSubmit()">
             <div class="today-item-text">
-              <span class="maint-desc">{{ m.description }}</span>
+              <div class="today-item-line">
+                {% if m.bin_label %}<span class="badge badge-bin">{{ m.bin_label }}</span>{% endif %}
+                <span class="maint-desc">{{ m.description }}</span>
+              </div>
               {% if m.notes %}
               <div class="muted today-item-notes">{{ m.notes }}</div>
               {% endif %}
@@ -176,6 +183,7 @@
     <div class="today-section">
       <div class="today-item">
         <span class="badge badge-warning">next</span>
+        {% if culture.next_item.bin_label %}<span class="badge badge-bin">{{ culture.next_item.bin_label }}</span>{% endif %}
         <div class="today-item-text">
           <span>{{ culture.next_item.text }}</span>
           {% if culture.next_item.date %}

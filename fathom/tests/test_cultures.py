@@ -1280,33 +1280,30 @@ def test_culture_nav_on_pages(client):
     assert "New culture" in r.text
 
 
-def _add_logged_feeding(client, culture_id, description="Feed Daphnia", last_done=None, next_due=None):
-    r = client.post(
-        f"/cultures/{culture_id}/schedule",
-        data={
-            "category": "feeding",
-            "description": description,
-            "tracking_mode": "logged",
-            "interval_days": "1",
-        },
-        headers=JSON,
-    )
+def _add_logged_feeding(
+    client, culture_id, description="Feed Daphnia", last_done=None, next_due=None,
+    vessel_id=None, interval_days="1",
+):
+    data = {
+        "category": "feeding",
+        "description": description,
+        "tracking_mode": "logged",
+        "interval_days": interval_days,
+    }
+    if vessel_id is not None:
+        data["vessel_id"] = str(vessel_id)
+    r = client.post(f"/cultures/{culture_id}/schedule", data=data, headers=JSON)
     assert r.status_code == 201, r.text
     sch_id = r.json()["id"]
     if last_done is not None or next_due is not None:
-        data = {
-            "category": "feeding",
-            "description": description,
-            "tracking_mode": "logged",
-            "interval_days": "1",
-        }
+        update = dict(data)
         if last_done is not None:
-            data["last_done"] = last_done
+            update["last_done"] = last_done
         if next_due is not None:
-            data["next_due"] = next_due
+            update["next_due"] = next_due
         r = client.post(
             f"/cultures/{culture_id}/schedule/{sch_id}/update",
-            data=data,
+            data=update,
             headers=JSON,
         )
         assert r.status_code == 200, r.text
@@ -1380,3 +1377,48 @@ def test_due_today_feeding_is_due_not_next(client):
     assert "Feed Daphnia" in page.text
     assert "not yet done" in page.text
     assert "Next: Feed Daphnia" not in page.text
+
+
+def test_today_tags_bins_on_per_bin_and_station_wide_schedule(client):
+    """Left due today, Right upcoming, station-wide look: each item shows its bin tag."""
+    today = date.today().isoformat()
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    cid = _create_culture(client, name="Live Food", kind="daphnia")
+    left = _add_vessel(client, cid, "Left")
+    right = _add_vessel(client, cid, "Right")
+    _add_logged_feeding(
+        client, cid, description="Feed Daphnia", vessel_id=left,
+        last_done=yesterday, next_due=today, interval_days="1",
+    )
+    _add_logged_feeding(
+        client, cid, description="Feed Daphnia", vessel_id=right,
+        last_done=yesterday, next_due=tomorrow, interval_days="2",
+    )
+    r = client.post(
+        f"/cultures/{cid}/schedule",
+        data={
+            "category": "look",
+            "description": "Check tint",
+            "tracking_mode": "reference_only",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201, r.text
+
+    page = client.get("/today")
+    assert page.status_code == 200
+    html = page.text
+    assert "Live Food" in html
+    assert html.count('<span class="badge badge-bin">') == 3
+    assert '<span class="badge badge-bin">Left</span>' in html
+    assert '<span class="badge badge-bin">Right</span>' in html
+    assert '<span class="badge badge-bin">all bins</span>' in html
+    assert "badge-warning" in html  # Right's feeding is Next, not due today
+
+    detail = client.get(f"/cultures/{cid}")
+    assert detail.status_code == 200
+    assert '<span class="badge badge-bin">Left</span>' in detail.text
+    assert "Next: Feed Daphnia · Right" in detail.text
+    listing = client.get("/cultures")
+    assert "Next: Feed Daphnia · Right" in listing.text

@@ -36,7 +36,7 @@
     <p class="tank-card-notes">No bins yet</p>
     {% endif %}
     {% if c.next_item %}
-    <p class="culture-next-action">Next: {{ c.next_item.text }}{% if c.next_item.date %} · {{ c.next_item.date }}{% endif %}</p>
+    <p class="culture-next-action">Next: {{ c.next_item.text }}{% if c.next_item.vessel_name %} · {{ c.next_item.vessel_name }}{% endif %}{% if c.next_item.date %} · {{ c.next_item.date }}{% endif %}</p>
     {% endif %}
     {% if c.isolation_notes %}
     <p class="tank-card-notes">{{ c.isolation_notes[:80] }}{% if c.isolation_notes|length > 80 %}…{% endif %}</p>

@@ -238,7 +238,7 @@
     {% endif %}
     {% if next_item %}
     <p class="culture-next-action{% if next_item.date and next_item.date <= today_date %} culture-next-action-due{% endif %}">
-      Next: {{ next_item.text }}{% if next_item.date %} · {{ next_item.date }}{% endif %}
+      Next: {{ next_item.text }}{% if next_item.vessel_name %} · {{ next_item.vessel_name }}{% endif %}{% if next_item.date %} · {{ next_item.date }}{% endif %}
     </p>
     {% endif %}
     {% if bench_air %}
@@ -363,7 +363,10 @@
         <label class="today-check today-check-done">
           <input type="checkbox" checked disabled>
           <div class="today-item-text">
-            <span class="maint-desc maint-desc-done">{{ m.description }}</span>
+            <div class="today-item-line">
+              {% if m.bin_label %}<span class="badge badge-bin">{{ m.bin_label }}</span>{% endif %}
+              <span class="maint-desc maint-desc-done">{{ m.description }}</span>
+            </div>
           </div>
         </label>
         <span class="maint-due maint-done">✓ done today</span>
@@ -376,7 +379,10 @@
         <label class="today-check">
           <input type="checkbox" onchange="this.form.requestSubmit()">
           <div class="today-item-text">
-            <span class="maint-desc">{{ m.description }}</span>
+            <div class="today-item-line">
+              {% if m.bin_label %}<span class="badge badge-bin">{{ m.bin_label }}</span>{% endif %}
+              <span class="maint-desc">{{ m.description }}</span>
+            </div>
             {% if m.notes %}
             <div class="muted today-item-notes">{{ m.notes }}</div>
             {% endif %}

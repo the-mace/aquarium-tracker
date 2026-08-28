@@ -209,6 +209,7 @@ p { margin-bottom: .5rem; }
 .badge-archived    { background: rgba(148,163,184,.1); color: var(--muted); }
 .badge-warning     { background: rgba(245,158,11,.15); color: var(--warning); }
 .badge-cat         { background: rgba(56,189,248,.1); color: var(--accent); border: 1px solid rgba(56,189,248,.2); }
+.badge-bin         { background: rgba(167,139,250,.15); color: #a78bfa; border: 1px solid rgba(167,139,250,.25); flex-shrink: 0; }
 .badge-tod         { font-size: .65rem; font-weight: 700; letter-spacing: .04em; min-width: 1.75rem; text-align: center; flex-shrink: 0; }
 .badge-tod-am      { background: rgba(251,191,36,.15); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
 .badge-tod-pm      { background: rgba(129,140,248,.15); color: #a5b4fc; border: 1px solid rgba(129,140,248,.3); }
@@ -1333,8 +1334,9 @@ p { margin-bottom: .5rem; }
 .today-tank-panel .panel-header h3 { text-transform: none; letter-spacing: normal; font-size: 1rem; }
 .today-tank-panel .panel-header h3 a { color: var(--text); text-decoration: none; }
 .today-section { display: flex; flex-direction: column; gap: .4rem; }
-.today-item { display: flex; align-items: flex-start; gap: .5rem; font-size: .85rem; color: var(--text); }
+.today-item { display: flex; align-items: flex-start; gap: .5rem; font-size: .85rem; color: var(--text); flex-wrap: wrap; }
 .today-item-text { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.today-item-line { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .today-item-notes { font-size: .78rem; }
 .today-maint-row { width: 100%; }
 .today-maint-row .maint-row { align-items: flex-start; }
