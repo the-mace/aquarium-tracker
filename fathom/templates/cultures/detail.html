@@ -9,7 +9,7 @@
 </div>
 {% endmacro %}
 
-{% macro vessel_checks(vessels, default_mode) %}
+{% macro vessel_checks(vessels, default_mode, water_temp=false) %}
 <div class="form-group">
   <label>Bins</label>
   <div class="bin-obs-list">
@@ -18,11 +18,16 @@
                   or (default_mode == 'all_active' and v.status == 'active')
                   or (default_mode == 'culture' and v.status == 'active') %}
     <div class="bin-obs-block{% if v.status != 'active' %} muted{% endif %}">
-      <label class="vessel-check">
-        <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if checked %}checked{% endif %}>
-        <span>{{ v.name }}</span>
-        {% if v.status != 'active' %}<span class="muted">({{ v.status }})</span>{% endif %}
-      </label>
+      <div class="bin-obs-row">
+        <label class="vessel-check">
+          <input type="checkbox" name="vessel_ids" value="{{ v.id }}" {% if checked %}checked{% endif %}>
+          <span>{{ v.name }}</span>
+          {% if v.status != 'active' %}<span class="muted">({{ v.status }})</span>{% endif %}
+        </label>
+        {% if water_temp %}
+        <span class="other-water-only" style="display:none">{{ bin_temp_input(v) }}</span>
+        {% endif %}
+      </div>
       {{ bin_standing_fields(v) }}
     </div>
     {% else %}
@@ -110,6 +115,10 @@
 </select>
 {% endmacro %}
 
+{% macro bin_temp_input(v) %}
+<input type="number" step="0.1" name="temp_{{ v.id }}" placeholder="Temp °F" class="bin-temp-input" title="Water temp (°F) for this bin">
+{% endmacro %}
+
 {% macro look_bin_rows(vessels) %}
 <div class="form-group">
   <label>Bins</label>
@@ -127,6 +136,7 @@
           {{ density_select('density_' ~ v.id) }}
           {{ guts_select('guts_' ~ v.id) }}
         {% endif %}
+        {{ bin_temp_input(v) }}
       </div>
       {{ bin_standing_fields(v) }}
     </div>
@@ -501,11 +511,12 @@
           {% if item.bins %}
           <div class="cl-bin-details">
             {% for b in item.bins %}
-              {% if b.tint or b.density or b.guts or b.amount_text or b.notes %}
+              {% if b.tint or b.density or b.guts or b.amount_text or b.notes or b.temp_f is not none %}
               <span>{{ b.vessel_name }}:
                 {%- if b.tint %} {{ tint_labels.get(b.tint, b.tint) }}{% endif %}
                 {%- if b.density %} {{ density_labels.get(b.density, b.density) }}{% endif %}
                 {%- if b.guts %} guts {{ guts_labels.get(b.guts, b.guts) }}{% endif %}
+                {%- if b.temp_f is not none %} {{ b.temp_f }}°F{% endif %}
                 {%- if b.amount_text %} {{ b.amount_text }}{% endif %}
                 {%- if b.notes %} {{ b.notes }}{% endif %}
               </span>
@@ -572,10 +583,6 @@
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
       <input type="hidden" name="kind" value="look">
       {{ look_bin_rows(vessels) }}
-      <div class="form-group">
-        <label>Water temp (°F)</label>
-        <input type="number" step="0.1" name="temp_f" placeholder="e.g. 72">
-      </div>
       {% if culture.kind != 'green_water' %}
       <div class="form-group">
         <label class="today-check">
@@ -628,7 +635,7 @@
   <div class="modal-box">
     <div class="modal-header"><h3>Other log</h3><button class="modal-close" type="button" onclick="closeModal('modal-other')">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
-      {{ vessel_checks(vessels, 'none') }}
+      {{ vessel_checks(vessels, 'none', water_temp=true) }}
       <div class="form-grid">
         <div class="form-group">
           <label>Kind</label>
@@ -650,7 +657,7 @@
             <option value="air">Air (bench)</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="other-temp-f-group">
           <label>Temp now (°F)</label>
           <input type="number" step="0.1" name="temp_f">
         </div>
@@ -742,6 +749,9 @@
                   {{ density_select('density_' ~ v.id) }}
                   {{ guts_select('guts_' ~ v.id) }}
                 {% endif %}
+              </span>
+              <span class="edit-log-water-temp">
+                {{ bin_temp_input(v) }}
               </span>
               <span class="edit-log-feed">
                 <input type="text" name="amount_{{ v.id }}" placeholder="amount for this bin">
@@ -854,9 +864,22 @@ function syncOtherLogForm(form) {
   const tempKind = form.querySelector('[name=temp_kind]').value;
   const cups = form.querySelector('#other-cups-group');
   if (cups) cups.style.display = kind === 'seed' ? '' : 'none';
+  const water = kind === 'temp' && tempKind === 'water';
+  const air = kind === 'temp' && tempKind === 'air';
   form.querySelectorAll('.other-air-only').forEach(function (el) {
-    el.style.display = (kind === 'temp' && tempKind === 'air') ? '' : 'none';
+    el.style.display = air ? '' : 'none';
   });
+  form.querySelectorAll('.other-water-only').forEach(function (el) {
+    el.style.display = water ? '' : 'none';
+    el.querySelectorAll('input, select, textarea').forEach(function (c) {
+      c.disabled = !water;
+    });
+  });
+  const tempNow = document.getElementById('other-temp-f-group');
+  if (tempNow) {
+    tempNow.style.display = water ? 'none' : '';
+    tempNow.querySelectorAll('input').forEach(function (c) { c.disabled = water; });
+  }
 }
 document.addEventListener('DOMContentLoaded', function () {
   const otherForm = document.querySelector('#modal-other form');
@@ -957,19 +980,26 @@ function syncEditLogForm(form) {
   if (amount) amount.style.display = showAmount ? '' : 'none';
   setBlockDisabled(cups, !showCups);
   setBlockDisabled(amount, isHarvest ? !showAmount : false);
-  const showTempF = isTemp || isLook;
+  const tempKindEl = form.querySelector('[name=temp_kind]');
+  const tempKind = tempKindEl ? tempKindEl.value : 'water';
+  const waterOnBins = isLook || (isTemp && tempKind === 'water');
+  const showCultureTempF = isTemp && tempKind === 'air';
   const tempGrid = document.getElementById('edit-log-temp-grid');
-  if (tempGrid) tempGrid.style.display = showTempF ? '' : 'none';
+  if (tempGrid) tempGrid.style.display = isTemp ? '' : 'none';
   const tempF = document.getElementById('edit-log-temp-f-group');
-  if (tempF) tempF.style.display = showTempF ? '' : 'none';
-  setBlockDisabled(tempF, !showTempF);
+  if (tempF) tempF.style.display = showCultureTempF ? '' : 'none';
+  setBlockDisabled(tempF, !showCultureTempF);
   const tempFLabel = document.getElementById('edit-log-temp-f-label');
-  if (tempFLabel) tempFLabel.textContent = isLook ? 'Water temp (°F)' : 'Temp now (°F)';
+  if (tempFLabel) tempFLabel.textContent = 'Temp now (°F)';
   const tempKindGroup = document.getElementById('edit-log-temp-kind-group');
   if (tempKindGroup) tempKindGroup.style.display = isTemp ? '' : 'none';
   setBlockDisabled(tempKindGroup, !isTemp);
-  const tempKindEl = form.querySelector('[name=temp_kind]');
-  const tempKind = tempKindEl ? tempKindEl.value : 'water';
+  form.querySelectorAll('.edit-log-water-temp').forEach(function (el) {
+    el.style.display = waterOnBins ? '' : 'none';
+    el.querySelectorAll('input, select, textarea').forEach(function (c) {
+      c.disabled = !waterOnBins;
+    });
+  });
   form.querySelectorAll('.edit-log-air-only').forEach(function (el) {
     el.style.display = (isTemp && tempKind === 'air') ? '' : 'none';
     el.querySelectorAll('input, select, textarea').forEach(function (c) {
@@ -1034,11 +1064,16 @@ function openEditLog(item) {
     const density = f.querySelector('[name="density_' + cb.value + '"]');
     const guts = f.querySelector('[name="guts_' + cb.value + '"]');
     const amt = f.querySelector('[name="amount_' + cb.value + '"]');
+    const binTemp = f.querySelector('[name="temp_' + cb.value + '"]');
     if (!cb.checked) return;
     if (tint) tint.value = (b && b.tint) || item.tint || '';
     if (density) density.value = (b && b.density) || item.density || '';
     if (guts) guts.value = (b && b.guts) || item.guts || '';
     if (amt) amt.value = (b && b.amount_text) || '';
+    if (binTemp) {
+      const t = (b && b.temp_f != null) ? b.temp_f : item.temp_f;
+      binTemp.value = t == null ? '' : t;
+    }
     const binNotes = f.querySelector('[name="notes_' + cb.value + '"]');
     if (binNotes) binNotes.value = (b && b.notes) || '';
   });

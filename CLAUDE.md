@@ -140,7 +140,7 @@ All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
 | `cultures` | Live-food stations (not tanks). Optional `consumer_tank_id` (SET NULL on tank delete). |
 | `culture_vessels` | Bins in a station (`daphnia` / `green_water` / `other`). Standing `is_lit` / `is_heated` plus `heater_set_f` (heater setpoint, not measured water temp). |
 | `culture_log` | Feed / look / harvest / seed / crash / temp history. |
-| `culture_log_vessels` | Junction so one log row can tag multiple bins. |
+| `culture_log_vessels` | Junction so one log row can tag multiple bins (per-bin tint/density/guts/amount/water temp). |
 | `culture_schedule` | Station-scoped due tasks (logged or reference). Sibling of `recurring_schedule`, not tank-scoped. |
 
 ## AI features
@@ -271,9 +271,9 @@ Management page: `/tanks/{id}/schedule`
 
 Not tanks. One **culture** has one purpose (Daphnia *or* green water — not mixed: green water is not fed). **Vessels** are the bins of that culture (role is inherited from culture kind, not chosen per bin). Harvest **destination** is a tank, another culture, or a specific bin. Sidebar next to Home Water (`/cultures`). Logged schedule items appear on **Today**.
 
-- Green-water cultures have no "Log feeding" action. Daphnia cultures do. Green-water **looks** record tint per bin (no guts). Daphnia looks record density + guts per bin. Look logs can also store **water temp** (`culture_log.temp_f`, `temp_kind=water`) — not bench air/RH; those stay on dedicated `kind=temp` rows.
-- Bins can be **heated** (`culture_vessels.is_heated` + `heater_set_f`). That is the heater's standing setpoint on the bin card; measured water temp still goes on a look. Unheated bins are the control. Product/wattage belongs in bin notes.
-- Look/feed logs can store **per-bin** tint/density/guts/amount on `culture_log_vessels`.
+- Green-water cultures have no "Log feeding" action. Daphnia cultures do. Green-water **looks** record tint per bin (no guts). Daphnia looks record density + guts per bin. Look logs store **water temp per bin** (`culture_log_vessels.temp_f`) — heated and unheated bins can differ. Not bench air/RH; those stay on dedicated `kind=temp` rows (`culture_log.temp_kind='air'`).
+- Bins can be **heated** (`culture_vessels.is_heated` + `heater_set_f`). That is the heater's standing setpoint on the bin card; measured water temp still goes on a look, per bin. Unheated bins are the control. Product/wattage belongs in bin notes.
+- Look/feed logs can store **per-bin** tint/density/guts/amount/water temp on `culture_log_vessels`.
 - Feeding schedule mark-done can **Hold** (look, `held=1`) instead of logging a feed. Logging a feeding (or a harvest that feeds another culture) also advances matching logged feeding schedules (`last_done` / `next_due`) — same as ✓ Fed. Per-bin tasks only move if that bin was tagged; a backdated log does not rewind a newer last_done.
 - Harvest is measured in **cups**. Destination tank → optional `events.event_type='feeding'` on that tank (no AI). Destination culture/bin → `feed` on the *destination* culture (`food=green_water`).
 - Cultures have `harvest_status` (don't harvest yet / OK) as a **status badge**, not a Next item. **Next** is the soonest upcoming logged `culture_schedule` task (`next_due` after today), falling back to a one-off `next_action` only when that text isn't harvest-status wording. Bench **air** readings (temp / relative humidity min–max) show on every culture page.
@@ -334,13 +334,13 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-519 pytest integration tests in `fathom/tests/`. Run with:
+548 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`), cultures (station/vessel CRUD, heated bin + heater setpoint on card/list/Ask AI, feed log tagging two bins, harvest→tank feeding without AI, schedule mark-done + Today, cascade delete, consumer-tank SET NULL, crashed vessel excluded from default feed select).
+Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`), cultures (station/vessel CRUD, heated bin + heater setpoint on card/list/Ask AI, look water temp per bin, feed log tagging two bins, harvest→tank feeding without AI, schedule mark-done + Today, cascade delete, consumer-tank SET NULL, crashed vessel excluded from default feed select).
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
 

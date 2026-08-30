@@ -1571,6 +1571,7 @@ p { margin-bottom: .5rem; }
 .bin-obs-block { display: flex; flex-direction: column; gap: .3rem; }
 .bin-obs-row { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
 .bin-obs-row select, .bin-obs-row input[type=text] { max-width: 10rem; }
+.bin-obs-row input.bin-temp-input { width: 6.5rem; max-width: 6.5rem; }
 .bin-obs-extra { display: flex; flex-direction: column; gap: .25rem; padding-left: 1.5rem; }
 .bin-obs-extra input[type=text] { width: 100%; max-width: 28rem; }
 .vessel-last-notes { font-size: .8rem; margin: .15rem 0 0; color: var(--muted); }

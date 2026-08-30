@@ -178,13 +178,14 @@ def test_log_look_with_tint_and_density(client):
 
 def test_look_form_includes_water_temp(client):
     cid = _create_culture(client, kind="daphnia")
-    _add_vessel(client, cid, "Left")
+    v = _add_vessel(client, cid, "Left")
     page = client.get(f"/cultures/{cid}")
     look_start = page.text.find('id="modal-look"')
     look_end = page.text.find('id="modal-harvest"', look_start)
     look_html = page.text[look_start:look_end]
-    assert "Water temp (°F)" in look_html
-    assert 'name="temp_f"' in look_html
+    assert f'name="temp_{v}"' in look_html
+    assert "Temp °F" in look_html
+    assert 'name="temp_f"' not in look_html
     assert 'name="temp_kind"' not in look_html
     assert 'name="rh"' not in look_html
 
@@ -198,23 +199,28 @@ def test_log_look_with_water_temp(client):
             "kind": "look",
             "vessel_ids": [str(v)],
             f"density_{v}": "ok",
-            "temp_f": "72.5",
+            f"temp_{v}": "72.5",
         },
         headers=JSON,
     )
     assert r.status_code == 201
+    log_id = r.json()["id"]
     with get_db() as conn:
         row = dict(conn.execute(
             "SELECT kind, temp_f, temp_kind, rh FROM culture_log WHERE id=?",
-            (r.json()["id"],),
+            (log_id,),
+        ).fetchone())
+        bin_row = dict(conn.execute(
+            "SELECT temp_f FROM culture_log_vessels WHERE log_id=? AND vessel_id=?",
+            (log_id, v),
         ).fetchone())
     assert row["kind"] == "look"
-    assert row["temp_f"] == 72.5
-    assert row["temp_kind"] == "water"
+    assert row["temp_f"] is None
+    assert row["temp_kind"] is None
     assert row["rh"] is None
+    assert bin_row["temp_f"] == 72.5
     page = client.get(f"/cultures/{cid}")
     assert "72.5°F" in page.text
-    assert " · water" in page.text
 
 
 def test_log_look_blank_water_temp_does_not_set_kind(client):
@@ -975,6 +981,120 @@ def test_look_per_bin_density_and_guts(client):
     assert "Thin" in page.text and "Dense" in page.text
 
 
+def test_look_per_bin_water_temps(client):
+    cid = _create_culture(client, kind="daphnia")
+    left = _add_vessel(client, cid, "Left", is_heated="1", heater_set_f="78")
+    right = _add_vessel(client, cid, "Right")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(left), str(right)],
+            f"density_{left}": "ok",
+            f"temp_{left}": "77.5",
+            f"density_{right}": "thin",
+            f"temp_{right}": "70",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    log_id = r.json()["id"]
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT temp_f, temp_kind FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+        by_id = {
+            d["vessel_id"]: dict(d)
+            for d in conn.execute(
+                "SELECT vessel_id, temp_f FROM culture_log_vessels WHERE log_id=?",
+                (log_id,),
+            ).fetchall()
+        }
+    assert row["temp_f"] is None
+    assert row["temp_kind"] is None
+    assert by_id[left]["temp_f"] == 77.5
+    assert by_id[right]["temp_f"] == 70.0
+    page = client.get(f"/cultures/{cid}")
+    assert "77.5°F" in page.text
+    assert "70.0°F" in page.text or "70°F" in page.text
+    assert "Left:" in page.text and "Right:" in page.text
+
+
+def test_look_legacy_station_temp_copies_to_tagged_bins(client):
+    cid = _create_culture(client, kind="daphnia")
+    left = _add_vessel(client, cid, "Left")
+    right = _add_vessel(client, cid, "Right")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "look",
+            "vessel_ids": [str(left), str(right)],
+            "temp_f": "72",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    log_id = r.json()["id"]
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT temp_f FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+        temps = [
+            d["temp_f"]
+            for d in conn.execute(
+                """SELECT temp_f FROM culture_log_vessels
+                   WHERE log_id=? ORDER BY vessel_id""",
+                (log_id,),
+            ).fetchall()
+        ]
+    assert row["temp_f"] is None
+    assert temps == [72.0, 72.0]
+
+
+def test_other_water_temp_is_per_bin(client):
+    cid = _create_culture(client, kind="daphnia")
+    left = _add_vessel(client, cid, "Left")
+    right = _add_vessel(client, cid, "Right")
+    page = client.get(f"/cultures/{cid}")
+    other_start = page.text.find('id="modal-other"')
+    other_end = page.text.find('id="modal-add-vessel"', other_start)
+    other_html = page.text[other_start:other_end]
+    assert f'name="temp_{left}"' in other_html
+    assert f'name="temp_{right}"' in other_html
+
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={
+            "kind": "temp",
+            "temp_kind": "water",
+            "vessel_ids": [str(left), str(right)],
+            f"temp_{left}": "78",
+            f"temp_{right}": "71",
+        },
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    log_id = r.json()["id"]
+    with get_db() as conn:
+        row = dict(conn.execute(
+            "SELECT temp_f, temp_kind FROM culture_log WHERE id=?", (log_id,)
+        ).fetchone())
+        by_id = {
+            d["vessel_id"]: d["temp_f"]
+            for d in conn.execute(
+                "SELECT vessel_id, temp_f FROM culture_log_vessels WHERE log_id=?",
+                (log_id,),
+            ).fetchall()
+        }
+    assert row["temp_f"] is None
+    assert row["temp_kind"] == "water"
+    assert by_id[left] == 78.0
+    assert by_id[right] == 71.0
+    page = client.get(f"/cultures/{cid}")
+    assert "78.0°F" in page.text or "78°F" in page.text
+    assert "71.0°F" in page.text or "71°F" in page.text
+
+
 def test_hold_mark_done_writes_held_look(client):
     cid = _create_culture(client, kind="daphnia")
     _add_vessel(client, cid, "Left")
@@ -1092,7 +1212,7 @@ def test_update_log_look_water_temp(client):
             "kind": "look",
             "vessel_ids": [str(v)],
             f"density_{v}": "ok",
-            "temp_f": "70",
+            f"temp_{v}": "70",
         },
         headers=JSON,
     )
@@ -1105,7 +1225,7 @@ def test_update_log_look_water_temp(client):
             "kind": "look",
             "vessel_ids": [str(v)],
             f"density_{v}": "ok",
-            "temp_f": "73.5",
+            f"temp_{v}": "73.5",
         },
         headers=JSON,
     )
@@ -1114,8 +1234,13 @@ def test_update_log_look_water_temp(client):
         row = dict(conn.execute(
             "SELECT temp_f, temp_kind FROM culture_log WHERE id=?", (log_id,)
         ).fetchone())
-    assert row["temp_f"] == 73.5
-    assert row["temp_kind"] == "water"
+        bin_row = dict(conn.execute(
+            "SELECT temp_f FROM culture_log_vessels WHERE log_id=? AND vessel_id=?",
+            (log_id, v),
+        ).fetchone())
+    assert row["temp_f"] is None
+    assert row["temp_kind"] is None
+    assert bin_row["temp_f"] == 73.5
     page = client.get(f"/cultures/{cid}")
     assert "73.5°F" in page.text
 
@@ -1125,7 +1250,7 @@ def test_update_log_look_water_temp(client):
             "kind": "look",
             "vessel_ids": [str(v)],
             f"density_{v}": "ok",
-            "temp_f": "",
+            f"temp_{v}": "",
         },
         headers=JSON,
     )
@@ -1134,8 +1259,13 @@ def test_update_log_look_water_temp(client):
         row = dict(conn.execute(
             "SELECT temp_f, temp_kind FROM culture_log WHERE id=?", (log_id,)
         ).fetchone())
+        bin_row = dict(conn.execute(
+            "SELECT temp_f FROM culture_log_vessels WHERE log_id=? AND vessel_id=?",
+            (log_id, v),
+        ).fetchone())
     assert row["temp_f"] is None
     assert row["temp_kind"] is None
+    assert bin_row["temp_f"] is None
 
 
 def test_update_log_feed_food_and_blank_timestamp_keeps_existing(client):

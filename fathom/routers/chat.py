@@ -457,6 +457,8 @@ def _fmt_culture_log(rows):
                 inner.append("guts " + _label(GUTS_LABELS, b["guts"], b["guts"]))
             if b.get("amount_text"):
                 inner.append(b["amount_text"])
+            if b.get("temp_f") is not None:
+                inner.append(f"{b['temp_f']}°F")
             if inner:
                 bin_bits.append(f"{b.get('vessel_name') or 'bin'}: {', '.join(inner)}")
         if bin_bits:

@@ -410,7 +410,10 @@ def _vessels(conn, culture_id: int):
                      ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
     latest_temp = """SELECT {col} FROM culture_log l
                      JOIN culture_log_vessels lv ON lv.log_id = l.id
-                     WHERE lv.vessel_id = v.id AND l.temp_f IS NOT NULL
+                     WHERE lv.vessel_id = v.id
+                       AND COALESCE(lv.temp_f,
+                                    CASE WHEN COALESCE(l.temp_kind,'') = 'air'
+                                         THEN NULL ELSE l.temp_f END) IS NOT NULL
                      ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
     latest_bin_note = """SELECT lv.notes FROM culture_log l
                      JOIN culture_log_vessels lv ON lv.log_id = l.id
@@ -426,7 +429,7 @@ def _vessels(conn, culture_id: int):
                   ({latest_look.format(col='COALESCE(lv.density, l.density)')}) AS last_density,
                   ({latest_look.format(col='COALESCE(lv.guts, l.guts)')}) AS last_guts,
                   ({latest_bin_note}) AS last_bin_notes,
-                  ({latest_temp.format(col='l.temp_f')}) AS last_temp_f
+                  ({latest_temp.format(col="COALESCE(lv.temp_f, l.temp_f)")}) AS last_temp_f
            FROM culture_vessels v
            WHERE v.culture_id = ?
            ORDER BY v.sort_order, v.id""",
@@ -457,10 +460,10 @@ def _tag_log_vessels(conn, log_id: int, vessel_ids: List[int], details=None):
         d = by_id.get(vid, {})
         conn.execute(
             """INSERT OR IGNORE INTO culture_log_vessels
-               (log_id, vessel_id, tint, density, guts, amount_text, notes)
-               VALUES (?,?,?,?,?,?,?)""",
+               (log_id, vessel_id, tint, density, guts, amount_text, notes, temp_f)
+               VALUES (?,?,?,?,?,?,?,?)""",
             (log_id, vid, d.get("tint"), d.get("density"), d.get("guts"),
-             d.get("amount_text"), d.get("notes")),
+             d.get("amount_text"), d.get("notes"), d.get("temp_f")),
         )
 
 
@@ -503,11 +506,12 @@ def _log_values_from_form(form, *, default_kind=None, existing=None):
     notes = _blank(form.get("notes")) if "notes" in form else existing.get("notes")
     temp_f = float_field("temp_f")
     temp_kind = choice_field("temp_kind", TEMP_KINDS)
-    # Look logs only record water temp (no air/RH). Infer or clear temp_kind
-    # from whether a reading was given, so an empty look field doesn't leave
-    # a stray kind and a filled one doesn't need a hidden temp_kind input.
-    if kind == "look" and "temp_f" in form:
-        temp_kind = "water" if temp_f is not None else None
+    # Looks store water temp on each tagged bin, not the station row.
+    # Inferring culture_log.temp_kind from a leftover station-level field
+    # would put one reading on every bin (heated and unheated).
+    if kind == "look":
+        temp_f = None
+        temp_kind = None
     return {
         "kind": kind,
         "timestamp": timestamp,
@@ -1007,6 +1011,11 @@ def _vessel_details_from_form(form, ids, existing_by_id=None):
         prev = existing_by_id.get(vid) or {}
         notes_key = f"notes_{vid}"
         hitch_key = f"hitchhikers_{vid}"
+        temp_key = f"temp_{vid}"
+        if temp_key in form:
+            temp_f = _float_or_none(form.get(temp_key))
+        else:
+            temp_f = prev.get("temp_f")
         details.append({
             "id": vid,
             "tint": _choice(form.get(f"tint_{vid}"), TINTS),
@@ -1014,10 +1023,38 @@ def _vessel_details_from_form(form, ids, existing_by_id=None):
             "guts": _choice(form.get(f"guts_{vid}"), GUTS),
             "amount_text": _blank(form.get(f"amount_{vid}")),
             "notes": _blank(form.get(notes_key)) if notes_key in form else prev.get("notes"),
+            "temp_f": temp_f,
             "hitchhikers_set": hitch_key in form,
             "hitchhikers": _blank(form.get(hitch_key)) if hitch_key in form else None,
         })
     return details
+
+
+def _finalize_log_temps(form, kind, values, details):
+    """Water °F lives on tagged bins; air stays on the station log row.
+
+    A leftover station-level `temp_f` (old look form / API) is copied onto
+    bins that don't already have `temp_{id}` so a single posted reading still
+    lands somewhere. Looks never keep that station-level water field.
+    """
+    if "temp_f" in form:
+        shared = _float_or_none(form.get("temp_f"))
+    else:
+        shared = values.get("temp_f")
+    is_water = kind == "look" or (
+        kind == "temp" and values.get("temp_kind") != "air"
+    )
+    if is_water and details:
+        if shared is not None and not any(d.get("temp_f") is not None for d in details):
+            for d in details:
+                d["temp_f"] = shared
+        if kind == "look":
+            values["temp_f"] = None
+            values["temp_kind"] = None
+        elif any(d.get("temp_f") is not None for d in details):
+            values["temp_f"] = None
+            if not values.get("temp_kind"):
+                values["temp_kind"] = "water"
 
 
 def _apply_log_vessel_state(conn, kind, details):
@@ -1077,6 +1114,7 @@ async def add_log(request: Request, culture_id: int):
         culture = _culture_or_404(conn, culture_id)
         ids = _valid_vessel_ids(conn, culture_id, _form_list(form, "vessel_ids"))
         details = _vessel_details_from_form(form, ids)
+        _finalize_log_temps(form, kind, values, details)
         log_id = _insert_log(
             conn, culture_id,
             vessel_ids=ids,
@@ -1175,6 +1213,7 @@ async def update_log(request: Request, culture_id: int, log_id: int):
         ).fetchall())
         existing_by_id = {b["vessel_id"]: b for b in existing_bins}
         details = _vessel_details_from_form(form, ids, existing_by_id)
+        _finalize_log_temps(form, values["kind"], values, details)
         conn.execute(
             """UPDATE culture_log
                SET timestamp=?, kind=?, food=?, amount_text=?, notes=?,

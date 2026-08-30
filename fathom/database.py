@@ -531,6 +531,7 @@ def init_db():
                 guts TEXT,
                 amount_text TEXT,
                 notes TEXT,
+                temp_f REAL,
                 PRIMARY KEY (log_id, vessel_id),
                 FOREIGN KEY (log_id) REFERENCES culture_log(id) ON DELETE CASCADE,
                 FOREIGN KEY (vessel_id) REFERENCES culture_vessels(id) ON DELETE CASCADE
@@ -613,6 +614,32 @@ def init_db():
                     conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN amount_text TEXT")
                 if "notes" not in lv_cols:
                     conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN notes TEXT")
+                if "temp_f" not in lv_cols:
+                    conn.execute("ALTER TABLE culture_log_vessels ADD COLUMN temp_f REAL")
+                    # Looks (and water-temp logs) used to store one station-wide
+                    # reading on culture_log. Copy it onto each tagged bin so
+                    # heated vs unheated history stays per-bin going forward.
+                    conn.execute(
+                        """UPDATE culture_log_vessels
+                           SET temp_f = (
+                               SELECT l.temp_f FROM culture_log l
+                               WHERE l.id = culture_log_vessels.log_id
+                                 AND l.temp_f IS NOT NULL
+                                 AND (l.kind = 'look'
+                                      OR COALESCE(l.temp_kind, '') = 'water')
+                           )
+                           WHERE temp_f IS NULL"""
+                    )
+                    conn.execute(
+                        """UPDATE culture_log
+                           SET temp_f = NULL, temp_kind = NULL
+                           WHERE kind = 'look' AND temp_f IS NOT NULL
+                             AND EXISTS (
+                                 SELECT 1 FROM culture_log_vessels lv
+                                 WHERE lv.log_id = culture_log.id
+                                   AND lv.temp_f IS NOT NULL
+                             )"""
+                    )
 
         # Migration: water_blend on home_water_tests (softener mix context for wells)
         hw_cols = {row[1] for row in conn.execute("PRAGMA table_info(home_water_tests)").fetchall()}
