@@ -128,11 +128,39 @@ def test_culture_system_prompt_includes_all_stations_not_tanks(client):
     assert "currently viewing" in prompt
     assert "ALL culture stations" in prompt
     assert "this chat is for cultures only" in prompt
+    assert "Equipment for these stations is in scope" in prompt
+    assert "Do not refuse a product question as out of scope" in prompt
+    assert "browse listings" in prompt
     assert "Inhabitants:" not in prompt
     assert "Latest Water Parameters" not in prompt
     assert "Home Water" not in prompt
     assert "Fill water" not in prompt
     assert "multi-turn conversation" in prompt
+
+
+def test_culture_prompt_includes_heater_setting(client):
+    daph = _create_culture(client, "Daphnia", kind="daphnia")
+    client.post(
+        f"/cultures/{daph}/vessels",
+        data={"name": "Left", "is_heated": "1", "heater_set_f": "78"},
+        headers=JSON,
+    )
+    client.post(
+        f"/cultures/{daph}/vessels",
+        data={"name": "Right"},
+        headers=JSON,
+    )
+
+    from database import get_db
+    with get_db() as conn:
+        ctx = _gather_cultures_context(conn)
+        current = next(s["culture"] for s in ctx["stations"] if s["culture"]["id"] == daph)
+        prompt = _build_culture_system_prompt(current, ctx["stations"], ctx.get("bench_air"))
+
+    assert "Left" in prompt
+    assert "heated 78°F" in prompt
+    assert "Right" in prompt
+    assert "unheated" in prompt
 
 
 def test_culture_chat_uses_query_db_across_stations(client, monkeypatch):
