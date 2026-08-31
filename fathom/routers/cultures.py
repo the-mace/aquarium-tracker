@@ -139,6 +139,10 @@ def _choice(value: Optional[str], allowed) -> Optional[str]:
     return text
 
 
+def _flag(value: Optional[str]) -> int:
+    return 1 if value in ("1", "on", "true") else 0
+
+
 def _fmt_cups(n: float) -> str:
     if float(n) == int(n):
         shown = str(int(n))
@@ -163,6 +167,22 @@ def _is_harvest_status_text(text: Optional[str]) -> bool:
     return norm in labels
 
 
+def _schedule_bin_label(sched):
+    """Tag for Today / Due: the named bin, or 'all bins' for station-wide tasks."""
+    name = (sched.get("vessel_name") or "").strip()
+    if name:
+        return name
+    if sched.get("vessel_id"):
+        return "bin"
+    return "all bins"
+
+
+def _with_schedule_bin_labels(rows):
+    for s in rows or []:
+        s["bin_label"] = _schedule_bin_label(s)
+    return rows
+
+
 def _culture_next(culture, schedule, today_date: str):
     """Soonest upcoming logged task, else a genuine one-off next_action.
 
@@ -181,6 +201,8 @@ def _culture_next(culture, schedule, today_date: str):
                 "text": (s.get("description") or "").strip(),
                 "date": due,
                 "source": "schedule",
+                "bin_label": _schedule_bin_label(s),
+                "vessel_name": (s.get("vessel_name") or "").strip() or None,
             })
     action = (culture.get("next_action") or "").strip()
     if action and not _is_harvest_status_text(action):
@@ -386,6 +408,17 @@ def _vessels(conn, culture_id: int):
                      JOIN culture_log_vessels lv ON lv.log_id = l.id
                      WHERE lv.vessel_id = v.id AND l.kind = 'feed' AND COALESCE(l.held,0)=0
                      ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
+    latest_temp = """SELECT {col} FROM culture_log l
+                     JOIN culture_log_vessels lv ON lv.log_id = l.id
+                     WHERE lv.vessel_id = v.id
+                       AND COALESCE(lv.temp_f,
+                                    CASE WHEN COALESCE(l.temp_kind,'') = 'air'
+                                         THEN NULL ELSE l.temp_f END) IS NOT NULL
+                     ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
+    latest_bin_note = """SELECT lv.notes FROM culture_log l
+                     JOIN culture_log_vessels lv ON lv.log_id = l.id
+                     WHERE lv.vessel_id = v.id AND COALESCE(lv.notes,'') != ''
+                     ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
     return rows_to_list(conn.execute(
         f"""SELECT v.*,
                   ({latest_feed.format(col='l.timestamp')}) AS last_feed_at,
@@ -395,7 +428,8 @@ def _vessels(conn, culture_id: int):
                   ({latest_look.format(col='COALESCE(lv.tint, l.tint)')}) AS last_tint,
                   ({latest_look.format(col='COALESCE(lv.density, l.density)')}) AS last_density,
                   ({latest_look.format(col='COALESCE(lv.guts, l.guts)')}) AS last_guts,
-                  ({latest_look.format(col='l.temp_f')}) AS last_temp_f
+                  ({latest_bin_note}) AS last_bin_notes,
+                  ({latest_temp.format(col="COALESCE(lv.temp_f, l.temp_f)")}) AS last_temp_f
            FROM culture_vessels v
            WHERE v.culture_id = ?
            ORDER BY v.sort_order, v.id""",
@@ -426,11 +460,76 @@ def _tag_log_vessels(conn, log_id: int, vessel_ids: List[int], details=None):
         d = by_id.get(vid, {})
         conn.execute(
             """INSERT OR IGNORE INTO culture_log_vessels
-               (log_id, vessel_id, tint, density, guts, amount_text, notes)
-               VALUES (?,?,?,?,?,?,?)""",
+               (log_id, vessel_id, tint, density, guts, amount_text, notes, temp_f)
+               VALUES (?,?,?,?,?,?,?,?)""",
             (log_id, vid, d.get("tint"), d.get("density"), d.get("guts"),
-             d.get("amount_text"), d.get("notes")),
+             d.get("amount_text"), d.get("notes"), d.get("temp_f")),
         )
+
+
+def _replace_log_vessels(conn, log_id: int, vessel_ids: List[int], details=None):
+    conn.execute("DELETE FROM culture_log_vessels WHERE log_id=?", (log_id,))
+    _tag_log_vessels(conn, log_id, vessel_ids, details)
+
+
+def _log_values_from_form(form, *, default_kind=None, existing=None):
+    """Parse shared culture_log fields from a create/update form.
+
+    Fields omitted from the POST (disabled inputs) keep their existing value
+    on update. Unchecked checkboxes are omitted too — `held` is the exception
+    and always means off when missing.
+    """
+    existing = existing or {}
+    kind = _choice(form.get("kind"), LOG_KINDS) or default_kind or existing.get("kind")
+
+    def choice_field(key, allowed):
+        if key in form:
+            return _choice(form.get(key), allowed)
+        return existing.get(key)
+
+    def float_field(key):
+        if key in form:
+            return _float_or_none(form.get(key))
+        return existing.get(key)
+
+    if "cups" in form and _float_or_none(form.get("cups")) is not None:
+        amount = _fmt_cups(_float_or_none(form.get("cups")))
+    elif "amount_text" in form:
+        amount = _blank(form.get("amount_text"))
+    else:
+        amount = existing.get("amount_text")
+
+    held = form.get("held") in ("1", "on", "true")
+    if kind == "feed" and held:
+        kind = "look"
+    timestamp = _blank(form.get("timestamp")) if "timestamp" in form else existing.get("timestamp")
+    notes = _blank(form.get("notes")) if "notes" in form else existing.get("notes")
+    temp_f = float_field("temp_f")
+    temp_kind = choice_field("temp_kind", TEMP_KINDS)
+    # Looks store water temp on each tagged bin, not the station row.
+    # Inferring culture_log.temp_kind from a leftover station-level field
+    # would put one reading on every bin (heated and unheated).
+    if kind == "look":
+        temp_f = None
+        temp_kind = None
+    return {
+        "kind": kind,
+        "timestamp": timestamp,
+        "food": choice_field("food", FOODS),
+        "amount_text": amount,
+        "notes": notes,
+        "tint": choice_field("tint", TINTS),
+        "density": choice_field("density", DENSITIES),
+        "guts": choice_field("guts", GUTS),
+        "temp_f": temp_f,
+        "temp_kind": temp_kind,
+        "rh": float_field("rh"),
+        "rh_low": float_field("rh_low"),
+        "rh_high": float_field("rh_high"),
+        "temp_low": float_field("temp_low"),
+        "temp_high": float_field("temp_high"),
+        "held": held,
+    }
 
 
 def _insert_log(conn, culture_id: int, *, kind: str, timestamp=None, food=None,
@@ -451,6 +550,55 @@ def _insert_log(conn, culture_id: int, *, kind: str, timestamp=None, food=None,
     log_id = cur.lastrowid
     _tag_log_vessels(conn, log_id, vessel_ids or [], vessel_details)
     return log_id
+
+
+def _log_calendar_date(timestamp: Optional[str]) -> date:
+    """Calendar day for last_done from a UTC log timestamp (server-local)."""
+    text = (timestamp or "").strip()
+    if len(text) >= 19:
+        try:
+            naive = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
+            return naive.replace(tzinfo=timezone.utc).astimezone().date()
+        except ValueError:
+            pass
+    if len(text) >= 10:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            pass
+    return date.today()
+
+
+def _advance_logged_schedules(conn, culture_id: int, *, category: str,
+                              vessel_ids=None, timestamp=None):
+    """Bump last_done / next_due on matching logged schedule rows.
+
+    Station-wide tasks (no vessel_id) always match. Per-bin tasks match when
+    that bin was tagged. An older backdated log does not rewind last_done.
+    """
+    done = _log_calendar_date(timestamp)
+    done_s = done.isoformat()
+    tagged = set(vessel_ids or [])
+    rows = rows_to_list(conn.execute(
+        """SELECT * FROM culture_schedule
+           WHERE culture_id=? AND is_active=1 AND tracking_mode='logged'
+             AND category=?""",
+        (culture_id, category),
+    ).fetchall())
+    for sched in rows:
+        vid = sched.get("vessel_id")
+        if vid is not None and vid not in tagged:
+            continue
+        last = sched.get("last_done")
+        if last and last > done_s:
+            continue
+        next_due = compute_next_due(None, sched.get("interval_days"), done)
+        conn.execute(
+            """UPDATE culture_schedule
+               SET last_done=?, next_due=?, updated_at=datetime('now')
+               WHERE id=?""",
+            (done_s, next_due, sched["id"]),
+        )
 
 
 def _vessel_role_for_culture(culture) -> str:
@@ -480,12 +628,14 @@ def load_today_cultures(conn, today_date: str):
     ).fetchall())
     visible = []
     for culture in cultures:
-        schedule = rows_to_list(conn.execute(
-            """SELECT * FROM culture_schedule
-               WHERE culture_id=? AND is_active=1
-               ORDER BY category, description""",
+        schedule = _with_schedule_bin_labels(rows_to_list(conn.execute(
+            """SELECT s.*, v.name AS vessel_name
+               FROM culture_schedule s
+               LEFT JOIN culture_vessels v ON v.id = s.vessel_id
+               WHERE s.culture_id=? AND s.is_active=1
+               ORDER BY s.category, s.description""",
             (culture["id"],),
-        ).fetchall())
+        ).fetchall()))
         culture["today_schedule"] = [
             s for s in schedule if s.get("tracking_mode") == "reference_only"
         ]
@@ -547,16 +697,18 @@ async def list_cultures(request: Request):
         for culture in cultures:
             _with_destination(culture)
             culture["vessels"] = rows_to_list(conn.execute(
-                """SELECT id, name, role, status, is_lit
+                """SELECT id, name, role, status, is_lit, is_heated, heater_set_f
                    FROM culture_vessels WHERE culture_id=?
                    ORDER BY sort_order, id""",
                 (culture["id"],),
             ).fetchall())
-            schedule = rows_to_list(conn.execute(
-                """SELECT * FROM culture_schedule
-                   WHERE culture_id=? AND is_active=1""",
+            schedule = _with_schedule_bin_labels(rows_to_list(conn.execute(
+                """SELECT s.*, v.name AS vessel_name
+                   FROM culture_schedule s
+                   LEFT JOIN culture_vessels v ON v.id = s.vessel_id
+                   WHERE s.culture_id=? AND s.is_active=1""",
                 (culture["id"],),
-            ).fetchall())
+            ).fetchall()))
             culture["next_item"] = _culture_next(culture, schedule, today_date)
     return templates.TemplateResponse(request, "cultures/list.html", {
         "cultures": cultures,
@@ -637,14 +789,14 @@ async def culture_detail(request: Request, culture_id: int):
         ).fetchall())
         _attach_log_bins(conn, log_rows)
         bench_air = _latest_bench_air(conn)
-        schedule = rows_to_list(conn.execute(
+        schedule = _with_schedule_bin_labels(rows_to_list(conn.execute(
             """SELECT s.*, v.name AS vessel_name
                FROM culture_schedule s
                LEFT JOIN culture_vessels v ON v.id = s.vessel_id
                WHERE s.culture_id = ?
                ORDER BY s.tracking_mode DESC, s.category, s.description""",
             (culture_id,),
-        ).fetchall())
+        ).fetchall()))
         dest_tanks, dest_cultures, dest_vessels = _destination_options(conn, culture_id)
     due_items = [
         s for s in schedule
@@ -750,6 +902,8 @@ async def add_vessel(
     name: str = Form(...),
     volume_gallons: Optional[str] = Form(None),
     is_lit: Optional[str] = Form(None),
+    is_heated: Optional[str] = Form(None),
+    heater_set_f: Optional[str] = Form(None),
     status: str = Form("active"),
     notes: Optional[str] = Form(None),
     hitchhikers: Optional[str] = Form(None),
@@ -759,7 +913,9 @@ async def add_vessel(
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
     status = _choice(status, VESSEL_STATUSES) or "active"
-    lit = 1 if is_lit in ("1", "on", "true") else 0
+    lit = _flag(is_lit)
+    heated = _flag(is_heated)
+    set_f = _int_or_none(heater_set_f)
     with get_db() as conn:
         culture = _culture_or_404(conn, culture_id)
         role = _vessel_role_for_culture(culture)
@@ -772,10 +928,11 @@ async def add_vessel(
             order = row["n"]
         cur = conn.execute(
             """INSERT INTO culture_vessels
-               (culture_id, name, role, volume_gallons, is_lit, status, sort_order, notes, hitchhikers)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (culture_id, name, role, _float_or_none(volume_gallons), lit, status, order,
-             _blank(notes), _blank(hitchhikers)),
+               (culture_id, name, role, volume_gallons, is_lit, is_heated, heater_set_f,
+                status, sort_order, notes, hitchhikers)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (culture_id, name, role, _float_or_none(volume_gallons), lit, heated, set_f,
+             status, order, _blank(notes), _blank(hitchhikers)),
         )
         vessel_id = cur.lastrowid
     if _wants_json(request):
@@ -791,6 +948,8 @@ async def update_vessel(
     name: str = Form(...),
     volume_gallons: Optional[str] = Form(None),
     is_lit: Optional[str] = Form(None),
+    is_heated: Optional[str] = Form(None),
+    heater_set_f: Optional[str] = Form(None),
     status: str = Form("active"),
     notes: Optional[str] = Form(None),
     hitchhikers: Optional[str] = Form(None),
@@ -800,7 +959,9 @@ async def update_vessel(
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
     status = _choice(status, VESSEL_STATUSES) or "active"
-    lit = 1 if is_lit in ("1", "on", "true") else 0
+    lit = _flag(is_lit)
+    heated = _flag(is_heated)
+    set_f = _int_or_none(heater_set_f)
     with get_db() as conn:
         culture = _culture_or_404(conn, culture_id)
         role = _vessel_role_for_culture(culture)
@@ -815,10 +976,10 @@ async def update_vessel(
             order = existing["sort_order"]
         conn.execute(
             """UPDATE culture_vessels
-               SET name=?, role=?, volume_gallons=?, is_lit=?, status=?, sort_order=?,
-                   notes=?, hitchhikers=?, updated_at=datetime('now')
+               SET name=?, role=?, volume_gallons=?, is_lit=?, is_heated=?, heater_set_f=?,
+                   status=?, sort_order=?, notes=?, hitchhikers=?, updated_at=datetime('now')
                WHERE id=?""",
-            (name, role, _float_or_none(volume_gallons), lit, status, order,
+            (name, role, _float_or_none(volume_gallons), lit, heated, set_f, status, order,
              _blank(notes), _blank(hitchhikers), vessel_id),
         )
     if _wants_json(request):
@@ -843,18 +1004,76 @@ def _form_list(form, key):
     return [str(v) for v in form.getlist(key)]
 
 
-def _vessel_details_from_form(form, ids):
+def _vessel_details_from_form(form, ids, existing_by_id=None):
+    existing_by_id = existing_by_id or {}
     details = []
     for vid in ids:
+        prev = existing_by_id.get(vid) or {}
+        notes_key = f"notes_{vid}"
+        hitch_key = f"hitchhikers_{vid}"
+        temp_key = f"temp_{vid}"
+        if temp_key in form:
+            temp_f = _float_or_none(form.get(temp_key))
+        else:
+            temp_f = prev.get("temp_f")
         details.append({
             "id": vid,
             "tint": _choice(form.get(f"tint_{vid}"), TINTS),
             "density": _choice(form.get(f"density_{vid}"), DENSITIES),
             "guts": _choice(form.get(f"guts_{vid}"), GUTS),
             "amount_text": _blank(form.get(f"amount_{vid}")),
-            "notes": _blank(form.get(f"notes_{vid}")),
+            "notes": _blank(form.get(notes_key)) if notes_key in form else prev.get("notes"),
+            "temp_f": temp_f,
+            "hitchhikers_set": hitch_key in form,
+            "hitchhikers": _blank(form.get(hitch_key)) if hitch_key in form else None,
         })
     return details
+
+
+def _finalize_log_temps(form, kind, values, details):
+    """Water °F lives on tagged bins; air stays on the station log row.
+
+    A leftover station-level `temp_f` (old look form / API) is copied onto
+    bins that don't already have `temp_{id}` so a single posted reading still
+    lands somewhere. Looks never keep that station-level water field.
+    """
+    if "temp_f" in form:
+        shared = _float_or_none(form.get("temp_f"))
+    else:
+        shared = values.get("temp_f")
+    is_water = kind == "look" or (
+        kind == "temp" and values.get("temp_kind") != "air"
+    )
+    if is_water and details:
+        if shared is not None and not any(d.get("temp_f") is not None for d in details):
+            for d in details:
+                d["temp_f"] = shared
+        if kind == "look":
+            values["temp_f"] = None
+            values["temp_kind"] = None
+        elif any(d.get("temp_f") is not None for d in details):
+            values["temp_f"] = None
+            if not values.get("temp_kind"):
+                values["temp_kind"] = "water"
+
+
+def _apply_log_vessel_state(conn, kind, details):
+    """Write log fields that belong on the bin card (hitchhikers, crash)."""
+    for d in details or []:
+        if kind == "crash":
+            conn.execute(
+                """UPDATE culture_vessels
+                   SET status='crashed', updated_at=datetime('now')
+                   WHERE id=?""",
+                (d["id"],),
+            )
+        if d.get("hitchhikers_set"):
+            conn.execute(
+                """UPDATE culture_vessels
+                   SET hitchhikers=?, updated_at=datetime('now')
+                   WHERE id=?""",
+                (d.get("hitchhikers"), d["id"]),
+            )
 
 
 def _attach_log_bins(conn, log_rows):
@@ -888,43 +1107,32 @@ def _latest_bench_air(conn):
 @router.post("/{culture_id}/log")
 async def add_log(request: Request, culture_id: int):
     form = await request.form()
-    kind = _choice(form.get("kind"), LOG_KINDS)
-    cups_n = _float_or_none(form.get("cups"))
-    amount = _fmt_cups(cups_n) if cups_n is not None else _blank(form.get("amount_text"))
-    held = form.get("held") in ("1", "on", "true")
-    if kind == "feed" and held:
-        kind = "look"
+    values = _log_values_from_form(form)
+    kind = values["kind"]
+    amount = values["amount_text"]
     with get_db() as conn:
         culture = _culture_or_404(conn, culture_id)
         ids = _valid_vessel_ids(conn, culture_id, _form_list(form, "vessel_ids"))
         details = _vessel_details_from_form(form, ids)
+        _finalize_log_temps(form, kind, values, details)
         log_id = _insert_log(
             conn, culture_id,
-            kind=kind,
-            timestamp=_blank(form.get("timestamp")),
-            food=_choice(form.get("food"), FOODS),
-            amount_text=amount,
-            notes=_blank(form.get("notes")),
-            tint=_choice(form.get("tint"), TINTS),
-            density=_choice(form.get("density"), DENSITIES),
-            guts=_choice(form.get("guts"), GUTS),
-            temp_f=_float_or_none(form.get("temp_f")),
-            temp_kind=_choice(form.get("temp_kind"), TEMP_KINDS),
-            rh=_float_or_none(form.get("rh")),
-            rh_low=_float_or_none(form.get("rh_low")),
-            rh_high=_float_or_none(form.get("rh_high")),
-            temp_low=_float_or_none(form.get("temp_low")),
-            temp_high=_float_or_none(form.get("temp_high")),
-            held=held,
             vessel_ids=ids,
             vessel_details=details,
+            **values,
         )
+        _apply_log_vessel_state(conn, kind, details)
+        if kind == "feed":
+            _advance_logged_schedules(
+                conn, culture_id, category="feeding",
+                vessel_ids=ids, timestamp=values["timestamp"],
+            )
         tank_event_id = None
         feed_log_id = None
         dest_kind = culture.get("destination_kind")
         pour_to_bins = dest_kind in ("culture", "vessel")
-        ts = _blank(form.get("timestamp"))
-        user_notes = _blank(form.get("notes"))
+        ts = values["timestamp"]
+        user_notes = values["notes"]
         log_on_tank = form.get("log_on_tank")
         if kind == "harvest" and pour_to_bins:
             dest_cid, dest_ids = _resolve_pour_targets(conn, culture)
@@ -938,6 +1146,10 @@ async def add_log(request: Request, culture_id: int):
                     amount_text=amount,
                     notes=feed_notes,
                     vessel_ids=dest_ids,
+                )
+                _advance_logged_schedules(
+                    conn, dest_cid, category="feeding",
+                    vessel_ids=dest_ids, timestamp=ts,
                 )
         elif (
             kind == "harvest"
@@ -974,6 +1186,53 @@ async def add_log(request: Request, culture_id: int):
         if feed_log_id is not None:
             body["feed_log_id"] = feed_log_id
         return JSONResponse(body, status_code=201)
+    return RedirectResponse(url=f"/cultures/{culture_id}", status_code=303)
+
+
+@router.post("/{culture_id}/log/{log_id}/update")
+async def update_log(request: Request, culture_id: int, log_id: int):
+    form = await request.form()
+    with get_db() as conn:
+        _culture_or_404(conn, culture_id)
+        existing = row_to_dict(conn.execute(
+            "SELECT * FROM culture_log WHERE id=? AND culture_id=?",
+            (log_id, culture_id),
+        ).fetchone())
+        if not existing:
+            raise HTTPException(status_code=404, detail="Log entry not found")
+        values = _log_values_from_form(
+            form, default_kind=existing["kind"], existing=existing,
+        )
+        if not values["kind"]:
+            values["kind"] = existing["kind"]
+        if not values["timestamp"]:
+            values["timestamp"] = existing["timestamp"]
+        ids = _valid_vessel_ids(conn, culture_id, _form_list(form, "vessel_ids"))
+        existing_bins = rows_to_list(conn.execute(
+            "SELECT * FROM culture_log_vessels WHERE log_id=?", (log_id,)
+        ).fetchall())
+        existing_by_id = {b["vessel_id"]: b for b in existing_bins}
+        details = _vessel_details_from_form(form, ids, existing_by_id)
+        _finalize_log_temps(form, values["kind"], values, details)
+        conn.execute(
+            """UPDATE culture_log
+               SET timestamp=?, kind=?, food=?, amount_text=?, notes=?,
+                   tint=?, density=?, guts=?, temp_f=?, temp_kind=?,
+                   rh=?, rh_low=?, rh_high=?, temp_low=?, temp_high=?, held=?,
+                   updated_at=datetime('now')
+               WHERE id=? AND culture_id=?""",
+            (values["timestamp"], values["kind"], values["food"], values["amount_text"],
+             values["notes"], values["tint"], values["density"], values["guts"],
+             values["temp_f"], values["temp_kind"], values["rh"], values["rh_low"],
+             values["rh_high"], values["temp_low"], values["temp_high"],
+             1 if values["held"] else 0, log_id, culture_id),
+        )
+        _replace_log_vessels(conn, log_id, ids, details)
+        _apply_log_vessel_state(conn, values["kind"], details)
+        # Harvest side effects (tank feeding / dest-culture feed) stay as they
+        # were — this only edits the culture history row itself.
+    if _wants_json(request):
+        return JSONResponse({"status": "updated"})
     return RedirectResponse(url=f"/cultures/{culture_id}", status_code=303)
 
 

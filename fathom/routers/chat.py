@@ -77,7 +77,10 @@ _CONVERSATION_STYLE = (
     "\"Based on everything above\", \"Here is a comprehensive answer\"). Jump straight into the "
     "answer.\n"
     "- Prefer a natural continuation over a standalone re-briefing. Use snapshot data when it "
-    "changes the answer; do not re-list inventory or re-walk prior reasoning by default."
+    "changes the answer; do not re-list inventory or re-walk prior reasoning by default.\n"
+    "- Equipment and named products (heaters, lights, wattage vs volume) are in scope. You cannot "
+    "browse listings or verify a SKU; do not refuse or say that is outside what you can do. "
+    "Answer feasibility from general knowledge plus the snapshot."
 )
 
 
@@ -321,7 +324,10 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         "answer.\n"
         "- Prefer a natural continuation over a standalone re-briefing. Use snapshot data when it "
         "changes the answer; do not re-list inventory, re-summarize water params, or re-walk prior "
-        "reasoning by default."
+        "reasoning by default.\n"
+        "- Equipment and named products (heaters, lights, wattage vs volume) are in scope. You cannot "
+        "browse listings or verify a SKU; do not refuse or say that is outside what you can do. "
+        "Answer feasibility from general knowledge plus the snapshot."
     )
     return "\n".join(parts)
 
@@ -405,7 +411,7 @@ def _fmt_bench_air(row):
     if row.get("temp_low") is not None and row.get("temp_high") is not None:
         bits.append(f"({row['temp_low']}–{row['temp_high']})")
     if row.get("rh") is not None:
-        bits.append(f"{int(row['rh'])}% RH")
+        bits.append(f"{int(row['rh'])}% relative humidity")
     if row.get("rh_low") is not None and row.get("rh_high") is not None:
         bits.append(f"({int(row['rh_low'])}–{int(row['rh_high'])})")
     return f"  {ts}: " + (" ".join(bits) if bits else "(no numeric readings)")
@@ -451,6 +457,8 @@ def _fmt_culture_log(rows):
                 inner.append("guts " + _label(GUTS_LABELS, b["guts"], b["guts"]))
             if b.get("amount_text"):
                 inner.append(b["amount_text"])
+            if b.get("temp_f") is not None:
+                inner.append(f"{b['temp_f']}°F")
             if inner:
                 bin_bits.append(f"{b.get('vessel_name') or 'bin'}: {', '.join(inner)}")
         if bin_bits:
@@ -515,6 +523,13 @@ def _fmt_culture_station(station, current_id=None):
         for v in vessels:
             bits = [v.get("name") or "bin"]
             bits.append("lit" if v.get("is_lit") else "unlit")
+            if v.get("is_heated"):
+                heat = "heated"
+                if v.get("heater_set_f") is not None:
+                    heat += f" {v['heater_set_f']}°F"
+                bits.append(heat)
+            else:
+                bits.append("unheated")
             if v.get("volume_gallons") is not None:
                 bits.append(f"{v['volume_gallons']}g")
             if v.get("status") and v["status"] != "active":
@@ -598,6 +613,9 @@ def _build_culture_system_prompt(current, stations, bench_air=None):
         "culture or bin. Green-water cultures are not fed; Daphnia cultures are.",
         "Do not discuss display tanks, tank water chemistry, tank livestock, or home-water tests. "
         "If asked about a tank, say this chat is for cultures only.",
+        "Equipment for these stations is in scope (heaters, lights, named products, wattage vs "
+        "bin volume). You cannot look up listings; still answer from general knowledge and the "
+        "snapshot. Do not refuse a product question as out of scope.",
         f"\nThe user is currently viewing: {current.get('name')} (id={current.get('id')}, {kind}).",
         "\nLatest bench air (shared culture-station environment, not a tank):\n"
         + _fmt_bench_air(bench_air),
