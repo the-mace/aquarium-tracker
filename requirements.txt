@@ -5,4 +5,4 @@ python-multipart==0.0.32
 python-dotenv==1.2.3
 anthropic==1.2.0
 aiofiles==25.1.0
-ddgs==9.15.0
+ddgs==9.16.0
