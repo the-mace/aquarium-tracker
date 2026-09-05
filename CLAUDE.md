@@ -280,7 +280,46 @@ Not tanks. One **culture** has one purpose (Daphnia *or* green water — not mix
 - Logged culture schedule entries can edit **last done / next due**, same rules as tank maintenance.
 - Do not model bins as tanks (`tanks.kind`, fake inhabitants, water tests). Culture log writes never trigger tank AI.
 - No committed seed data. Create cultures on the mini after deploy.
-- Procedures / one-off ops notes stay local — not in this file.
+- Husbandry decisions and procedures for the two current stations (Daphnia + green water) are documented below. Order/shipping history, home layout, and sitter logistics stay local in `.claude/live-food-culture.md` (gitignored) — not here.
+
+### Live food husbandry — Daphnia + green water
+
+Personal basement culture supplying supplemental live food for the Fish Tank (40g, prod tank_id=2). Log actual feed/look/harvest activity in the Cultures app (`/cultures`), not here — this section is decisions and how-to that don't change day to day.
+
+**Goal:** culture **Daphnia magna** (not Moina — prefers warmer, needs a heater) as occasional live food for Fish Tank midwater fish, fed on home-grown **green water** rather than daily powder long-term. Cool-stable basement setup, sitter-proof for multi-day trips.
+
+**Hard boundary — Shrimp Tank is isolated.** Harvest, water, animals, nets, and cups from the Daphnia/green bins go to the **Fish Tank only**. Nothing from that chain (Daphnia, PFW-order hitchhikers, culture water) ever goes into the Shrimp Tank.
+
+**Species/food decisions:**
+
+| Decision | Choice | Why |
+|---|---|---|
+| Cladoceran | Daphnia magna | Cool basement; adult fish mouths OK; no heater needed |
+| Food | Green water primary long-term; spirulina/Chlorella powder as bridge food | Starters do fine on a light powder dusting until green water is established |
+| Containers | Wide, shallow bins (not tall jars) for both Daphnia and green water | No air needed day-1; more surface area for light/gas exchange |
+| Eggs vs live starter | Live starter | Eggs are a backup option, not the first attempt |
+
+**Feeding/dosing principles (apply regardless of which powder — spirulina or Chlorella):**
+- Dose light: a pinch mixed into a **cup of that bin's own water** (never share a mix-cup across bins — crash insurance), poured back until the cup is visibly tinted, not until the bin itself clouds.
+- Check gut fill **1–4 h after feeding** (sweet spot ~2 h) by looking *through* the bin wall at larger adults near the wall, backlit with a phone light from the far side. Don't net, scoop, or press them — they're fragile filter feeders. A darker midline streak is enough; packed-green guts are a green-water/heavier-feed thing, not expected from a light powder dose.
+- Next-morning check is **water clarity only** (clear = didn't overshoot; still milky/brown = skip the next feed) — empty guts the next morning are expected at a light dose and don't mean they didn't eat.
+- Corner-clustering at the bottom (resting, but active) is normal in still, unlit Daphnia bins — not a crash sign.
+- Don't harvest for the Fish Tank until the population is clearly breeding/growing on food (often 1–2+ weeks after arrival), and never dump/big-water-change the Daphnia bins.
+
+**Green water: starting and troubleshooting:**
+- Fill bins with Fish Tank water, no soap rinse. Lights on a 12–15 h timer. No spirulina/Chlorella powder or fertilizer in green bins at the start — a light dusting of dead algae powder doesn't start a living culture, and heavy nutrient dosing before real algae cells are present just feeds a bacterial bloom instead.
+- Visible tint takes days to a couple of weeks in a cool basement — don't judge before that. Plain Fish Tank water often is **not** enough of a planktonic-algae inoculum on its own (it lacks the actual free-floating cells even though nutrients like nitrate are present).
+- If still clear well past the expected window: escalate the inoculum, don't just wait longer or add more tank water. Options in order tried: (1) a gentle filter-sponge squeeze or glass/hardscape scrape into a cup, poured in in small amounts — a heavy dump risks a bacterial bloom instead of algae; (2) closer light (move bins so the water surface is ~3–6" from the light bar, not 9-10"); (3) a dedicated live phytoplankton/Chlorella starter culture, which is the most reliable inoculum if the tank simply has no planktonic algae to seed from.
+- Only add a nutrient/fertilizer dose (e.g. a general water-soluble plant food) **after** green water is actually established from a real inoculum — dosing an empty culture just risks an algae-free bacterial bloom.
+- No Daphnia in the green bins, ever. No snails in green bins (they graze the algae). Snails are fine to add to Daphnia bins, but only once Daphnia are established/eating.
+
+**Thermometer reading (external air probe next to the bins, not water):** top-to-bottom on the display when right-side up: current humidity %, then low/high humidity memory, then current temp °F, then low/high temp memory. This reads basement **air**, not bin water — LEDs can warm bin water slightly during the light-on window without showing up on the air min/max, so spot-check bin water directly with an instant-read thermometer if something looks off; the air probe stays the routine daily log.
+
+**Surface pests:** open water in a basement collects flying/crawling bugs; they drown and aren't a crash. A fine mesh/screen over (not sealed onto) the bins keeps bugs out without blocking light or gas exchange the way a sealed lid would. Wriggling larvae (vs. just dead adults) means they're breeding in the bin — that's when mesh becomes non-optional; don't reach for a spray/pesticide near the cultures.
+
+**Vacation/absence (7–10 days):** leave underfed, green water green, lights on a timer, no sitter tasks needed for an established culture. Running two bins per culture type is the crash insurance — a sitter only needs to act for a livestock delivery timed badly against travel (see local file for that logistics).
+
+**Crash hygiene:** one bin crashing doesn't affect others unless tools/water are shared between them. Dump the bad bin, rinse the net, never pour crash water into a healthy bin. Culture nets/cups stay Fish-Tank-only — never dip them in the Shrimp Tank.
 
 ## Quick Log (added 2026-06-30)
 
