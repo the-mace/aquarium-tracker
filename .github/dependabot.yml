@@ -10,9 +10,6 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "dependabot"
     commit-message:
       prefix: "deps"
 
@@ -22,8 +19,5 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "dependabot"
     commit-message:
       prefix: "ci"
