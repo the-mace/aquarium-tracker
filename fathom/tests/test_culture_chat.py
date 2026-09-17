@@ -127,6 +127,10 @@ def test_culture_system_prompt_includes_all_stations_not_tanks(client):
     assert "Green water" in prompt
     assert "currently viewing" in prompt
     assert "ALL culture stations" in prompt
+    assert "You CAN write to culture records" in prompt
+    assert "log_culture_note" in prompt
+    assert f"id={daph}" in prompt
+    assert "Do not write to another station" in prompt
     assert "this chat is for cultures only" in prompt
     assert "Equipment for these stations is in scope" in prompt
     assert "Do not refuse a product question as out of scope" in prompt

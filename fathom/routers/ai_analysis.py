@@ -446,23 +446,24 @@ def _fmt_events(rows):
     return "\n".join(f"  {r['timestamp']} {r['event_type']}: {r.get('notes','')}" for r in rows)
 
 
-def _fmt_schedule(rows):
+def _fmt_schedule(rows, with_ids=False):
     if not rows:
         return "  No recurring schedule configured."
     lines = []
     for r in rows:
         cat = r.get("category")
         desc = r.get("description")
+        id_bit = f" id={r['id']}" if with_ids and r.get("id") is not None else ""
         if r.get("tracking_mode") == "logged":
             interval = r.get("interval_days") or "?"
             last_done = r.get("last_done") or "never"
             next_due = r.get("next_due") or "not set"
-            lines.append(f"  [{cat}] {desc} — every {interval} days, last done {last_done}, next due {next_due}")
+            lines.append(f"  [{cat}{id_bit}] {desc} — every {interval} days, last done {last_done}, next due {next_due}")
         else:
             dow = r.get("day_of_week") or "unscheduled"
             tod = r.get("time_of_day")
             when = f"{dow} {tod.upper()}" if tod in ("am", "pm") else dow
-            lines.append(f"  [{cat}] {desc} — {when}")
+            lines.append(f"  [{cat}{id_bit}] {desc} — {when}")
     return "\n".join(lines)
 
 

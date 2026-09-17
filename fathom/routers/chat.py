@@ -26,6 +26,11 @@ from routers.cultures import (
     _CULTURE_SELECT, _attach_log_bins, _culture_or_404, _latest_bench_air, _vessels,
     _with_destination,
 )
+from chat_writes import (
+    _WRITE_RULE,
+    apply_culture_write, apply_tank_write,
+    culture_write_rule, culture_write_tools, tank_write_tools,
+)
 
 router = APIRouter(prefix="/tanks/{tank_id}/chat", tags=["chat"])
 culture_router = APIRouter(prefix="/cultures/{culture_id}/chat", tags=["culture-chat"])
@@ -223,10 +228,12 @@ def _query_db_tool_cultures():
 
 
 def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open_issues, summary,
-                         recent_obs, schedule_rows=None, home_water_tests=None, goals=None):
+                         recent_obs, schedule_rows=None, home_water_tests=None, goals=None,
+                         equipment=None):
     schedule_rows = schedule_rows or []
     home_water_tests = home_water_tests or []
     goals = goals or []
+    equipment = equipment or []
     parts = [
         "You are an expert aquarium keeper assistant with detailed knowledge of the following tank.",
         f"\nTank: {tank['name']} ({tank.get('water_type','unknown')} water, {tank.get('volume_gallons','?')} gallons){_fmt_tank_notes(tank)}",
@@ -283,15 +290,29 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         parts.append("\nHardscape:\n" + "\n".join(lines))
 
     if open_issues:
-        lines = [f"  [{i['status'].upper()}] {i['title']}: {i.get('description','')}" for i in open_issues]
+        lines = [
+            f"  id={i['id']} [{i['status'].upper()}] {i['title']}: {i.get('description','')}"
+            for i in open_issues
+        ]
         parts.append("\nOpen Issues:\n" + "\n".join(lines))
 
     if goals:
         parts.append("\nActive Goals:\n" + _fmt_goals(goals))
 
+    if equipment:
+        lines = []
+        for e in equipment:
+            label = f"{e.get('brand') or ''} {e.get('model') or ''}".strip() or e.get("category") or "equipment"
+            note = (e.get("notes") or "").strip()
+            line = f"  id={e['id']} [{e.get('category')}] {label}"
+            if note:
+                line += f" — notes: {note[:160]}"
+            lines.append(line)
+        parts.append("\nEquipment:\n" + "\n".join(lines))
+
     parts.append(
         "\nRecurring schedule (current planned feeding/dosing/maintenance — authoritative for "
-        "what the keeper currently does):\n" + _fmt_schedule(schedule_rows)
+        "what the keeper currently does):\n" + _fmt_schedule(schedule_rows, with_ids=True)
     )
 
     if summary and summary.get("summary_text"):
@@ -310,6 +331,7 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         "e.g. 'when was X added', 'GH trend/history', 'how much have I spent on Y' — rather than "
         "saying the data isn't available."
     )
+    parts.append(_WRITE_RULE)
     parts.append(
         "\nConversation style:\n"
         "- Answer helpfully and concisely in plain text only — no markdown (no **bold**, no *italic*, "
@@ -379,7 +401,12 @@ def _gather_tank_context(conn, tank_id: int) -> dict:
             (tank_id,),
         ).fetchall()),
         "open_issues": rows_to_list(conn.execute(
-            "SELECT title, description, status FROM issues WHERE tank_id = ? AND status != 'resolved'",
+            "SELECT id, title, description, status FROM issues WHERE tank_id = ? AND status != 'resolved'",
+            (tank_id,),
+        ).fetchall()),
+        "equipment": rows_to_list(conn.execute(
+            """SELECT id, category, brand, model, notes FROM tank_equipment
+               WHERE tank_id = ? AND is_active = 1 ORDER BY category, id""",
             (tank_id,),
         ).fetchall()),
         "goals": load_active_goals(conn, tank_id),
@@ -521,7 +548,8 @@ def _fmt_culture_station(station, current_id=None):
     if vessels:
         lines.append("  Bins:")
         for v in vessels:
-            bits = [v.get("name") or "bin"]
+            bits = [f"id={v['id']}" if v.get("id") is not None else None, v.get("name") or "bin"]
+            bits = [b for b in bits if b]
             bits.append("lit" if v.get("is_lit") else "unlit")
             if v.get("is_heated"):
                 heat = "heated"
@@ -632,6 +660,7 @@ def _build_culture_system_prompt(current, stations, bench_air=None):
         "than saying the data isn't available. You may query every culture, including stations "
         "other than the one currently being viewed."
     )
+    parts.append(culture_write_rule(current.get("id")))
     parts.append(_CONVERSATION_STYLE)
     return "\n".join(parts)
 
@@ -683,21 +712,55 @@ async def _claude_chat_create(client, *, system, messages, log_label, tools=None
     return response
 
 
-def _apply_query_db_tools(response, run_tool, working_messages, log_label):
+def _apply_tool_calls(response, run_tool, working_messages, log_label):
     working_messages.append({"role": "assistant", "content": response.content})
     tool_results = []
     for block in response.content:
         if getattr(block, "type", None) != "tool_use":
             continue
-        sql = (getattr(block, "input", None) or {}).get("sql", "")
-        logger.info("Chat tool call: %s | query_db: %s", log_label, sql)
-        result = run_tool(sql)
+        name = getattr(block, "name", "") or ""
+        inp = getattr(block, "input", None) or {}
+        preview = json.dumps(inp, default=str)
+        if len(preview) > 400:
+            preview = preview[:400] + "…"
+        logger.info("Chat tool call: %s | %s: %s", log_label, name, preview)
+        result = run_tool(name, inp)
         tool_results.append({
             "type": "tool_result",
             "tool_use_id": block.id,
             "content": json.dumps(result, default=str),
         })
     working_messages.append({"role": "user", "content": tool_results})
+
+
+class _TankToolRunner:
+    def __init__(self, tank_id: int):
+        self.tank_id = tank_id
+        self.writes = []
+
+    def __call__(self, name, inp):
+        inp = inp or {}
+        if name == "query_db":
+            return _run_query_db(inp.get("sql", ""), self.tank_id)
+        result = apply_tank_write(self.tank_id, name, inp)
+        if result.get("ok"):
+            self.writes.append(result)
+        return result
+
+
+class _CultureToolRunner:
+    def __init__(self, culture_id: int):
+        self.culture_id = culture_id
+        self.writes = []
+
+    def __call__(self, name, inp):
+        inp = inp or {}
+        if name == "query_db":
+            return _run_query_db(inp.get("sql", ""), scope="culture")
+        result = apply_culture_write(self.culture_id, name, inp)
+        if result.get("ok"):
+            self.writes.append(result)
+        return result
 
 
 async def _claude_chat_reply(*, api_key, system_prompt, tools, api_history, run_tool, log_label):
@@ -728,7 +791,7 @@ async def _claude_chat_reply(*, api_key, system_prompt, tools, api_history, run_
             thinking=thinking,
         )
         if response.stop_reason == "tool_use" and use_tools:
-            _apply_query_db_tools(response, run_tool, working_messages, log_label)
+            _apply_tool_calls(response, run_tool, working_messages, log_label)
             tool_rounds_used += 1
             thinking_retry = False
             continue
@@ -988,10 +1051,12 @@ async def chat(tank_id: int, body: ChatMessage, request: Request):
         tank, ctx["latest_test"], ctx["inhabitants"], ctx["plants"], ctx["hardscape"],
         ctx["open_issues"], ctx["summary"], ctx["recent_obs"], ctx["schedule_rows"],
         home_water_tests=ctx.get("home_water_tests"), goals=ctx.get("goals"),
+        equipment=ctx.get("equipment"),
     )
     logger.info("Chat system prompt for tank %d conv %d: %d chars", tank_id, conversation_id, len(system_prompt))
 
-    tools = [_query_db_tool(tank_id)]
+    tools = [_query_db_tool(tank_id), *tank_write_tools()]
+    runner = _TankToolRunner(tank_id)
 
     try:
         logger.info(
@@ -1003,7 +1068,7 @@ async def chat(tank_id: int, body: ChatMessage, request: Request):
             system_prompt=system_prompt,
             tools=tools,
             api_history=api_history,
-            run_tool=lambda sql: _run_query_db(sql, tank_id),
+            run_tool=runner,
             log_label=f"chat | tank={tank_id} conv={conversation_id}",
         )
     except Exception as e:
@@ -1036,6 +1101,7 @@ async def chat(tank_id: int, body: ChatMessage, request: Request):
         "turns": turn_count,
         "conversation_id": conversation_id,
         "title": title,
+        "writes": runner.writes,
     })
 
 
@@ -1160,7 +1226,8 @@ async def culture_chat(culture_id: int, body: ChatMessage, request: Request):
         "Chat system prompt for culture %d conv %d: %d chars",
         culture_id, conversation_id, len(system_prompt),
     )
-    tools = [_query_db_tool_cultures()]
+    tools = [_query_db_tool_cultures(), *culture_write_tools(culture_id)]
+    runner = _CultureToolRunner(culture_id)
 
     try:
         logger.info(
@@ -1172,7 +1239,7 @@ async def culture_chat(culture_id: int, body: ChatMessage, request: Request):
             system_prompt=system_prompt,
             tools=tools,
             api_history=api_history,
-            run_tool=lambda sql: _run_query_db(sql, scope="culture"),
+            run_tool=runner,
             log_label=f"culture-chat | culture={culture_id}",
         )
     except Exception as e:
@@ -1188,4 +1255,5 @@ async def culture_chat(culture_id: int, body: ChatMessage, request: Request):
         "turns": turn_count,
         "conversation_id": conversation_id,
         "title": title,
+        "writes": runner.writes,
     })

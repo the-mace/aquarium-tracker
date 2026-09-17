@@ -4,7 +4,7 @@
 {% set chat_base = ('/cultures/' ~ culture.id ~ '/chat') if is_culture else ('/tanks/' ~ tank.id ~ '/chat') %}
 {% set chat_hint = 'your cultures' if is_culture else 'this tank' %}
 {% set chat_empty_title = 'Ask anything about your cultures' if is_culture else 'Ask anything about this tank' %}
-{% set chat_empty_body = 'Bins, feeding, harvest, green water and live food — AI can look up every culture station.' if is_culture else 'Water parameters, inhabitants, schedule, history — AI can look up your data.' %}
+{% set chat_empty_body = 'Bins, feeding, harvest, green water and live food — AI can look up every culture station and log notes when you ask.' if is_culture else 'Water parameters, inhabitants, schedule, history — AI can look up your data and log notes when you ask.' %}
 {% block title %}{% if conversation %}{{ conversation.title }}{% else %}New conversation{% endif %} — {{ subject_name }} — Fathom{% endblock %}
 {% set active = "chat" %}
 

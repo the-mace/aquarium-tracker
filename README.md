@@ -19,10 +19,11 @@ git clone git@github.com:the-mace/aquarium-tracker.git
 cd aquarium-tracker
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+python -m playwright install chromium webkit
 ```
 
-The venv lives at the **repo root** (`aquarium-tracker/.venv`), not inside `fathom/`.
+The venv lives at the **repo root** (`aquarium-tracker/.venv`), not inside `fathom/`. `requirements-dev.txt` includes Playwright for local UI verification. Production (`bin/deploy-mini`) installs `requirements.txt` only.
 
 ### 2. Configure environment
 
@@ -73,8 +74,8 @@ Open `http://localhost:8000`. `bin/stop` kills a local uvicorn process.
 ### AI
 
 - **Background analysis** after each water test or event: observation + tank-state summary. Tank notes override generic species norms when they describe accepted baselines
-- **Ask AI (tanks)**: persisted conversations on the tank, with a read-only `query_db` tool for history (test trends, when something was added, spend). Popup on tank pages plus a full-page thread list
-- **Ask AI (cultures)**: same UI on a culture station (`/cultures/{id}`). Knows **all** culture stations (green water feeds live food) — bins, logs, schedules, harvest destinations as names. Does not include tank chemistry or livestock; `query_db` is limited to culture tables
+- **Ask AI (tanks)**: persisted conversations on the tank, with a read-only `query_db` tool for history (test trends, when something was added, spend) and write tools to log observations, events, and append notes when you ask. Popup on tank pages plus a full-page thread list
+- **Ask AI (cultures)**: same UI on a culture station (`/cultures/{id}`). Knows **all** culture stations (green water feeds live food) — bins, logs, schedules, harvest destinations as names. Does not include tank chemistry or livestock; `query_db` is limited to culture tables. Can log a culture note or append standing notes when you ask
 - **Reference info**: on inhabitant/plant/hardscape add (and list load), Claude fetches a description, care notes, and an image. Thumbnail in the table; click for the full card and a refresh button
 - **Tank dimensions**: manufacturer/model can backfill missing volume/dimensions via a web-search-backed fetch (only fills still-empty fields)
 
@@ -212,7 +213,8 @@ aquarium-tracker/
 │   ├── secret-scan.sh
 │   └── git-hooks/           # core.hooksPath
 ├── .env.example
-├── requirements.txt
+├── requirements.txt         # production
+├── requirements-dev.txt     # local: runtime + Playwright
 └── README.md
 ```
 

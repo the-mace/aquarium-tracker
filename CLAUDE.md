@@ -11,16 +11,21 @@ git checkout main
 git pull --ff-only origin main
 ```
 
-If `requirements.txt` changed in the pull, reinstall:
+If `requirements.txt` or `requirements-dev.txt` changed in the pull, reinstall:
 
 ```bash
 source .venv/bin/activate   # from repo root; or ../.venv from fathom/
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+python -m playwright install chromium webkit   # only needed after a Playwright bump
 ```
+
+Local UI verification uses **this venv's Playwright** (pinned in `requirements-dev.txt`), not system Python. Production (`bin/deploy-mini`) still installs `requirements.txt` only — do not add Playwright there.
 
 Do **not** assume a clean `git status` means you're current with remote. Prefer `git pull --ff-only` (or `git fetch` + compare to `origin/main`) at session start, before creating branches, and before committing/pushing. If local work has diverged from an auto-merged Dependabot commit, rebase or merge `main` rather than force-pushing over remote history.
 
 **README.md is the public feature list.** When adding or changing a user-facing feature (new section, route, or major workflow), update `README.md` in the same change — Features and Project Structure at minimum. `CLAUDE.md` is session/architecture context, not a substitute.
+
+**File size watch.** Once in a while (session start, or after a file grew a lot this session — not every turn), `wc -l` the files in play. If something is getting too large to read/edit well, suggest a split or trim. Do not report line counts unless there is a problem or Rob asks.
 
 ## What this is
 
@@ -112,7 +117,8 @@ aquarium-tracker/
 ├── bin/                     # run, stop, deploy-mini, mini-logs
 ├── .env                     # ANTHROPIC_API_KEY, AWS config (gitignored)
 ├── .env.example             # Template for .env
-├── requirements.txt
+├── requirements.txt         # production runtime
+├── requirements-dev.txt     # local: runtime + Playwright
 ├── README.md                # Public feature list — update when adding features
 └── CLAUDE.md                # This file
 ```
@@ -167,6 +173,8 @@ Web search tool requires anthropic SDK ≥ 0.115.0.
 `POST /cultures/{id}/chat` — same UI (sidebar + popup + full page at `/cultures/{id}/chat/new`) at the culture-station level. Conversations are stored with `culture_id` (not `tank_id`). Knowledge is **all** culture stations (green water feeds live food), not only the one being viewed — bins, log, schedule, harvest destinations as names. No tank chemistry, livestock, or home-water. `query_db` is limited to culture tables and may query every station. Chat has no web search; the prompt still treats named equipment (heaters, wattage vs volume) as in scope so a listing title is not refused as out of bounds.
 
 **`query_db` tool**: the system prompt context is a snapshot only (latest test, current inhabitants, 5 recent observations, etc.) — for anything needing history (full test trends, `population_events`, purchase totals) Claude is given a `query_db` tool that runs a single read-only SQL `SELECT` against the DB (schema auto-generated via `database.get_schema_text()`, so it never drifts from the actual tables). Safety is two-layered: `_run_query_db` regex-rejects anything not starting with `SELECT`, and the query itself executes over `database.get_db_readonly()` — a SQLite URI `mode=ro` connection, so even a bypassed regex can't write. Up to `MAX_TOOL_ROUNDS=4` tool round-trips per message; after the cap, one more call is made with tools omitted so the model has to answer from what it already has. Shared `_claude_chat_reply` uses `CLAUDE_MAX_TOKENS_CHAT` (4096, room for Sonnet 5 adaptive thinking) and retries once with `CLAUDE_THINKING_DISABLED` if a turn returns no TextBlock — the 1024-token budget previously burned entirely on thinking (Fish Tank Ask AI, 2026-08-24) and surfaced as a misleading "allotted lookups" fallback. Only the final text reply is persisted; intermediate tool_use/tool_result exchanges are not kept.
+
+**Write tools** (`chat_writes.py`): when the user asks to record/log/note/update something, tank chat can `add_observation` (optional entity link), `log_event` (no background AI analysis), and `append_notes` on equipment/schedule/issue/tank (dated append, never overwrite). Culture chat can `log_culture_note` (`culture_log` kind look/other) and `append_notes` on the **viewed** station or one of its bins (query can still see every station; writes cannot target another culture). No raw SQL writes, no deletes, no water-test or count edits. Issue status only changes when the tool is given `status` (prompt: only if the user asked). Schedule cadence (day/interval) is not rewritten from chat — that stays on the Schedule page. Snapshot now includes active equipment plus ids on equipment/issues/schedule so the model can target rows without an extra lookup.
 
 ### Import (`import_data.py`)
 `POST /tanks/{id}/import` — uploads a file (HTML or plain text/markdown), strips HTML if needed, sends to Claude for structured extraction, returns JSON preview. `POST /tanks/{id}/import/confirm` bulk-inserts the confirmed preview. Claude extracts: test_results, events, purchases, inhabitants, equipment.
@@ -295,12 +303,17 @@ Personal basement culture supplying supplemental live food for the Fish Tank (40
 | Decision | Choice | Why |
 |---|---|---|
 | Cladoceran | Daphnia magna | Cool basement; adult fish mouths OK; no heater needed |
-| Food | Green water primary long-term; spirulina/Chlorella powder as bridge food | Starters do fine on a light powder dusting until green water is established |
-| Containers | Wide, shallow bins (not tall jars) for both Daphnia and green water | No air needed day-1; more surface area for light/gas exchange |
+| Food | Green water primary long-term; Chlorella powder as bridge food (spirulina retired once the jar is in) | Starters do fine on a spare pinch until green water is established |
+| Containers | Wide, shallow bins (not tall jars) for both Daphnia and green water | Surface area for light/gas exchange; low-flow air on all 4 (see Airflow) |
 | Eggs vs live starter | Live starter | Eggs are a backup option, not the first attempt |
 
+**Airflow:**
+- All 4 tubs have low-flow air.
+- **Green bins:** airstone in each, light flow.
+- **Daphnia bins:** airstone in a seasoned sponge in each, **very** light flow — no surface ripples other than the bubbles. The sponge is there to keep the stream gentle so it doesn't batter the animals.
+
 **Feeding/dosing principles (apply regardless of which powder — spirulina or Chlorella):**
-- Dose light: a pinch mixed into a **cup of that bin's own water** (never share a mix-cup across bins — crash insurance), poured back until the cup is visibly tinted, not until the bin itself clouds.
+- Dose light: a pinch mixed into a **cup of that bin's own water** (never share a mix-cup across bins — crash insurance), poured back until the cup is visibly tinted, not until the bin itself clouds. First feeds on a new powder (Chlorella) should be **spare** — smaller than a normal pinch.
 - Check gut fill **1–4 h after feeding** (sweet spot ~2 h) by looking *through* the bin wall at larger adults near the wall, backlit with a phone light from the far side. Don't net, scoop, or press them — they're fragile filter feeders. A darker midline streak is enough; packed-green guts are a green-water/heavier-feed thing, not expected from a light powder dose.
 - Next-morning check is **water clarity only** (clear = didn't overshoot; still milky/brown = skip the next feed) — empty guts the next morning are expected at a light dose and don't mean they didn't eat.
 - Corner-clustering at the bottom (resting, but active) is normal in still, unlit Daphnia bins — not a crash sign.
@@ -310,7 +323,7 @@ Personal basement culture supplying supplemental live food for the Fish Tank (40
 - Fill bins with Fish Tank water, no soap rinse. Lights on a 12–15 h timer. No spirulina/Chlorella powder or fertilizer in green bins at the start — a light dusting of dead algae powder doesn't start a living culture, and heavy nutrient dosing before real algae cells are present just feeds a bacterial bloom instead.
 - Visible tint takes days to a couple of weeks in a cool basement — don't judge before that. Plain Fish Tank water often is **not** enough of a planktonic-algae inoculum on its own (it lacks the actual free-floating cells even though nutrients like nitrate are present).
 - If still clear well past the expected window: escalate the inoculum, don't just wait longer or add more tank water. Options in order tried: (1) a gentle filter-sponge squeeze or glass/hardscape scrape into a cup, poured in in small amounts — a heavy dump risks a bacterial bloom instead of algae; (2) closer light (move bins so the water surface is ~3–6" from the light bar, not 9-10"); (3) a dedicated live phytoplankton/Chlorella starter culture, which is the most reliable inoculum if the tank simply has no planktonic algae to seed from.
-- Only add a nutrient/fertilizer dose (e.g. a general water-soluble plant food) **after** green water is actually established from a real inoculum — dosing an empty culture just risks an algae-free bacterial bloom.
+- Fertilizer is water-soluble plant food (Miracle-Gro all-purpose), meant as the long-term green-water feed **once tint is established**. One light 1/8 tsp dissolved dose is enough while waiting for live starter — **no more fertilizer until the starter is in**. Test the tub water before seeding. Keep further doses off an empty culture — they feed a bacterial bloom instead of algae.
 - No Daphnia in the green bins, ever. No snails in green bins (they graze the algae). Snails are fine to add to Daphnia bins, but only once Daphnia are established/eating.
 
 **Thermometer reading (external air probe next to the bins, not water):** top-to-bottom on the display when right-side up: current humidity %, then low/high humidity memory, then current temp °F, then low/high temp memory. This reads basement **air**, not bin water — LEDs can warm bin water slightly during the light-on window without showing up on the air min/max, so spot-check bin water directly with an instant-read thermometer if something looks off; the air probe stays the routine daily log.
@@ -373,13 +386,13 @@ Template: `fathom/templates/tanks/quick_log.html`
 
 ## Testing
 
-548 pytest integration tests in `fathom/tests/`. Run with:
+562 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`), cultures (station/vessel CRUD, heated bin + heater setpoint on card/list/Ask AI, look water temp per bin, feed log tagging two bins, harvest→tank feeding without AI, schedule mark-done + Today, cascade delete, consumer-tank SET NULL, crashed vessel excluded from default feed select).
+Always run before committing. UI changes: start `bin/run` and drive the flow with **venv Playwright** (`.venv/bin/python`, `sync_playwright`) — Chromium by default, WebKit when layout/WebKit bugs matter. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`) + chat write tools (`test_chat_writes.py`), cultures (station/vessel CRUD, heated bin + heater setpoint on card/list/Ask AI, look water temp per bin, feed log tagging two bins, harvest→tank feeding without AI, schedule mark-done + Today, cascade delete, consumer-tank SET NULL, crashed vessel excluded from default feed select).
 
 AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
 
