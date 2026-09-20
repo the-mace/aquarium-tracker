@@ -155,7 +155,8 @@ The backup script at `fathom/scripts/backup_db.sh` gzips the SQLite database and
 
 1. Set `S3_BACKUP_BUCKET` and `AWS_PROFILE` in `.env`
 2. Ensure AWS credentials are configured for the profile
-3. Test manually: `bash fathom/scripts/backup_db.sh`
+3. Check credentials and bucket access without uploading: `bash fathom/scripts/backup_db.sh --dry-run` (read-only; does not exercise `PutObject`)
+4. Test manually (this does upload a real backup): `bash fathom/scripts/backup_db.sh`
 
 A 30-day S3 Lifecycle expiration on the `backups/` prefix is a good way to rotate objects without giving the upload user `DeleteObject`.
 

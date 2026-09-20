@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # Fathom DB backup — gzip and upload to S3
-# Usage: ./backup_db.sh
+# Usage: ./backup_db.sh [--dry-run]
+#   --dry-run  gzip locally and verify AWS credentials + bucket access with read-only
+#              calls (sts get-caller-identity, s3 ls), but upload nothing
 # Intended for cron on Mac mini. See README for cron setup.
 set -euo pipefail
+
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    *) echo "ERROR: unknown argument: $arg (usage: backup_db.sh [--dry-run])" >&2; exit 2 ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -31,6 +41,15 @@ fi
 
 echo "Backing up $DB_PATH → s3://${S3_BUCKET}/backups/${BACKUP_NAME}"
 gzip -c "$DB_PATH" > "$TMP_FILE"
+if [ "$DRY_RUN" -eq 1 ]; then
+  rm -f "$TMP_FILE"
+  echo "Dry run: checking AWS credentials (profile: $AWS_PROFILE)..."
+  AWS_PROFILE="$AWS_PROFILE" aws sts get-caller-identity --query Arn --output text
+  echo "Dry run: checking read access to s3://${S3_BUCKET}/backups/ ..."
+  AWS_PROFILE="$AWS_PROFILE" aws s3 ls "s3://${S3_BUCKET}/backups/" > /dev/null
+  echo "Dry run OK — credentials and bucket reachable; nothing uploaded (PutObject not exercised)."
+  exit 0
+fi
 AWS_PROFILE="$AWS_PROFILE" aws s3 cp "$TMP_FILE" "s3://${S3_BUCKET}/backups/${BACKUP_NAME}"
 rm -f "$TMP_FILE"
 
