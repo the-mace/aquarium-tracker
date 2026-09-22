@@ -2,6 +2,7 @@
 import asyncio
 import json
 import sqlite3
+from pathlib import Path
 
 import database as _db
 from routers.ai_analysis import (
@@ -251,7 +252,9 @@ def test_goals_page_has_review_ui(client, tank_id):
     assert r.status_code == 200
     assert "goal-review-panel" in r.text
     assert "Review Goal" in r.text
-    assert "/goals/review" in r.text
+    assert 'src="/static/js/goals.js"' in r.text
+    goals_js = (Path(__file__).resolve().parents[1] / "static/js/goals.js").read_text()
+    assert "/goals/review" in goals_js
     # Create uses explicit button click (Safari-safe), not form submit
     assert "startGoalReview()" in r.text
     assert 'id="review-title" required' not in r.text

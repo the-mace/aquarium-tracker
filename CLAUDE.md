@@ -1,536 +1,171 @@
 # Fathom — CLAUDE.md
 
-Project context for AI-assisted development sessions.
+Project context for AI-assisted development. Older session diaries are in git history.
 
 ## Before starting any work
 
-**Always pull the latest `main` before beginning a session or starting a new task.** Dependabot is enabled and **auto-merges** its PRs (see `.github/dependabot.yml` + `.github/workflows/dependabot-automerge.yml`), so `origin/main` can move while you're idle — dependency bumps, security fixes, and Actions updates may already be on remote without any local commit from Rob.
+**Always pull the latest `main` before beginning a session or starting a new task.** Dependabot is enabled and **auto-merges** its PRs (`.github/dependabot.yml` + `.github/workflows/dependabot-automerge.yml`), so `origin/main` can move while you're idle.
 
 ```bash
 git checkout main
 git pull --ff-only origin main
 ```
 
-If `requirements.txt` or `requirements-dev.txt` changed in the pull, reinstall:
+If `requirements.txt` or `requirements-dev.txt` changed, reinstall:
 
 ```bash
-source .venv/bin/activate   # from repo root; or ../.venv from fathom/
+source .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m playwright install chromium webkit   # only needed after a Playwright bump
+python -m playwright install chromium webkit   # only after a Playwright bump
 ```
 
-Local UI verification uses **this venv's Playwright** (pinned in `requirements-dev.txt`), not system Python. Production (`bin/deploy-mini`) still installs `requirements.txt` only — do not add Playwright there.
+Local UI verification uses **this venv's Playwright** (pinned in `requirements-dev.txt`), not system Python. Production (`bin/deploy-mini`) installs `requirements.txt` only.
 
-Do **not** assume a clean `git status` means you're current with remote. Prefer `git pull --ff-only` (or `git fetch` + compare to `origin/main`) at session start, before creating branches, and before committing/pushing. If local work has diverged from an auto-merged Dependabot commit, rebase or merge `main` rather than force-pushing over remote history.
+Do **not** assume a clean `git status` means you're current with remote. If local work has diverged from an auto-merged Dependabot commit, rebase or merge `main`. Do not force-push over remote history.
 
-**README.md is the public feature list.** When adding or changing a user-facing feature (new section, route, or major workflow), update `README.md` in the same change — Features and Project Structure at minimum. `CLAUDE.md` is session/architecture context, not a substitute.
+**README.md is the public feature list.** When adding or changing a user-facing feature, update `README.md` in the same change (Features and Project Structure at minimum).
 
-**File size watch.** Once in a while (session start, or after a file grew a lot this session — not every turn), `wc -l` the files in play. If something is getting too large to read/edit well, suggest a split or trim. Do not report line counts unless there is a problem or Rob asks.
+**File size.** Once in a while (session start, or after a file grew a lot), `wc -l` the files in play. If something is too large to edit well, split it. Do not report line counts unless there is a problem or Rob asks.
 
 ## What this is
 
-Fathom is a personal aquarium tracking web app with AI-powered analysis. Single user, self-hosted. No auth, no multi-tenancy.
+Fathom is a personal aquarium and live-food tracking web app with AI analysis. Single user, self-hosted. No auth, no multi-tenancy.
 
 ## Stack
 
 - **Backend**: Python 3 + FastAPI, uvicorn
-- **Database**: SQLite at `fathom/data/fathom.db` (gitignored)
-- **Templates**: Jinja2, plain HTML/CSS/JS
-- **Charts**: Chart.js (vendored `fathom/static/js/chart.umd.min.js`)
-- **AI**: Anthropic Python SDK `0.115.0`, model `claude-sonnet-5` (see `fathom/ai_config.py` + "AI model strategy" below)
-- **Env**: python-dotenv, `.env` at repo root (gitignored)
+- **Database**: SQLite. Main file `fathom/data/fathom.db`. Species/plant/hardscape cards in `fathom/data/reference_cache.db` (both gitignored)
+- **Templates**: Jinja2, plain HTML/CSS/JS. No React, no build step
+- **Charts**: Chart.js, vendored at `fathom/static/js/chart.umd.min.js`
+- **AI**: Anthropic Python SDK, model id `CLAUDE_MODEL` in `fathom/ai_config.py` (current: `claude-sonnet-5`). One model for analysis, chat, import, and reference info
+- **Env**: `.env` at repo root (gitignored). `chmod 600`. Secret scan: `git config core.hooksPath scripts/git-hooks` (CI runs the same scan)
 
 ## How to run
 
 ```bash
-cd fathom
-source ../.venv/bin/activate
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+bin/run
+# equivalent:
+cd fathom && source ../.venv/bin/activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The `.venv` is at `aquarium-tracker/.venv` (one level above `fathom/`).
+The `.venv` is at the repo root. `bin/stop` kills a local uvicorn.
 
-## Checking current issues / live logs
+Logs (uvicorn + app) go to `/tmp/fathom.log` as well as stdout. On the mini, launchd stderr is `/tmp/fathom.err`. Use `bin/mini-logs` (`-n`, `-f`, `err`) instead of hand-written SSH.
 
-All logs (uvicorn + app) are teed to `/tmp/fathom.log` (RotatingFileHandler, 5 MB, 2 backups) in addition to stdout. To watch live:
+## Production data
 
-```bash
-tail -f /tmp/fathom.log
-```
+Dev and the Mac mini have **separate databases** and will keep diverging. Dev is for development. The mini is the real aquarium. Do not copy either DB over the other without an explicit yes. `bin/deploy-mini` takes an S3 backup of the mini DB before pulling code.
 
-To check recent background task activity (reference info fetches, AI analysis errors):
-
-```bash
-grep -E "reference_info|ai_analysis|ERROR|WARNING" /tmp/fathom.log | tail -50
-```
-
-On the production Mac mini the launchd stderr goes to `/tmp/fathom.err`; app logs go to `/tmp/fathom.log` there too. To check them remotely without a manual SSH one-liner, use `bin/mini-logs` (see "Deployment scripts" below) — e.g. `bin/mini-logs -n 200`, `bin/mini-logs -f`, `bin/mini-logs err`.
-
-## Production data — dev and prod DBs are separate and will diverge
-
-As of 2026-07-04 the Mac mini has its own live `fathom.db`, independent of local dev's `fathom/data/fathom.db`. Rob deliberately chose **not** to migrate dev's DB (which has richer history — 3 tanks, 50 test results, 99 observations) onto the mini; the mini started as a genuinely fresh install and Rob has already begun entering real data directly into it (2 tanks as of this note). **These two databases will never auto-sync and are expected to diverge over time** — dev is for development/testing, the mini is the real, user-facing instance. Do not assume dev's DB reflects what's actually in production, and do not copy either DB over the other without explicit confirmation — both may contain data the other doesn't.
-
-Because the mini now holds real data someone actually depends on:
-- Prefer testing risky/exploratory changes against the local dev DB, not by poking the mini directly.
-- `bin/deploy-mini` always takes an S3 backup (see "Production deployment" below) immediately before pulling new code, specifically so a bad deploy can't take live data down with it unrecovered.
-- If you ever do need to inspect/modify data live on the mini (as has happened with dev's DB in past sessions — see session history below), treat it with the same care: back up first, prefer the app's own routes/endpoints over raw SQL, and say clearly in any session notes that real user data was touched.
+Host, SSH alias, and clone path are in gitignored `CLAUDE.local.md` and in `FATHOM_MINI_HOST` / `FATHOM_MINI_REPO` in `.env`.
 
 ## Project structure
 
 ```
 aquarium-tracker/
 ├── fathom/
-│   ├── main.py              # App entry, router includes, startup init_db()
-│   ├── database.py          # Schema, get_db() context manager, helpers
-│   ├── routers/
-│   │   ├── tanks.py         # Tank CRUD, dashboard, chart data endpoints
-│   │   ├── test_results.py  # Water test CRUD, triggers AI analysis
-│   │   ├── events.py        # Event log CRUD, triggers AI analysis
-│   │   ├── inhabitants.py   # Species + population events
-│   │   ├── equipment.py     # Equipment per tank
-│   │   ├── purchases.py     # Purchase tracking
-│   │   ├── issues.py        # Issue tracker with status workflow
-│   │   ├── goals.py         # Goals + optional cross-tank dependencies
-│   │   ├── observations.py  # Manual + AI observations
-│   │   ├── timeline.py      # Mixed chronological feed
-│   │   ├── chat.py          # Ask AI (tanks + cultures; persisted conversations)
-│   │   ├── import_data.py   # File upload + Quick Log → Claude extraction
-│   │   ├── schedules.py     # Recurring schedule CRUD + mark-done
-│   │   ├── plants_hardscape.py
-│   │   ├── reference_info.py
-│   │   ├── today.py         # Cross-tank + culture due/schedule
-│   │   ├── home_water.py    # Shared fill-water tests
-│   │   ├── cultures.py      # Live-food cultures (one purpose each; dest tank/culture/bin)
-│   │   └── ai_analysis.py   # BackgroundTask: auto-analysis on test/event save
+│   ├── main.py              # App, router includes, startup
+│   ├── database.py          # Connections
+│   ├── schema.py            # Canonical schema + versioned upgrades
+│   ├── ai_config.py
+│   ├── chat_writes.py       # Ask AI write tools
+│   ├── routers/             # One module per feature; ai_prompts.py is prompt text
 │   ├── templates/
-│   │   ├── base.html        # Sidebar nav
-│   │   ├── tanks/           # list, detail, form, import, quick_log, schedule, timeline
-│   │   ├── cultures/        # live-food station list, detail, form
-│   │   ├── chat/            # full-page Ask AI
-│   │   └── ...              # other section templates
-│   ├── static/
-│   │   ├── css/style.css    # Dark ocean theme (--bg: #0a0f1e, --primary: #00c4a0)
-│   │   └── js/app.js        # Modal helpers, chat panel, Chart.js loaders
-│   ├── data/                # SQLite DB lives here (gitignored)
-│   └── scripts/
-│       └── backup_db.sh     # gzip + aws s3 cp backup
+│   ├── static/              # style.css, app.js, page scripts, Chart.js
+│   ├── data/                # fathom.db, reference_cache.db (gitignored)
+│   └── tests/
 ├── bin/                     # run, stop, deploy-mini, mini-logs
-├── .env                     # ANTHROPIC_API_KEY, AWS config (gitignored)
-├── .env.example             # Template for .env
-├── requirements.txt         # production runtime
-├── requirements-dev.txt     # local: runtime + Playwright
-├── README.md                # Public feature list — update when adding features
-└── CLAUDE.md                # This file
+├── requirements.txt         # production
+├── requirements-dev.txt     # local, includes Playwright
+└── README.md
 ```
 
-## Database schema (13 tables)
+## Schema
 
-All tank-scoped tables have `tank_id` with `ON DELETE CASCADE`.
+`schema.py` holds the current `CREATE` statements and `SCHEMA_VERSION`. Startup (`init_db` → `ensure_schema`):
 
-| Table | Purpose |
-|---|---|
-| `tanks` | Tank metadata (name, volume, setup_date, status) |
-| `test_results` | Water tests (ph, gh, kh, ammonia, nitrite, nitrate, tds, temp) |
-| `events` | Event log (event_type, amount, notes) |
-| `inhabitants` | Current stock per species (count, added_date, source) |
-| `population_events` | Per-inhabitant history (added/died/removed/born) |
-| `purchases` | Spending (item, category, vendor, cost, purchase_date) |
-| `tank_equipment` | Equipment (category, brand, model, specs JSON, is_active) |
-| `issues` | Issue tracker (status: open/investigating/resolved, opened_at, resolved_at) |
-| `observations` | AI (source=auto) and manual (source=manual) notes |
-| `tank_state_summary` | Latest AI summary upserted per tank |
-| `recurring_schedule` | Feeding/dosing/maintenance plans; tracking_mode=reference_only (no log) or logged (due-date tracking) |
-| `plants` | Active plants per tank (species, common_name, added_date, source, notes, status active/removed) |
-| `hardscape` | Hardscape items (item, quantity, source, cost, added_date, notes) |
-| `reference_info` | Species/plant/hardscape descriptions + care notes + image URLs from Claude web search. UNIQUE(entity_type, entity_name). |
-| `cultures` | Live-food stations (not tanks). Optional `consumer_tank_id` (SET NULL on tank delete). |
-| `culture_vessels` | Bins in a station (`daphnia` / `green_water` / `other`). Standing `is_lit` / `is_heated` plus `heater_set_f` (heater setpoint, not measured water temp). |
-| `culture_log` | Feed / look / harvest / seed / crash / temp history. |
-| `culture_log_vessels` | Junction so one log row can tag multiple bins (per-bin tint/density/guts/amount/water temp). |
-| `culture_schedule` | Station-scoped due tasks (logged or reference). Sibling of `recurring_schedule`, not tank-scoped. |
+- Already at `SCHEMA_VERSION`: return.
+- Empty database: run `CANONICAL_SCHEMA`, stamp version 1.
+- Database from before versions (tables exist, no `schema_migrations`): require the current sentinel columns, copy any main-database `reference_info` rows into the cache, drop that table, stamp version 1.
+- Later changes: add a function in `_apply_pending` and bump `SCHEMA_VERSION`. Applied versions do not run again.
 
-## AI features
+A file older than those sentinels refuses to stamp. Open it once on the last pre-version release, then upgrade.
 
-### Background analysis (`ai_analysis.py`)
-Triggered as FastAPI `BackgroundTask` after every test_result or event save. Fetches last 10 tests, open issues, 30-day events, and inhabitants. Calls Claude, stores result as an `observations` row (source=auto) and upserts `tank_state_summary`.
+Table groups (details are the SQL, not a second list here):
 
-### Reference Info (`reference_info.py`)
-Background task triggered when inhabitants, plants, or hardscape items are added (or imported). Checks if a `reference_info` row already exists for that entity; if not, inserts a placeholder and queues `fetch_reference_info_bg`. That sync background task calls Claude (`CLAUDE_MODEL` in `ai_config.py`) with `web_search_20260209` (server-side tool — no client tool loop needed) to fetch: description, care notes, and a Wikimedia Commons image URL. Result stored with `ON CONFLICT … DO UPDATE`.
+- **Tanks**: `tanks`, tests, events, inhabitants, population events, plants, hardscape, equipment, purchases, issues, goals + dependencies, observations + links, schedules, tank summary, notes proposals, chat
+- **House**: `home_water_tests`, `home_water_summary`
+- **Cultures** (not tanks): `cultures`, `culture_vessels`, `culture_log`, `culture_log_vessels`, `culture_schedule`
+- **Cache DB**: `reference_info` (species / plant / hardscape). Ask AI reads it through a read-only temp view named `reference_info`. It is not a table in `fathom.db`
 
-List views (`/inhabitants`, `/plants`) also trigger auto-queue on first load for any entity not yet in `reference_info`. The list query does a LEFT JOIN on `reference_info` to pass data to templates.
+SQLite WAL and `foreign_keys=ON` are set in `get_connection()`.
 
-UI: small 46px thumbnail in table; click → modal with larger image, description, care notes, attribution, and "Refresh Info" button (POST `/reference-info/refresh`). Shows ⏳ while pending, ℹ when fetched but no image.
+## AI
 
-Routes (prefix-free router): `GET /reference-info?entity_type=…&entity_name=…`, `POST /reference-info/refresh` (JSON body).
+- **Analysis** after a water test or event: `routers/ai_analysis.py` calls Claude and stores an observation plus `tank_state_summary`. Prompt text and parsers are in `routers/ai_prompts.py`. Tank notes override generic species norms.
+- **Recommendation** after a manual test save appends a short next action to that test's notes. Import and Quick Log do not queue it.
+- **Goal review / progress** and **tank-notes proposals** use the same prompt module. Notes change only after the user accepts a proposal.
+- **Ask AI**: persisted conversations per tank or per culture. `query_db` is one read-only `SELECT` (`get_db_readonly`, `mode=ro`, plus the reference-cache view). Tank chat must filter `tank_id`. Culture chat can read every culture station and cannot read tank tables. Write tools (`chat_writes.py`): tank chat can add an observation, log an event (no background analysis), and append notes. Culture chat can log a look/other note and append notes on the **viewed** station or one of its bins. No SQL writes, deletes, or water-test/count edits.
+- **Reference info**: cache DB only. Fetched with web search when an inhabitant, plant, or hardscape item is added or missing on the list page. Tank manufacturer/model can backfill still-empty volume/dimensions.
+- **Import / Quick Log**: one extraction stream, one confirm path, one review script (`static/js/import-review.js`).
+- **Blocking calls**: `messages.create` from `async def` must run in `asyncio.to_thread`. A sync Anthropic call on the single uvicorn worker stalls every request.
+- **Model policy**: mass-class Sonnet only, one id in `ai_config.py`. No second provider. No prompt caching (prompts are built from live rows; volume is one user).
 
-`entity_name` is always `lower(trim(species or common_name))` for species/plants, `lower(trim(item))` for hardscape — this is the canonical UNIQUE key.
+## Gotchas
 
-Web search tool requires anthropic SDK ≥ 0.115.0.
+- Router prefixes are inconsistent. `import_data.py` and `purchases.py` have no prefix; paths are fully spelled on each route. Most other routers use a prefix.
+- Moment timestamps (`events`, `test_results`, `observations`) are stored UTC and shown in browser-local time (`app.js` helpers). Schedule dates and Today are calendar days, not instants.
+- Culture log writes never trigger tank AI. Do not model bins as tanks.
+- `CHECK` constraints (culture feed, event type, issue status, and similar) need a versioned table rebuild to extend. The culture feed list is `spirulina`, `green_water`, `yeast`, `none`.
+- Page behavior for cultures, goals, home water, and import review lives in `fathom/static/js/`, not in the templates. Shared chrome is `app.js`.
+- Static files are served `Cache-Control: no-cache` because there is no hashed filename.
 
-### Chat (`chat.py`)
-`POST /tanks/{id}/chat` — persisted `chat_conversations` keyed by tank_id, max 10 turns. System prompt injects tank summary + 3 recent observations. Returns 503 if no API key.
+## Cultures
 
-`POST /cultures/{id}/chat` — same UI (sidebar + popup + full page at `/cultures/{id}/chat/new`) at the culture-station level. Conversations are stored with `culture_id` (not `tank_id`). Knowledge is **all** culture stations (green water feeds live food), not only the one being viewed — bins, log, schedule, harvest destinations as names. No tank chemistry, livestock, or home-water. `query_db` is limited to culture tables and may query every station. Chat has no web search; the prompt still treats named equipment (heaters, wattage vs volume) as in scope so a listing title is not refused as out of bounds.
+Not tanks. One station has one purpose (Daphnia *or* green water). Bins inherit that role. Harvest destination is a tank, another culture, or a specific bin. Logged culture tasks show on Today.
 
-**`query_db` tool**: the system prompt context is a snapshot only (latest test, current inhabitants, 5 recent observations, etc.) — for anything needing history (full test trends, `population_events`, purchase totals) Claude is given a `query_db` tool that runs a single read-only SQL `SELECT` against the DB (schema auto-generated via `database.get_schema_text()`, so it never drifts from the actual tables). Safety is two-layered: `_run_query_db` regex-rejects anything not starting with `SELECT`, and the query itself executes over `database.get_db_readonly()` — a SQLite URI `mode=ro` connection, so even a bypassed regex can't write. Up to `MAX_TOOL_ROUNDS=4` tool round-trips per message; after the cap, one more call is made with tools omitted so the model has to answer from what it already has. Shared `_claude_chat_reply` uses `CLAUDE_MAX_TOKENS_CHAT` (4096, room for Sonnet 5 adaptive thinking) and retries once with `CLAUDE_THINKING_DISABLED` if a turn returns no TextBlock — the 1024-token budget previously burned entirely on thinking (Fish Tank Ask AI, 2026-08-24) and surfaced as a misleading "allotted lookups" fallback. Only the final text reply is persisted; intermediate tool_use/tool_result exchanges are not kept.
+Green water is not fed. Daphnia is. Looks store tint (green water) or density + guts (Daphnia), plus water temp per bin. Heater setpoint on a bin is standing config, not a measured temp. Bench air temp/RH is its own log kind.
 
-**Write tools** (`chat_writes.py`): when the user asks to record/log/note/update something, tank chat can `add_observation` (optional entity link), `log_event` (no background AI analysis), and `append_notes` on equipment/schedule/issue/tank (dated append, never overwrite). Culture chat can `log_culture_note` (`culture_log` kind look/other) and `append_notes` on the **viewed** station or one of its bins (query can still see every station; writes cannot target another culture). No raw SQL writes, no deletes, no water-test or count edits. Issue status only changes when the tool is given `status` (prompt: only if the user asked). Schedule cadence (day/interval) is not rewritten from chat — that stays on the Schedule page. Snapshot now includes active equipment plus ids on equipment/issues/schedule so the model can target rows without an extra lookup.
+**Shrimp Tank stays isolated.** Harvest, water, animals, nets, and cups from the Daphnia/green bins go to the Fish Tank only.
 
-### Import (`import_data.py`)
-`POST /tanks/{id}/import` — uploads a file (HTML or plain text/markdown), strips HTML if needed, sends to Claude for structured extraction, returns JSON preview. `POST /tanks/{id}/import/confirm` bulk-inserts the confirmed preview. Claude extracts: test_results, events, purchases, inhabitants, equipment.
+Husbandry that doesn't change day to day:
 
-Import robustness: strips markdown code fences, falls back to regex `{...}` extraction if direct JSON parse fails. `max_tokens=8192`.
+- Cladoceran is Daphnia magna. Food is green water long-term, with a light powder bridge. Powder doses are logged as `spirulina` until the feed list grows; Chlorella is the powder actually in use.
+- Wide shallow bins, low-flow air. Daphnia air goes through a seasoned sponge, very light, no surface ripples beyond the bubbles.
+- Dose a pinch into a cup of **that bin's** water. Don't share a mix-cup across bins. First feeds on a new powder are spare.
+- Gut check 1–4 h after feeding (sweet spot ~2 h), through the wall, backlit. Don't net them. Next morning, judge water clarity only.
+- Don't harvest for the Fish Tank until the culture is clearly breeding, and don't dump or big-water-change the Daphnia bins.
+- Green water starts on Fish Tank water, no soap, lights 12–15 h, no powder or fertilizer until tint is real. If it's still clear past a couple of weeks, escalate the inoculum (light sponge squeeze or scrape, then closer light, then a live phytoplankton starter). One light fertilizer dose only after there's something to feed.
+- No Daphnia in green bins. No snails in green bins. Snails in Daphnia bins only once the Daphnia are established.
+- The bench probe reads air, not bin water. Lights can warm the water during the on-window.
+- Mesh over open bins when larvae show up. No pesticide near the cultures.
+- One crashed bin stays isolated: dump it, rinse the net, never pour crash water into a healthy bin.
 
-### AI model strategy
-
-- **Single provider**: Anthropic Claude only. Dual-provider (e.g. Claude + Grok) was considered and rejected for maintenance cost — import/extraction, analysis, chat, and reference-info all share one client, one mock surface in tests, and one set of prompt calibrations. Switching providers later is non-trivial (SDK, web_search tool shape, response parsing, test fakes).
-- **Mass-class Sonnet only**: use the current Sonnet generation (not Opus/Fable — overkill and pricier for aquarium judgment prompts; not Haiku or other light models — quality-first for analysis and Ask AI). Model id is centralized in `fathom/ai_config.py` as `CLAUDE_MODEL` and imported by every call site.
-- **Current model**: `claude-sonnet-5` (bumped from `claude-sonnet-4-6` in 2026-07). When a new Sonnet ships, bump `CLAUDE_MODEL` after a smoke-test on analysis + chat (over-flagging, issue-review JSON, `query_db` tool loop). Import is largely "done" and rarely re-run at scale (Quick Log still uses the same model); no special freeze — one model id for everything keeps maintenance simple.
-- **Quality over cost**: do not tier models by call type to save money at single-user volume. Prefer better judgment on water-test analysis and Ask AI; those paths are still actively tuned. Cost is expected to stay similar across Sonnet generations (Sonnet 5 intro pricing was $2/$10 through 2026-08-31, then standard $3/$15 — same band as 4.6).
-- **Grok / xAI**: not in use. May revisit only if a future mass-class peer clearly beats Sonnet on analysis quality or chat latency *and* the migration cost is worth it; until then stay single-provider.
-- **Prompt caching**: still not implemented — all AI call sites build fully dynamic prompts from live DB state; call volume too low; revisit if multi-user.
-
-## Key decisions & gotchas
-
-- **No React, no build step** — all templates are Jinja2 + vanilla JS. Keep it that way.
-- **README stays current** — user-facing features go in `README.md` in the same change (see "Before starting any work").
-- **SQLite WAL mode + foreign_keys ON** — set in `get_connection()` in `database.py`.
-- **Router prefix issue** — `import_data.py` uses `APIRouter(tags=["import"])` with no prefix; routes include full paths like `/tanks/{id}/import`. Other routers use `prefix="/tanks"`.
-- **Observations delete** — JS calls `POST /tanks/{id}/observations/{obs_id}/delete` (not DELETE verb, form-based).
-- **Inhabitants edit** — inline modal populated by `openEditInh()` JS function, sets form action to `/{id}/update`. No separate edit page.
-- **venv location** — `.venv` is at repo root (`aquarium-tracker/.venv`), not inside `fathom/`. Activate with `source ../.venv/bin/activate` from the `fathom/` directory.
-- **Secret scan** — `scripts/secret-scan.sh` (specific key patterns, no generic 40-char rule). Enable the repo hook with `git config core.hooksPath scripts/git-hooks`. CI runs the same scan on every PR (`test.yml`).
-
-## External access
-
-The production host (and the LAN it's on) is reached from outside the house via a VPN, with DuckDNS used for the dynamic-DNS piece the VPN endpoint needs. Domain name, LAN IP, SSH user, and DuckDNS/VPN account details live in **`CLAUDE.local.md`** (gitignored) — not here (public repo).
-
-**Remote VPN access configured and verified working as of 2026-07-03**: L2TP with IPsec via the home router's built-in Remote User Access VPN server, "Listen On" scoped to the WAN interface that actually carries a public IP (the other WAN uplink is CGNAT and unreachable from outside). iOS's native VPN client is used with "Send All Traffic" left off, so only traffic to the home LAN's subnet is tunneled — normal browsing/other apps on the phone are unaffected (split tunnel). Tested end-to-end from an iPhone on cellular data (Wi-Fi off — testing from inside the home Wi-Fi doesn't work due to NAT hairpin/loopback limitations): VPN connects, and the mini loads over the tunnel by LAN IP.
+Order history, the room layout, and sitter logistics stay in gitignored `.claude/live-food-culture.md`.
 
 ## Production deployment
 
-Host, SSH target, and clone path are **not** in this file — see `CLAUDE.local.md` and `FATHOM_MINI_HOST` / `FATHOM_MINI_REPO` in `.env`. `bin/deploy-mini` and `bin/mini-logs` read those. Prefer an SSH `Host` alias (e.g. `mini`) over embedding `user@lan-ip` in scripts.
+launchd plist `/Library/LaunchDaemons/com.fathom.plist` with `UserName` set to the login user (without it the daemon runs as root). Working directory is the clone's `fathom/`. Uvicorn is the venv binary built from pyenv 3.14, not `/usr/bin/python3`. `KeepAlive` restarts the process after `bin/deploy-mini` kills it, so routine deploys need no sudo. `sudo launchctl` needs a real TTY.
 
-Runs as a launchd system service:
+macOS Application Firewall allow-lists by binary path. The pyenv Python must be added and unblocked or other machines time out on port 8000.
 
-- Plist: `/Library/LaunchDaemons/com.fathom.plist` (set `UserName` to the login user so it does not run as root — a LaunchDaemon without `UserName` runs as root by default, which would leave the DB/venv files root-owned)
-- Uvicorn binary: `<clone>/.venv/bin/uvicorn`
-- Working dir: `<clone>/fathom`
-- Env: `DOTENV_PATH=<clone>/.env`
-- Logs: `/tmp/fathom.log` / `/tmp/fathom.err`
-- venv built with `~/.pyenv/versions/3.14.0/bin/python3` (matches local dev's pyenv version; the mini's system `/usr/bin/python3` is 3.9.6 and unsuitable)
+`bin/deploy-mini` refuses a dirty mini checkout, S3-backs up the DB, fast-forwards `origin/main`, installs `requirements.txt` only, kills uvicorn, health-checks `GET /tanks`, and resets to the previous SHA if that check doesn't return 200.
 
-`sudo launchctl load`/`unload` need an interactive password — non-interactive `ssh host "sudo ..."` will fail with "a password is required". Use `ssh -A -t` for a single sudo command, or `ssh -A` to the mini host alias to get a shell and run sudo commands one at a time there. This only matters for one-time plist install/removal — **routine restarts don't need sudo at all**: the plist's `UserName` means the login user owns the uvicorn process, so that user can `kill` it directly and launchd's `KeepAlive` respawns it. `bin/deploy-mini` relies on exactly this.
+Non-interactive SSH on the mini has a PATH that makes Apple's git hit an Xcode license error. `deploy-mini` prefixes `/opt/homebrew/bin`. The backup cron needs the same prefix so `aws` resolves:
 
-**macOS Application Firewall blocks incoming connections by binary path**, and the allow-list only had `/usr/bin/python3` (system Python) — not the pyenv-built binary the venv actually uses (`~/.pyenv/versions/3.14.0/bin/python3`). Since uvicorn runs headless under launchd, macOS never shows the "Allow incoming connections?" GUI prompt, so it was silently dropping all LAN traffic to port 8000 until fixed with (needs sudo, one-time):
-```
-FWDIR=/usr/libexec/ApplicationFirewall
-sudo "$FWDIR/socketfilterfw" --add ~/.pyenv/versions/3.14.0/bin/python3
-sudo "$FWDIR/socketfilterfw" --unblockapp ~/.pyenv/versions/3.14.0/bin/python3
+```bash
+0 3 * * * PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin bash <clone>/fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1
 ```
 
-Reload after deploy (manual/emergency path — normally use `bin/deploy-mini` instead): `ssh -A -t "$FATHOM_MINI_HOST" "sudo launchctl unload /Library/LaunchDaemons/com.fathom.plist && sudo launchctl load /Library/LaunchDaemons/com.fathom.plist"`
+Bucket `$S3_BACKUP_BUCKET`, 30-day lifecycle on `backups/`. The upload IAM user has no `DeleteObject`.
 
-### Deployment scripts (`bin/`)
-
-- `bin/deploy-mini` — the normal way to ship a change: refuses to run if the mini's checkout is dirty, takes an S3 DB backup, `git pull --ff-only` on `main`, reinstalls `requirements.txt`, restarts by killing the uvicorn PID (no sudo — see above), then health-checks `GET /tanks` and **automatically rolls back** (`git reset --hard` to the pre-deploy SHA + reinstall + restart) if the health check doesn't come back `200` within 5 retries.
-- `bin/mini-logs [-f] [-n N] [err]` — tail the mini's logs over SSH without hand-typing the SSH one-liner each time; `-f` follows, `err` switches to `/tmp/fathom.err`, `-n N` sets the line count (default 100).
-
-S3 backup cron (3am daily, **live as of 2026-07-03**): `0 3 * * * PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin bash <clone>/fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1` — note the explicit `PATH=` prefix; cron's default PATH doesn't include Homebrew's `/opt/homebrew/bin`, where `aws` lives.
-
-Bucket name is `$S3_BACKUP_BUCKET` in `.env` (`us-east-1`), 30-day S3 Lifecycle expiration on the `backups/` prefix. Uploads go through a dedicated IAM user (personal AWS account) with a policy scoped to just this bucket: `CreateBucket`/`ListBucket` at the bucket level, `PutObject`/`GetObject` at the object level — deliberately no `DeleteObject` (the Lifecycle rule handles expiration internally at the S3-service level, so the uploading IAM user never needs delete permission). `AWS_PROFILE=default` in `.env` on both machines points `aws` at this IAM user's key (configured via `aws configure`, not a named profile — simpler since nothing else was already using `default` locally).
-
-## Database schema (12 tables)
-
-Added `plants` and `hardscape` tables in the 2026-06-29 session (both cascade-delete on tank).
-
-| Table | Purpose |
-|---|---|
-| `plants` | Active plants per tank (species, common_name, added_date, source, notes, status active/removed) |
-| `hardscape` | Hardscape items (item, quantity, source, cost, added_date, notes) |
-
-`inhabitants.count` may be NULL to represent an uncountable population (displayed as "many" badge).
-
-## Import pipeline (as of 2026-06-29)
-
-Import now uses a comprehensive Claude prompt that extracts:
-- `tank_specs` → UPDATE tanks row
-- `test_results`, `events`, `purchases`, `inhabitants`, `equipment` (original)
-- `plants`, `hardscape`, `issues`, `observations` (new)
-- `flags` → returned separately for review UI (not inserted)
-
-Claude fills in known product specs (Fluval Spec V etc.) from training data. Issues are extracted from problem/resolution narrative patterns.
-
-The review screen shows editable tables per section with flagged rows highlighted. Users check/uncheck rows before confirming. Only selected rows are written.
-
-## Recurring Schedule (added 2026-06-30)
-
-`recurring_schedule` table with two tracking modes:
-- **reference_only** (feeding, dosing): shown in "Today's Schedule" widget on dashboard, matching `day_of_week` to today. Multiple rows per day allowed. No logging required.
-- **logged** (maintenance): shown in "Maintenance Due" widget. Tracks `last_done` + `next_due` (= last_done + interval_days). Mark-done creates a linked `events` row and updates due date.
-
-`events.schedule_id` (nullable FK): links maintenance events to their schedule entry. Set automatically by mark-done; can also be set when logging events manually.
-
-Import prompt includes rule 10 for parsing `recurring_schedule` from narrative text.
-
-Management page: `/tanks/{id}/schedule`
-
-## Cultures (live food bins)
-
-Not tanks. One **culture** has one purpose (Daphnia *or* green water — not mixed: green water is not fed). **Vessels** are the bins of that culture (role is inherited from culture kind, not chosen per bin). Harvest **destination** is a tank, another culture, or a specific bin. Sidebar next to Home Water (`/cultures`). Logged schedule items appear on **Today**.
-
-- Green-water cultures have no "Log feeding" action. Daphnia cultures do. Green-water **looks** record tint per bin (no guts). Daphnia looks record density + guts per bin. Look logs store **water temp per bin** (`culture_log_vessels.temp_f`) — heated and unheated bins can differ. Not bench air/RH; those stay on dedicated `kind=temp` rows (`culture_log.temp_kind='air'`).
-- Bins can be **heated** (`culture_vessels.is_heated` + `heater_set_f`). That is the heater's standing setpoint on the bin card; measured water temp still goes on a look, per bin. Unheated bins are the control. Product/wattage belongs in bin notes.
-- Look/feed logs can store **per-bin** tint/density/guts/amount/water temp on `culture_log_vessels`.
-- Feeding schedule mark-done can **Hold** (look, `held=1`) instead of logging a feed. Logging a feeding (or a harvest that feeds another culture) also advances matching logged feeding schedules (`last_done` / `next_due`) — same as ✓ Fed. Per-bin tasks only move if that bin was tagged; a backdated log does not rewind a newer last_done.
-- Harvest is measured in **cups**. Destination tank → optional `events.event_type='feeding'` on that tank (no AI). Destination culture/bin → `feed` on the *destination* culture (`food=green_water`).
-- Cultures have `harvest_status` (don't harvest yet / OK) as a **status badge**, not a Next item. **Next** is the soonest upcoming logged `culture_schedule` task (`next_due` after today), falling back to a one-off `next_action` only when that text isn't harvest-status wording. Bench **air** readings (temp / relative humidity min–max) show on every culture page.
-- Logged culture schedule entries can edit **last done / next due**, same rules as tank maintenance.
-- Do not model bins as tanks (`tanks.kind`, fake inhabitants, water tests). Culture log writes never trigger tank AI.
-- No committed seed data. Create cultures on the mini after deploy.
-- Husbandry decisions and procedures for the two current stations (Daphnia + green water) are documented below. Order/shipping history, home layout, and sitter logistics stay local in `.claude/live-food-culture.md` (gitignored) — not here.
-
-### Live food husbandry — Daphnia + green water
-
-Personal basement culture supplying supplemental live food for the Fish Tank (40g, prod tank_id=2). Log actual feed/look/harvest activity in the Cultures app (`/cultures`), not here — this section is decisions and how-to that don't change day to day.
-
-**Goal:** culture **Daphnia magna** (not Moina — prefers warmer, needs a heater) as occasional live food for Fish Tank midwater fish, fed on home-grown **green water** rather than daily powder long-term. Cool-stable basement setup, sitter-proof for multi-day trips.
-
-**Hard boundary — Shrimp Tank is isolated.** Harvest, water, animals, nets, and cups from the Daphnia/green bins go to the **Fish Tank only**. Nothing from that chain (Daphnia, PFW-order hitchhikers, culture water) ever goes into the Shrimp Tank.
-
-**Species/food decisions:**
-
-| Decision | Choice | Why |
-|---|---|---|
-| Cladoceran | Daphnia magna | Cool basement; adult fish mouths OK; no heater needed |
-| Food | Green water primary long-term; Chlorella powder as bridge food (spirulina retired once the jar is in) | Starters do fine on a spare pinch until green water is established |
-| Containers | Wide, shallow bins (not tall jars) for both Daphnia and green water | Surface area for light/gas exchange; low-flow air on all 4 (see Airflow) |
-| Eggs vs live starter | Live starter | Eggs are a backup option, not the first attempt |
-
-**Airflow:**
-- All 4 tubs have low-flow air.
-- **Green bins:** airstone in each, light flow.
-- **Daphnia bins:** airstone in a seasoned sponge in each, **very** light flow — no surface ripples other than the bubbles. The sponge is there to keep the stream gentle so it doesn't batter the animals.
-
-**Feeding/dosing principles (apply regardless of which powder — spirulina or Chlorella):**
-- Dose light: a pinch mixed into a **cup of that bin's own water** (never share a mix-cup across bins — crash insurance), poured back until the cup is visibly tinted, not until the bin itself clouds. First feeds on a new powder (Chlorella) should be **spare** — smaller than a normal pinch.
-- Check gut fill **1–4 h after feeding** (sweet spot ~2 h) by looking *through* the bin wall at larger adults near the wall, backlit with a phone light from the far side. Don't net, scoop, or press them — they're fragile filter feeders. A darker midline streak is enough; packed-green guts are a green-water/heavier-feed thing, not expected from a light powder dose.
-- Next-morning check is **water clarity only** (clear = didn't overshoot; still milky/brown = skip the next feed) — empty guts the next morning are expected at a light dose and don't mean they didn't eat.
-- Corner-clustering at the bottom (resting, but active) is normal in still, unlit Daphnia bins — not a crash sign.
-- Don't harvest for the Fish Tank until the population is clearly breeding/growing on food (often 1–2+ weeks after arrival), and never dump/big-water-change the Daphnia bins.
-
-**Green water: starting and troubleshooting:**
-- Fill bins with Fish Tank water, no soap rinse. Lights on a 12–15 h timer. No spirulina/Chlorella powder or fertilizer in green bins at the start — a light dusting of dead algae powder doesn't start a living culture, and heavy nutrient dosing before real algae cells are present just feeds a bacterial bloom instead.
-- Visible tint takes days to a couple of weeks in a cool basement — don't judge before that. Plain Fish Tank water often is **not** enough of a planktonic-algae inoculum on its own (it lacks the actual free-floating cells even though nutrients like nitrate are present).
-- If still clear well past the expected window: escalate the inoculum, don't just wait longer or add more tank water. Options in order tried: (1) a gentle filter-sponge squeeze or glass/hardscape scrape into a cup, poured in in small amounts — a heavy dump risks a bacterial bloom instead of algae; (2) closer light (move bins so the water surface is ~3–6" from the light bar, not 9-10"); (3) a dedicated live phytoplankton/Chlorella starter culture, which is the most reliable inoculum if the tank simply has no planktonic algae to seed from.
-- Fertilizer is water-soluble plant food (Miracle-Gro all-purpose), meant as the long-term green-water feed **once tint is established**. One light 1/8 tsp dissolved dose is enough while waiting for live starter — **no more fertilizer until the starter is in**. Test the tub water before seeding. Keep further doses off an empty culture — they feed a bacterial bloom instead of algae.
-- No Daphnia in the green bins, ever. No snails in green bins (they graze the algae). Snails are fine to add to Daphnia bins, but only once Daphnia are established/eating.
-
-**Thermometer reading (external air probe next to the bins, not water):** top-to-bottom on the display when right-side up: current humidity %, then low/high humidity memory, then current temp °F, then low/high temp memory. This reads basement **air**, not bin water — LEDs can warm bin water slightly during the light-on window without showing up on the air min/max, so spot-check bin water directly with an instant-read thermometer if something looks off; the air probe stays the routine daily log.
-
-**Surface pests:** open water in a basement collects flying/crawling bugs; they drown and aren't a crash. A fine mesh/screen over (not sealed onto) the bins keeps bugs out without blocking light or gas exchange the way a sealed lid would. Wriggling larvae (vs. just dead adults) means they're breeding in the bin — that's when mesh becomes non-optional; don't reach for a spray/pesticide near the cultures.
-
-**Vacation/absence (7–10 days):** leave underfed, green water green, lights on a timer, no sitter tasks needed for an established culture. Running two bins per culture type is the crash insurance — a sitter only needs to act for a livestock delivery timed badly against travel (see local file for that logistics).
-
-**Crash hygiene:** one bin crashing doesn't affect others unless tools/water are shared between them. Dump the bad bin, rinse the net, never pour crash water into a healthy bin. Culture nets/cups stay Fish-Tank-only — never dip them in the Shrimp Tank.
-
-## Quick Log (added 2026-06-30)
-
-Primary logging workflow — textarea instead of file upload:
-
-- **Dashboard button**: "⚡ Quick Log" (highlighted primary style) opens a modal with a large textarea
-- On submit: text is stored in `sessionStorage`, browser navigates to `/tanks/{id}/quick-log-page`
-- That page auto-reads the text and POSTs JSON `{"text": "..."}` to `POST /tanks/{id}/quick-log`
-- Today's date is prepended as `[Today's date: YYYY-MM-DD]` so undated entries default to today
-- Same SSE streaming response, same review UI (editable tables, flags, dup detection), same confirm flow as import
-- Confirm goes to the existing `/tanks/{id}/import/confirm` endpoint — no new insertion logic needed
-
-**Backend refactor**: The `generate()` closure inside `import_preview` was extracted into a module-level async generator `_extraction_sse_stream(content, api_key)`. Both `import_preview` and `quick_log` call it; zero logic duplication.
-
-New routes (in `import_data.py`):
-- `GET /tanks/{id}/quick-log-page` → renders `tanks/quick_log.html`
-- `POST /tanks/{id}/quick-log` → JSON body `{"text": "..."}` → SSE extraction stream
-
-Template: `fathom/templates/tanks/quick_log.html`
-
-## Current state (as of 2026-07-09)
-
-- **Fixed a serious concurrency bug: AI background tasks were freezing the entire app for everyone, not just the submitter (2026-07-09).** Reported as "long delay after Save Test Result, then it landed on the dashboard on its own." Root cause: the mini runs uvicorn as a single process (no `--workers`), and `run_ai_analysis`/`run_test_recommendation` (`ai_analysis.py`) made **synchronous, blocking** `anthropic.Anthropic().messages.create()` calls inside `async` `BackgroundTask`s. A blocking network call on a single-threaded event loop stalls the *entire* server — every other request (including the submitter's own follow-up page load) queues behind it until all the AI calls finish (analysis → issue review → summary → recommendation, up to ~40s of sequential Claude round-trips observed live). Fixed by wrapping every `client.messages.create(...)` call in `ai_analysis.py` with `await asyncio.to_thread(...)`, verified live: a concurrent `GET` returned successfully while a 21.6s analysis call was still in flight. **The same blocking-call pattern likely exists in `reference_info.py`, `chat.py`, and `import_data.py` (anywhere `anthropic.Anthropic()` — the sync client — is called from an `async def`) — not yet audited/fixed, flagged as a follow-up.**
-- **Truncated AI responses fixed.** `max_tokens` was too tight (analysis 1024, summary 512) and real responses were getting cut off mid-sentence. Raised to 1536 (analysis), 768 (issue review), 1024 (summary), 500 (test recommendation); added a `stop_reason == "max_tokens"` warning log on analysis/summary so future truncation is visible in logs instead of silently shipping a cut-off response.
-- **Analysis/summary prompts now explicitly call out new developments from the latest test's notes** (new inhabitants, actions taken) that aren't yet reflected in the structured Inhabitants/Plants/Hardscape lists, instead of letting them get crowded out by water-chemistry discussion — the underlying data was already being passed to the prompt, but the model wasn't reliably surfacing it within the (previously too-tight) token budget.
-- **Test-result notes are now also saved as a manual `observations` row** (source=`manual`, linked via `related_test_id`), so they show up on the Observations page like any other note instead of being reachable only via the test itself. Timeline dedups: a water-test entry only shows its notes inline if that test has no linked observation (i.e. legacy data pre-dating this change) — new saves show the note once, as its own "manual note" entry.
-- **Add Test Result now has a genuine wait step instead of an instant redirect (2026-07-09, same-day follow-up).** After the concurrency fix above, saving redirected straight to the dashboard — but the AI summary generation still takes ~20-40s in the background, so the dashboard often rendered before it finished, showing stale data until manually refreshed. Rob wanted the redirect itself to wait roughly as long as analysis takes. Implemented as `GET /tanks/{id}/tests/{result_id}/saved` (`tests/saved.html`), a lightweight interim page that polls `GET /tanks/{id}/tests/summary-status?since=<UTC timestamp captured right before the redirect>` every 1.5s (comparing against `tank_state_summary.generated_at`) and redirects to the dashboard the moment the fresh summary lands — capped at a 40s hard timeout so a slow/failed AI call can't strand the user. A "Skip to dashboard now" link is always available. The old `?saved=test` toast-on-dashboard mechanism (and its unused `#toast-container` div) was removed since this page fully replaces that confirmation — nothing else referenced it. Also fixed a double-checkmark visual bug in that old toast in the process (icon span + a literal "✓ " also baked into the message text).
-- 293 tests passing.
-- **Add Test Result flow fixed (2026-07-09).** The standalone "Add Test Result" page (`/tanks/{id}/tests/new`) had regressed to redirecting back to the plain test list instead of the dashboard where the AI Summary panel lives — a side effect of an earlier "stay on the same page" change that shouldn't have applied here. Now redirects to the dashboard with `?saved=test`, which shows a dismissible toast confirming the save happened immediately (before AI analysis, which still runs as a background task). Test results are now also editable in place (`POST /tanks/{id}/tests/{result_id}/update` + edit modal on the test list page), matching the equipment/purchases pattern. Also loosened the analysis/recommendation prompt wording so a value outside a narrow "ideal" sub-range (e.g. a temp a couple degrees above a species' breeding-optimal window) isn't flagged as a concern unless it's actually nearing the real safe-tolerance boundary — prompted by the AI repeatedly over-flagging 75°F for a Neocaridina shrimp tank whose notes still had a stale 68-72°F target (fixed via the mini's own `/tanks/{id}/edit`, the same tank-notes-override mechanism used for the earlier KH false-positive).
-- **Fully deployed and in production.** The mini is running live and reachable both internally on the LAN and externally via the VPN (see "External access" above, verified 2026-07-03). Real data has been loaded into the mini's production DB (Tank 2 "Fish Tank" import confirmed clean via `bin/mini-logs` monitoring — no errors/warnings — and spot-checked directly against the live DB: sensible row counts across all sections, correct inhabitant count history, no obvious data-quality issues). This closes out the initial deployment effort — the project is no longer dev-only.
-- **The detailed per-session changelog below (the "### Changes in ... session" entries) is retired as of this note.** It served its purpose while the app was under active, rapid, single-session development, but now that Fathom is live in production, ongoing changes should be tracked via normal git history/commit messages instead of hand-written session summaries here. This "Current state" section and the rest of the file (architecture, gotchas, deployment) should still be kept up to date going forward — just not the narrative changelog.
-- Tank manufacturer/model (e.g. "Seapora 40 gallon long") now triggers a real web-search-backed AI fetch to backfill missing volume/dimensions, instead of relying on unreliable training-knowledge guessing — see eleventh-session notes below. 263 tests passing
-- Chat ("Ask AI") now has a read-only `query_db` tool so it can answer history questions (e.g. "when was X added", "GH history") instead of claiming the data doesn't exist — see tenth-session notes below.
-- Fixed a batch of real data-quality issues in the "Fish Tank" (40g, tank_id=7) import: two food/supplement items (Cuttlebone, Calcium Bites) were miscategorized as Hardscape; Otocinclus, Kuhli Loach, and non-zebra Nerite Snail were each split into two duplicate inhabitant rows because a later "recount" passage used a slightly different species string for the same population; Red Rili/Red Cherry Shrimp (merged into one inhabitant record) never got zeroed out despite the whole batch dying off. See ninth-session notes below for the fix (both this tank's data and the import root cause).
-- Population chart now shows currently-"many"/unknown-count species as a gap + "(now: many)" legend label instead of freezing at a stale precise number; equipment and purchases are now editable in the UI; import prompt strips parenthetical detail out of `source` (inhabitants/plants/hardscape) and equipment `model` into `notes` (see below); 233 tests passing
-- Equipment's "Specs" field no longer implies JSON is required — edit modal flattens stored JSON specs to plain text; Equipment/Purchases row action buttons now have spacing between them (see below)
-- All moment-in-time timestamps (`events.timestamp`, `test_results.timestamp`, `observations.created_at`) are now standardized on UTC storage with browser-local display/input via new `app.js` helpers (see below)
-- Add Test Result form prefills date/time and water parameters from the tank's most recent test (see below); a background AI call now recommends a next action after each manual test submit and appends it to the test's notes — prompt tuned to be terse and skip restating tank inventory (see below)
-- Timeline entries are now individually deletable, routed by kind to the existing per-entity delete endpoint (see below)
-- `tanks.notes` (free-text field, e.g. "Targets: GH 7-8, KH 2-10...") is now included in every AI prompt (recommendation, analysis, summary, chat) so tank-specific accepted baselines override generic species norms (see below)
-- Observation ↔ entity linkage now supports multiple entities per note via an `observation_links` junction table (see below), incl. on-page "linked to" filter + editable links
-- Reference Info feature added (see above)
-- Quick Log feature added
-- Recurring schedule feature added; full app built and committed
-- AI features active (ANTHROPIC_API_KEY configured in .env)
-- 5G Fish Tank data imported from Apple Notes markdown export
-- **Deployed to Mac mini for the first time on 2026-07-03** — see twelfth-session notes below. Running live on the LAN (and via the VPN). S3 backup cron is live — bucket from `$S3_BACKUP_BUCKET`, 30-day retention, dedicated least-privilege IAM user.
-- **The mini now holds real, independent production data** (as of 2026-07-04, Rob has already added tanks directly on the mini) — see "Production data" section above. It is *not* a mirror of local dev's DB and the two are expected to diverge permanently; do not assume one reflects the other.
-- Ongoing: deploy future commits with `bin/deploy-mini` (backs up, pulls, restarts, health-checks, auto-rolls-back on failure — see "Deployment scripts" above). Check mini logs with `bin/mini-logs`.
-- **Prompt caching**: not implemented (see "AI model strategy" above)
+VPN notes (L2TP to the home router, split tunnel, hairpin doesn't work from inside the LAN) live in `CLAUDE.local.md` along with the hostname.
 
 ## Testing
-
-562 pytest integration tests in `fathom/tests/`. Run with:
 
 ```bash
 .venv/bin/python -m pytest fathom/tests/ -q
 ```
 
-Always run before committing. UI changes: start `bin/run` and drive the flow with **venv Playwright** (`.venv/bin/python`, `sync_playwright`) — Chromium by default, WebKit when layout/WebKit bugs matter. Coverage: tanks CRUD + cascade, test_results, events, inhabitants (null count / population events / population-event delete), issues status workflow, equipment + purchases + observations, import confirm (all 9 sections), `_strip_html` unit tests, DB helpers, AI prompt formatters, recurring_schedule CRUD + mark-done + dashboard widgets + event schedule_id link, quick-log endpoints, reference_info CRUD + placeholder insert + list join, timeline (all entry kinds incl. water tests/observations, kind filtering, out-of-range param coloring, delete-button rendering), test-form prefill, post-submit AI recommendation, chat's `query_db` tool loop + SQL-safety guards (`test_chat.py`) + chat write tools (`test_chat_writes.py`), cultures (station/vessel CRUD, heated bin + heater setpoint on card/list/Ask AI, look water temp per bin, feed log tagging two bins, harvest→tank feeding without AI, schedule mark-done + Today, cascade delete, consumer-tank SET NULL, crashed vessel excluded from default feed select).
+Run before committing. AI calls are mocked in `conftest.py` (no API credits). `test_ai_recommendation.py` drives the real recommendation function with a fake Anthropic client.
 
-AI calls are mocked in all tests: `run_ai_analysis` → no-op; `run_test_recommendation` → no-op; `fetch_reference_info_bg` → no-op. No API credits consumed by tests. `test_ai_recommendation.py` imports the *real* `run_test_recommendation` at module load time (before the `client` fixture's monkeypatch applies) and drives it directly with a fake `anthropic.Anthropic`, so that one file does exercise the real code path — see its module docstring.
-
-### Changes in 2026-07-04 session (thirteenth)
-
-- **LAN access was silently broken by macOS's Application Firewall.** The service binds `0.0.0.0:8000` and `curl localhost:8000` on the mini itself worked fine, but requests from other machines on the LAN timed out with no response at all (not even a connection-refused). Root cause: the firewall's per-binary allow-list only had `/usr/bin/python3` (Apple's system Python, auto-allowed as "built-in signed software") — not the actual binary the venv symlinks to, `~/.pyenv/versions/3.14.0/bin/python3`. Since uvicorn runs headless under launchd with no logged-in GUI session, macOS never got the chance to show its usual "Allow incoming connections?" prompt for the unrecognized binary, so it just dropped the traffic. Fixed with `socketfilterfw --add` + `--unblockapp` on the pyenv binary (needs sudo, one-time — see "Production deployment" above). Confirmed fixed via a real `curl` from the dev Mac after Rob ran the fix.
-- **Built `bin/deploy-mini`**, a safe end-to-end deploy script, since manual SSH-and-pray deploys aren't acceptable now that the mini holds real data someone depends on. Key design choices: (1) refuses to deploy if the mini's git checkout has any local modifications, to never silently discard an in-place hotfix; (2) always takes a fresh S3 backup *before* pulling new code — a deploy is exactly the moment a schema migration or bad commit could corrupt live data, so this is the last line of defense; (3) restarts by killing the uvicorn PID rather than `sudo launchctl unload/load` — this works with zero sudo prompts because the plist's `UserName: rob` means `rob` owns the process and launchd's `KeepAlive` respawns it automatically (this was actually already proven during the original deploy session's verification step, just not yet turned into tooling); (4) health-checks `GET /tanks` after restart with retries, and **automatically rolls back** (`git reset --hard` to the pre-deploy SHA, reinstall deps, restart again) if it doesn't come back healthy — chosen over "just alert and leave it broken" because a family member could be trying to log a water test while Rob is away from a computer.
-- **Built `bin/mini-logs`** as a thin wrapper around the SSH-tail-the-log pattern used throughout this file's session notes, so checking on a live bug report doesn't require re-deriving the SSH invocation each time.
-- **Discovered mini's DB has already diverged from dev's.** While testing `bin/mini-logs`, live traffic in the log revealed Rob had already created 2 tanks directly on the mini (same names as 2 of dev's 3 tanks, "Shrimp Tank"/"Fish Tank", but different ids and no history yet — confirmed by direct query, not assumption). Surfaced this explicitly rather than assuming a migration was wanted: asked whether to overwrite the mini's fresh/empty tanks with dev's fuller history, or leave the mini alone. Rob confirmed the mini tanks were intentional fresh test entries and explicitly chose **not** to migrate — dev and the mini are two independent, permanently-diverging databases now (dev for development, mini for real use). Documented this prominently (new "Production data" section above) specifically so a future session doesn't assume dev's DB is representative of what's actually live, or casually copy one DB over the other without asking again.
-- No pytest changes — this was infra/tooling/docs only; 263 tests still pass.
-
-### Changes in 2026-07-03 session (twelfth)
-
-- **First-ever deployment to the Mac mini.** The mini had literally never been touched for this project — no repo, no venv, no plist, no cron entry. Full first-time setup performed live over SSH (`ssh -A mini`):
-  - `git clone git@github.com:the-mace/aquarium-tracker.git` — initially cloned to a different home path per the (aspirational, never-validated) older "Production deployment" section, then **moved to match the local dev machine's layout**. Updated "Production deployment" above accordingly — that section's paths were wrong until this session actually exercised them.
-  - venv built with `~/.pyenv/versions/3.14.0/bin/python3` (already installed on the mini, matches local dev's pyenv version) — the mini's system `/usr/bin/python3` is 3.9.6, too old and not what dev uses. `pip install -r requirements.txt` succeeded clean, no compiled-wheel issues despite Xcode CLT not being strictly needed (was present anyway).
-  - `.env` copied from local dev via `scp` (contains the real `ANTHROPIC_API_KEY`), `chmod 600` on the remote copy.
-  - `com.fathom.plist` installed as a system `LaunchDaemon` at `/Library/LaunchDaemons/com.fathom.plist` — added a `UserName: rob` key (not present in the README's example plist) so it runs as `rob` rather than root; a `LaunchDaemon` without `UserName` runs as root by default, which would've left the DB/venv files root-owned and broken future `git pull`/manual runs as `rob`.
-  - **`sudo launchctl load` needs an interactive password** — a plain `ssh host "sudo ..."` fails with "a password is required" since there's no TTY. Also tried `ssh -A -t host "cmd1 && cmd2 && ..."` as one chained line, which Rob reported failing with a `zsh: permission denied: /Library/LaunchDaemons/com.fathom.plist` error — looked like a quoting/paste issue splitting the chained command apart in his terminal rather than an actual permission problem (the final bare path got executed standalone). Fix: `ssh -A` to the mini host alias to get a real interactive shell first, then run each `sudo mv`/`chown`/`chmod`/`launchctl load` command one at a time there — worked cleanly.
-  - Verified thoroughly post-deploy (not just "it started"): log tail showed clean `Application startup complete`; `curl localhost:8000/` returned the expected `307` (root redirect) and `curl -L .../` showed the real dashboard title; fresh `fathom.db` auto-created via `init_db()` on first request with all 13+ tables and 0 tank rows (confirmed by direct `sqlite3` query over SSH, to make sure a stray dev DB hadn't been copied over by accident); **killed the running uvicorn PID directly and confirmed launchd's `KeepAlive` respawned it within 3 seconds** and the service kept serving `200`s — this is the check that actually proves the LaunchDaemon (not just a manually-started process) is in control, since `ps aux` alone can't distinguish the two.
-  - **S3 backup cron completed later the same session.** Bucket name is `$S3_BACKUP_BUCKET` (globally-unique-across-AWS constraint discussed first). Rather than reuse his existing `saml`-profile SSO credentials (expired, and probably a work-federated account rather than personal), Rob created a fresh dedicated IAM user in his own AWS account and generated a long-lived access key for it — the right call for an unattended cron job, since SSO tokens expire and would silently break nightly backups. Scoped its policy to exactly that bucket: `CreateBucket`+`ListBucket` (bucket-level) and `PutObject`+`GetObject` (object-level), no `DeleteObject`. Verified the policy was actually least-privilege by testing a delete immediately after a test upload — it correctly failed with `AccessDenied`.
-  - Rob raised the obvious follow-up: with no delete permission and no rotation logic in `backup_db.sh`, backups would accumulate forever. Fixed via an **S3 Lifecycle rule** (`backups/` prefix, 30-day `Expiration`) rather than adding delete permission or script-side rotation logic — S3 expires objects internally at the service level, so the uploading IAM user never needs `DeleteObject` at all. Setting the lifecycle rule itself needed two more IAM actions (`Put`/`GetLifecycleConfiguration`) added to the `fathom` policy temporarily by Rob via the console (`PutBucketLifecycleConfiguration` isn't covered by plain object/bucket CRUD actions) — first attempt hit `AccessDenied` immediately after Rob saved the policy edit, resolved on retry a few seconds later (ordinary IAM propagation delay, not a real problem).
-  - `awscli` installed on the mini via `brew install awscli`. Credentials configured via `aws configure` (interactively, by Rob himself over SSH — deliberately did not scp the credentials file over, to avoid duplicating the secret as a second on-disk copy) into the `default` profile on both machines, matching `.env`'s `AWS_PROFILE=default` — a named profile isn't needed since "fathom" is just the IAM *user's* name, unrelated to the local CLI profile name. (Rob briefly ended up with both a `default` and an unused duplicate `fathom` profile locally, from following an earlier version of my instructions before I simplified to "just use default" — harmless, the duplicate is just unused.)
-  - Cron entry appended (not overwritten) to Rob's existing crontab, which has many unrelated personal-project jobs: `0 3 * * * PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin bash .../backup_db.sh >> /tmp/fathom-backup.log 2>&1`. The explicit `PATH=` prefix is required — cron's default PATH doesn't include `/opt/homebrew/bin`, and `backup_db.sh` invokes `aws` by bare name. Verified with a real live run (not just `--dry-run`): produced an actual `.db.gz` in `s3://$S3_BACKUP_BUCKET/backups/`, confirmed via `aws s3 ls`.
-  - No code changes this session — pure infrastructure/ops. Test suite untouched.
-
-### Changes in 2026-07-02 session (eleventh)
-
-- **Tank dimensions weren't being filled in on import.** Rob reported that importing "Fish Tank" correctly identified it as a "Seapora 40 gallon long" (manufacturer/model extracted fine) but `dimensions_l/w/h` stayed null. Root cause: `IMPORT_PROMPT` rule 2 asked Claude to "fill in standard dimensions... from your knowledge" during the plain extraction call — no actual web search, just a training-knowledge guess, which is unreliable for less-common brands like Seapora (works fine for well-known kits like Fluval Spec V, which is presumably why this wasn't caught earlier).
-- Added `maybe_fetch_tank_dimensions(background_tasks, tank_id)` / `fetch_tank_dimensions_bg(tank_id, manufacturer, model)` to `reference_info.py`, alongside the existing species/plant/hardscape reference-info fetcher — same shape (module-level `_dim_in_flight` set guards against duplicate concurrent fetches, mocked to no-op in `conftest.py`). Unlike `fetch_reference_info_bg` (which does NOT use Claude's server-side web search — it hand-rolls Wikimedia Commons + DDG lookups for images), this one uses the actual `web_search_20260209` tool in a single `messages.create` call, since precise product specs benefit from a real search rather than training-data recall. Only backfills fields that are still `NULL` (`COALESCE(col, ?)` in the UPDATE) — never overwrites a value the user or import extraction already set.
-- Wired into three call sites, all self-checking via the same `maybe_fetch_tank_dimensions` (queues only if manufacturer/model is set AND at least one of volume/dimensions is still null): `import_confirm` (after the `tank_specs` UPDATE block — this is the case Rob hit), and `tanks.py`'s `create_tank`/`update_tank` (manual Add/Edit Tank forms), which previously had no dimension-backfill path at all.
-- Backfilled the real tank 7 data live by calling `fetch_tank_dimensions_bg(7, 'Seapora', '40 gallon long')` directly against the running dev DB (not a fabricated/manual value) — came back 48.0" × 13.0" × 16.0", matches the real product's listed external dimensions. Verified via `curl localhost:8000/tanks/7` that the detail page now renders it.
-- 6 new tests in `test_reference_info.py`: `maybe_fetch_tank_dimensions` queuing/skipping (manufacturer known + dims missing → queues; no manufacturer/model → skips; specs already complete → skips; unknown tank id → skips), plus two endpoint-level tests confirming `create_tank`/`update_tank` trigger the fetch when manufacturer/model is submitted. Also fixed a latent test-isolation gap surfaced by these: `_in_flight`/`_dim_in_flight` are module-level sets that only get cleared by the real background task's `finally` block — a test that swaps in a `MagicMock` for the bg task (rather than letting it run) leaks the tank_id/entity_name into the set for the rest of the pytest process, since every test gets a fresh per-test DB where autoincrement ids restart at 1. Existing reference-info tests dodged this by luck (always using distinct entity name strings); the new tank_id-keyed tests collided immediately. Fixed by clearing both sets in `conftest.py`'s `client` fixture on every test setup. 263 tests total, all passing.
-
-### Changes in 2026-07-02 session (tenth)
-
-- **Chat gave wrong "I don't have that data" answers for things the DB actually records.** Two real examples from Rob: asking when the Kuhli Loaches were added got "I don't have a record" even though `inhabitants.added_date` was set; asking for GH history got "I only have a single reading" even though every weekly test result has a GH value. Root cause was two-fold: (1) `chat.py`'s inhabitant SQL/formatting never selected or displayed `added_date` at all (also true of the recommendation/analysis/summary prompts, which share `_fmt_inhabitants` in `ai_analysis.py`) — fixed by adding `added_date` to `_fmt_inhabitants`'s output and chat's `SELECT`, and deleting chat's near-duplicate inline copy of that formatter in favor of importing the shared one; (2) the chat system prompt is fundamentally a *snapshot* (latest test only, current inhabitants only, 5 recent observations) with no way to reach further back, and no amount of adding more prefetched fields generalizes to arbitrary "history of X" questions.
-- **Added a `query_db` tool to chat** so Claude can run a single read-only SQL `SELECT` against the live DB mid-conversation for anything the snapshot doesn't cover. `_query_db_tool(tank_id)` builds the tool definition with the DB schema inlined (via new `database.get_schema_text()`, introspected from `sqlite_master`/`PRAGMA table_info` at call time so it can never drift from the actual tables) and an instruction to filter `WHERE tank_id = {tank_id}`. `chat()`'s single `messages.create` call became a loop (`MAX_TOOL_ROUNDS=4`) that re-calls Claude with `tool_result` blocks appended until it stops requesting tools or the round cap is hit. Only the final text reply is appended to the long-lived `_conversations` history — the tool_use/tool_result exchange is scoped to `working_messages`, a local copy, so future turns don't carry that overhead.
-- **SQL safety, two layers**: `_run_query_db` regex-rejects anything that doesn't start with `SELECT` (also naturally blocks multi-statement injection, since Python's `sqlite3.execute()` refuses more than one statement anyway); underneath that, the query always runs over a new `database.get_db_readonly()` connection — a SQLite URI `mode=ro` connection — so even a query that slipped past the regex physically cannot write. Verified both layers with tests (`fathom/tests/test_chat.py`): non-`SELECT` rejected, semicolon-chained write rejected, and a real DB-level check that the tank's name was unchanged after attempting a sneaky `UPDATE`.
-- Verified live against real production data (not just mocks): asking tank 7 chat "When did I add the Kuhli Loaches?" now answers directly from the snapshot (`added_date` fix alone was enough, no tool call needed); asking tank 5 chat "Tell me the GH history of this tank" triggered a real `query_db` call (`SELECT timestamp, gh FROM test_results WHERE tank_id = 5 ORDER BY timestamp ASC`, visible in `/tmp/fathom.log`) and returned the full 17-reading history with a sensible trend summary.
-- 9 new tests (2 in `test_helpers.py` for `_fmt_inhabitants`'s `added_date`, 7 in new `test_chat.py`); 257 total, all passing. `query_db` is mocked at the transport layer in tests the same way as other AI calls — via a fake `anthropic.Anthropic` class, not a real API key — so no credits are consumed.
-
-### Changes in 2026-07-02 session (ninth)
-
-- **Root cause of the inhabitant-duplication bug**: both the import review's dedup check (`_find_duplicates`) and the actual UPSERT match in `import_confirm` (`import_data.py`) keyed inhabitants purely on an exact-match `species` string. When the source text re-narrates the same population later with a recount (e.g. "Otocinclus sp." confirming "6 on 2026-06-05" — the exact same purchase/death history as an earlier "Otocinclus vittatus" entry, just phrased differently), the differing species string meant it was never recognized as the same inhabitant, so a second row got created instead of updating the first. Real example from Rob's live "Fish Tank" (40g) import: this happened for Otocinclus Catfish, Kuhli Loach, and non-zebra Nerite Snail. Fixed both the dedup check and the UPSERT match to key on `common_name` first (falling back to `species`) — common_name stayed stable across the duplicate mentions in all three cases even though species text drifted. Added `IMPORT_PROMPT` rule 18 instructing Claude to keep species/common_name strings consistent for the same real-world population across a document, and rule 17 clarifying that consumable/food items (cuttlebone, calcium chews) are not Hardscape.
-- **Zero-count inhabitants no longer shown**: `inhabitants.count = 0` (a population that fully died off, as opposed to `NULL` = uncountable "many") was still rendering as a current inhabitant on both `/tanks/{id}/inhabitants` and the dashboard's Inhabitants panel. Both queries (`routers/inhabitants.py`, `routers/tanks.py`) now filter `WHERE count IS NULL OR count > 0`. Historical `population_events` and AI-facing queries are untouched — a dead-off population should disappear from "what's in the tank now" views but stay fully visible in history/analysis.
-- **Cleaned up tank 7's actual data** (real user data, not test fixtures) to match: deleted the two food-item Hardscape rows; merged each duplicate-inhabitant pair into the earlier row, added a backdated `died` population_event to reconcile the tracked count down to the later recount's true count (Otocinclus 9→6, Kuhli Loach 7→3, non-zebra Nerite 4→3, each with a note explaining the reconciliation), and deleted the redundant duplicate row + its now-redundant population_event; zeroed out the merged Red Rili/Red Cherry Shrimp inhabitant (was still showing count 10 despite the whole batch dying off per Rob) with a dated correction event, and resolved issue #78 ("Red Cherry Shrimp deaths post-introduction") accordingly. Took a timestamped `.bak` copy of `fathom.db` before editing. Verified live via Playwright against the running dev server: Inhabitants page and dashboard panel both show the correct 8 species with no duplicates and no zero-count rows; Hardscape page no longer lists Cuttlebone/Calcium Bites; historical activity feed still correctly shows the die-off/reconciliation events.
-- 233 existing tests still pass; no new tests added (this was primarily a production-data correction plus two small query filters — the import dedup/UPSERT keying change is exercised by existing `test_import.py` coverage via the pre-existing species-based dedup tests, which use inputs where species and common_name never diverge).
-
-### Changes in 2026-07-02 session (eighth)
-
-- **Equipment specs field UX**: the "Specs (JSON or description)" label/placeholder implied users should type JSON, but nobody would do that by hand. Relabeled to plain "Specs" on both Add and Edit forms. The edit modal was also prefilling the raw stored JSON (e.g. `{"type": "prefilter sponge"}` from imports, or `{"description": "..."}` for hand-typed text) straight into the textarea — added `_specs_display()` in `equipment.py` (list route only) to flatten any stored JSON back to readable plain text (`{"description": x}` → `x`; other dicts → `key: value, key: value`; falls back to raw string if not JSON). Saving still goes through the existing wrap-as-JSON-if-not-valid-JSON logic in the POST handlers, unchanged.
-- **Action button spacing**: Equipment and Purchases table rows had their Edit/💬 Observations/✕ delete buttons packed edge-to-edge with no gap (inline elements, no margin). Added `class="actions-cell"` to both tables' action `<td>` and a `.actions-cell > * + * { margin-left: .35rem }` CSS rule.
-- 1 test suite run only (no new tests — pure display/CSS fix, existing 233 still pass).
-
-### Changes in 2026-07-02 session (seventh)
-
-- **Population chart froze at a stale precise number once a species' count became "many"/unknown**: `update_inhabitant` only ever inserted a `population_events` row when transitioning between two *known* counts (`actual_count is not None and old["count"] is not None`) — going from a known count to `count_unknown=true` (or back) silently updated `inhabitants.count` but recorded no event, so the chart's delta-summed line just kept showing the last known total forever (e.g. Ramshorn Snail frozen at 24, Bladder Snail frozen at 2, on Rob's real tank-5 data). Rather than invent a new event type for the delta model, `chart_population`'s `current` query (`routers/tanks.py`) dropped its `count > 0` filter so it now returns *every* inhabitant including unknown ones (`count: null`), and `loadPopChart` (`app.js`) uses that as the authoritative value for "today" instead of the summed running total — a `null` there is a real gap in the Chart.js line (default `spanGaps: false`), and the dataset legend label gets a `(now: many)` suffix. Verified live against tank 5 by inspecting the actual `Chart.js` dataset arrays via Playwright: Ramshorn/Bladder Snail data now end in `null` after their last known-count date, Fire Red Shrimp (still numerically tracked) is unaffected.
-- **Import prompt: parenthetical detail dumped into structured fields instead of notes**: same pattern as the existing hardscape-item-name (rule 13) and equipment-brand/model-split (rule 14) fixes, found in two more places on Rob's real tank-5 data. Rule 15: `source` (inhabitants/plants/hardscape) should be a short vendor/origin name only — `"SF Aquatic (purchased online, $31.02)"` should become `source="SF Aquatic"` + the parenthetical moved to `notes`. Rule 16: equipment `model` should be the product name only, not a full listing title — `"Prefilter Intake Cover for Fluval Flex Spec Evo (Spec III & V 2.6/5G)"` should become `model="Prefilter Intake Cover"` + the compatibility note moved to `notes`. Both are prompt-only fixes (`IMPORT_PROMPT` in `import_data.py`); existing bad rows in tank 5 were left as-is (real production data, not touched without being asked).
-- **Equipment and purchases were view/add/delete-only in the UI** — no way to fix a typo or update a value without deleting and re-adding. `equipment.py` already had a working `POST /{eq_id}/update` backend with no UI wired to it; added an edit modal + button to `equipment/list.html` (data-attributes read via JS, same pattern as the ref-info trigger, to avoid the quote-escaping fragility of the existing `openEditInh`-style inline-string approach). Purchases had no update endpoint at all — added `POST /purchases/{purchase_id}/update` to `purchases.py` (unprefixed, matching the existing delete route's shape) plus a matching edit modal in `purchases/list.html`. Both verified end-to-end live via Playwright (prefill → edit → save → persisted) against tank 4 (scratch tank).
-- 3 new tests: equipment update, purchase update, population-chart `current` includes unknown-count inhabitants.
-
-### Changes in 2026-07-02 session (sixth)
-
-- **Quick Log / Import recurring_schedule bug**: `SECTION_CONFIG` in both `tanks/quick_log.html` and `tanks/import.html` (the JS objects driving the review-table checkboxes) never got a `recurring_schedule` entry when that feature was added — the backend extracted schedule rows fine, but the frontend had no table to render them, so "Save Selected" always saw zero rows for a schedule-only quick log. Added the missing section config to both templates. Rob's real feeding/maintenance schedule (8 rows, later 12 after a prompt fix below) was saved live via the fixed flow.
-- **mark-done redirect**: `POST /tanks/{id}/schedule/{sch_id}/mark-done` always redirected to the dashboard, even when clicked from the Schedule page itself. Added a `return_to` hidden form field (`schedule.html` sends `"schedule"`, `detail.html`'s dashboard widget sends `"dashboard"`); `mark_done` in `schedules.py` branches the `RedirectResponse` target on it.
-- **Weekly day-of-week maintenance never got a due date**: `mark_done` only computes `next_due` from `interval_days`, but the import prompt (rule 10) only set `interval_days` for explicit day-count phrasing ("clean filter monthly" → 30) — a task tied to a `day_of_week` (e.g. "Thursday: water change") never triggered that rule, so `next_due` stayed null forever after the first mark-done. Fixed rule 10 to always set `interval_type='weekly'`/`interval_days=7` for `logged` tasks with a `day_of_week`.
-- **Timestamps standardized on UTC, displayed/entered in browser-local time**: found while debugging why mark-done completions weren't sorting correctly on the Timeline — the app mixed UTC (SQL `DEFAULT (datetime('now'))`, already UTC everywhere) with server-local Python-built timestamps (`schedules.py` mark_done, `ai_analysis.py`'s 28-day cutoff) and *raw, unconverted* browser-local strings from the three `datetime-local` inputs (Add Test Result page, dashboard's Log Water Test / Log Event modals). Now: `mark_done` stores `events.timestamp` via `datetime.now(timezone.utc)`; new `app.js` helpers (`localDatetimeToUTCString`, `prepareLocalTimestamps`) convert each `datetime-local` input to UTC via a paired hidden field before submit (`onsubmit="return prepareLocalTimestamps(this)"`); `formatLocalTimestamp`/`hydrateLocalTimestamps` rewrite every `<span class="ts-local" data-utc="...">` (5 sites: observations list, dashboard latest-test/observations panels, population-event history, tests list) to local time on `DOMContentLoaded`. AI-extracted dates with unknown time-of-day now pad to `12:00:00` (noon) instead of midnight, so the noon anchor never rolls to the wrong local calendar day after UTC→local conversion (`import_data.py` prompt + the two population-event insert sites). **Scoped out deliberately**: `recurring_schedule.last_done`/`next_due`, `tanks.py`'s `today_dow`/`today_date`, and Timeline's date-group headers stay on server-local time — those are calendar-day concepts (schedule matching, overdue coloring), not moments in time; making them browser-tz-aware would need a new cookie+`zoneinfo` mechanism, judged out of scope for "standardize timestamps." No DB migration — current dev DB is disposable test data per Rob.
-- Verified live with Playwright forcing a non-UTC/non-server browser timezone (`Asia/Tokyo`, UTC+9): a stored `17:45:27` UTC row displayed as `2026-07-03 02:45`; a `09:00` local `datetime-local` input landed in the DB as the correctly-shifted UTC value. No JS console errors across the dashboard, tests, observations, inhabitants, schedule, and timeline pages.
-- Two mark-done events from earlier in the session (before the UTC fix existed) had been hand-patched via raw SQL to local-time strings for a prior debugging step, and were never migrated — corrected to true UTC (+4h, EDT) so they sort correctly on the Timeline. One older test result also had a pre-fix malformed `"...T11:38"` timestamp (raw, unconverted `datetime-local` value, predating this session's fix) that sorted out of order due to `T` > space in raw string comparison — corrected to proper `"... 15:38:00"` UTC format.
-
-### Changes in 2026-07-02 session (fifth)
-
-- **AI test recommendation prompt tuned down**: `build_recommendation_prompt` in `ai_analysis.py` was too close to the pre-existing `run_ai_analysis` "AI Analysis" observation — verbose, and read like a tank summary (inhabitant counts etc.) which Rob doesn't want repeated back to him mid-maintenance. Reworked to: feed inhabitants/issues/recent test history (last 6 `test_results`, for real trend comparison — previously the prompt had *no* prior test data at all, so "stable trend" claims were unsupported) in as **reasoning-only context**, with an explicit instruction not to restate it; response now covers only (1) open-issues status, (2) notable parameter values/trends vs. recent tests, (3) the action to take — target 2-4 sentences, e.g. "No open issues. Nitrate dropped from 10 to 5 ppm... Proceed with the standard water change." Verified live against tank 5.
-- **Timeline delete**: every `.tl-item` now has a hover-revealed ✕ button (`.tl-delete` CSS, opacity 0→1 on `.tl-item:hover`). `deleteTimelineItem(kind, id)` in `timeline.html`'s `{% block scripts %}` maps each of the 9 timeline `kind`s to its *existing* per-entity delete endpoint (event→DELETE `/tanks/{id}/events/{id}`, test→DELETE `/tanks/{id}/tests/{id}`, observation / issue / equipment / plant / hardscape → their `POST .../delete` routes) — no new unified delete endpoint, just routing. `issue_open`/`issue_resolve` both delete the underlying issue (same for `equip_install`/`equip_remove`); confirm dialog says so. Added the one missing delete route, `POST /tanks/{id}/inhabitants/population-events/{pe_id}/delete` (population events previously had no delete endpoint anywhere in the app).
-- Prompted by Rob noticing my own live-testing (multiple manual `curl` test-result submits while verifying the two features above) had left orphaned "AI Analysis" observations and a stray test row in his real tank-5 data — cleaned up via the same endpoints now exposed in the UI. Lesson: prefer creating verification data in a scratch tank, or cleaning up via API immediately after, when live-testing against the user's real DB — background AI tasks (`run_ai_analysis`) fire on *every* test/event save regardless of who's testing, and deleting the triggering row does not cascade-delete the resulting observation.
-- Two real duplicate test-result rows also turned up in tank 5 (#126/#127, ~1 min apart, identical values — an accidental resubmit) with their own auto-generated near-identical "AI Analysis" observations. Confirmed the Timeline delete flow end-to-end for both the `observation` (POST) and `test` (DELETE) kinds by driving a real headless browser against the running dev server with Playwright, in **both Chromium and WebKit engines** (`sync_playwright`, not installed in the project venv — used system `python3`, ran `python3 -m playwright install webkit --with-deps` once) — all four combinations correctly deleted the row from the DB. Removed the later duplicate (#127) and its observation.
-- **Root cause of "KH=10 keeps getting flagged"**: not a code constant anywhere — found the tank's own `tanks.notes` free-text field (populated at import time) literally said `"Targets: GH 7-8, KH 2-4, ..."`, a stale aspirational target Rob's home water can't reach without RO. Updated tank 5's notes to `KH 2-10` with an explanatory aside via the real `POST /tanks/{id}/edit` endpoint (not raw SQL) so the change goes through the app's normal validation path. Separately discovered `tanks.notes` was **never read by any AI prompt** — `build_recommendation_prompt`, `build_analysis_prompt`, `build_summary_prompt` (`ai_analysis.py`), and `chat.py`'s system prompt all built a `Tank: {name} (...)` header from `water_type`/`volume_gallons` only. Added `_fmt_tank_notes(tank)` (returns `""` if empty/whitespace-only, else a labeled line telling Claude to defer to it over generic species norms) and appended it to that header line in all four prompt builders — `chat.py` imports it from `ai_analysis.py`. Verified live: submitting a KH=10 test after the notes fix produced a recommendation that treated GH dropping to 8 as the only parameter worth mentioning, no KH flag.
-
-### Changes in 2026-07-02 session (fourth)
-
-- **Add Test Result form prefill**: `GET /tanks/{id}/tests/new` now fetches the tank's most recent `test_results` row and prefills every parameter field's `value=`; a small `<script>` sets the `datetime-local` timestamp field to the browser's current local time on load (server can't know the client's timezone). Renamed the field label from "Timestamp (leave blank for now)" to "Date & Time" — the blank-defaults-to-now behavior in `test_results.py`'s POST handler is unchanged, prefilling is purely a UX convenience.
-- **Post-submit AI recommendation**: new `run_test_recommendation(tank_id, result_id)` in `ai_analysis.py`, queued as a second `BackgroundTask` from `test_results.py`'s `POST /tanks/{id}/tests` handler only (not triggered by import or quick-log inserts). Gathers the just-saved test result, all active `recurring_schedule` rows, and the tank's timeline entries from the last 28 days (reuses `routers.timeline._QUERY`, filtered in Python by date since it's a plain SQL string built for a different endpoint). Prompt asks Claude to recommend an action — usually "follow the normal water-change schedule" but it can deviate if history suggests otherwise (e.g. a change was already done recently). The response text is appended to the test result's own `notes` column as `\n\nAI Recommendation: {text}`, preserving whatever the human typed. Mocked to a no-op in `conftest.py` like `run_ai_analysis`.
-- Verified live against tank 5 with a real API call (not just mocked tests) — Claude correctly pulled the last water-change date and dosing amount from the schedule/timeline context into its recommendation.
-
-### Changes in 2026-07-02 session (third)
-
-- **Date filter UX fix on Timeline/Observations**: the inline `date_from`/`date_to` `<input type="date">` fields were replaced with a "📅 Dates" button that opens a modal (`tl-date-modal` / `obs-date-modal`, standard `.modal`/`.modal-box-sm` markup) — the date inputs live inside it and submit the same outer GET filter form on "Apply". Root cause: Safari renders an *empty* `<input type="date">` with today's date pre-filled in the digit sub-fields, and WebKit ignores `color` overrides on those fields entirely (confirmed by installing a real headless WebKit via Playwright and inspecting rendered pixels — `::-webkit-datetime-edit-text` recolors the `/` separators but not the digits), so there was no CSS-only fix. The "Dates" button highlights (`btn-accent`) when a filter is active instead, and — since the button's own text never changes — the Filter/Clear buttons after it never shift position.
-- Tried and reverted along the way: forcing the empty-state color via CSS class (no effect, per above); swapping `type="date"`/`type="text"` on focus/blur to fake a placeholder (caused a double-click-to-open-picker regression and field-width jumping); an always-visible "filtering X → Y" status line next to the fields (removed per Rob's feedback — the highlighted button alone reads clearly enough).
-
-### Changes in 2026-07-02 session (second)
-
-- **Timeline gets water tests and observations**: `routers/timeline.py`'s `_QUERY` UNION gained an `observation` branch (badge text/color keyed off `source`: manual/auto/import); water tests are fetched via a separate query and merged + re-sorted in Python (`(tank_id,) * 9` for the UNION placeholders) rather than folded into the SQL string, because each test parameter needs individual out-of-range styling.
-- **Out-of-range test param coloring**: `_PARAM_DEFS`/`_test_params()` in `timeline.py` classify each of pH/GH/KH/NH3/NO2/NO3/TDS/Temp as `danger`/`warn`/normal using the *same* thresholds already used on the dashboard latest-test panel and `tests/list.html` (NH3 >0.25 danger, >0 warn; NO2 >0.1 danger; NO3 >40 warn — pH/GH/KH/TDS/Temp have no established thresholds anywhere in the app, so they're never colored). Rendered as a `tl-param`/`tl-param-danger`/`tl-param-warn` span per parameter in `tanks/timeline.html`.
-- New CSS: `.tl-dot-test`/`.tl-badge-test` (violet), `.tl-dot-obs-manual/-auto/-import` + matching badges (grey/green/blue, matching the Observations page's own badge colors), `.tl-param-danger`/`.tl-param-warn`.
-- Timeline filter dropdown, legend, and empty-state copy updated for the two new kinds (`kind=tests`, `kind=observations`).
-- The dedicated `/tanks/{id}/tests` list page and sidebar "Add Test" link are unchanged — this just gives water tests a second, chronological home in the Timeline.
-
-### Changes in 2026-07-02 session (first)
-
-- **Observation ↔ entity linkage**: `observations` initially got four new nullable columns (`related_inhabitant_id`/`related_plant_id`/`related_hardscape_id`/`related_equipment_id`), then **refactored the same session** into an `observation_links` junction table (`observation_id, entity_type, entity_id`, `UNIQUE(observation_id, entity_type, entity_id)`, cascade-deletes with the observation) so one note can link to *multiple* entities — e.g. "pruned frogbit, ramshorn snails died off, UV light back on" links to a plant, an inhabitant, and an equipment item at once. `database.py` migrates any legacy single-column data into the junction table (reads old FK values before the `observations` table rebuild, since `observation_links`' `ON DELETE CASCADE` would wipe rows inserted before the rebuild's `DROP TABLE`). `routers/observations.py`: `_set_observation_links()`/`_links_by_observation()` replace the old `COLUMN_BY_TYPE` single-column lookups; `add_observation`/`set_observation_link` now take `link_ref: List[str]` (repeated form field) instead of a single value.
-- **Observations page** (`routers/observations.py`, `templates/observations/list.html`): `GET /tanks/{id}/observations` accepts `?link_type=inhabitant|plant|hardscape|equipment&link_id=N` as a legacy fallback, plus a `link_ref=type:id` filter (special values `any`/`none`); shows a "Showing notes for… · Clear filter" banner when filtered. `POST .../observations` accepts one or more `link_ref` fields from a new "Relates to" multi-select in the Add Note modal.
-- **"💬 Observations" links** (renamed from "Notes" — collided with the entity's own free-text notes field): added to the Actions cell on `inhabitants/list.html`, `plants/list.html` (both the plants and hardscape tables), and `equipment/list.html` — each links to the Observations page pre-filtered to that row. Styled `.btn-accent` (filled blue pill, new CSS class) rather than a ghost/underlined link.
-- **Import/Quick Log auto-linking**: `IMPORT_PROMPT` observations now carry a `subjects` list (`[{subject_type, subject_name}, ...]`) instead of a single subject pair, so one extracted note can tag several distinct items. `import_confirm` builds canonical-name → id lookup maps (reusing `_canonical()` from `reference_info.py`), preloaded from the tank's existing entities and kept current as each section's insert/update loop runs, then inserts one `observation_links` row per resolved subject (deduped). Falls back to reading the older singular `subject_type`/`subject_name` shape for any cached preview from before this change. Unmatched/empty subjects leave the note with zero links — no error.
-- **Observations manual filter bar**: mirrors the Timeline page's filter UX — `search` (text, LIKE on `o.text`), `source` (manual/auto/import), `date_from`/`date_to`. Combines with the entity-link filter: `clear_link_url` drops just the entity link and keeps search/source/date; `clear_search_url` does the reverse. Both computed server-side in `list_observations` via `urlencode`.
-- **Editable links**: every observation card has a "🔗 Add/Change links" button → small modal → `POST /tanks/{id}/observations/{obs_id}/link` (JSON fetch, empty `link_ref` list clears all links) — previously links could only be set at creation time. The `<optgroup>` markup for entity pickers was pulled into a shared Jinja macro (`entity_optgroups`) in `observations/list.html`, used by the add-note form, the filter select, and the edit-link modal.
-- **Also bundled** (prior uncommitted work): `plants_hardscape.py` gained `POST /plants/{id}/update` and `POST /hardscape/{id}/update` (the edit modals in `plants/list.html` already called these); `count`/`cost` form fields changed from `int`/`float` to `str` + manual parsing so empty-string submissions from the edit modals don't 422; `.form-group input[type="checkbox"]` CSS fix so checkboxes don't stretch to full field width.
-
-### Changes in 2026-06-30 session (fourth)
-- **Reference Info**: new `reference_info` table (UNIQUE entity_type+entity_name). Background task uses `claude-sonnet-4-6` + `web_search_20260209` to fetch description, care notes, Wikimedia Commons image URL. Auto-queued on add and on list-page load for items with no row yet.
-- **Inhabitants & Plants lists**: LEFT JOIN `reference_info`; 46px thumbnail column; click → ref-info modal with image + description + care notes + Refresh button.
-- **anthropic SDK**: upgraded 0.40.0 → 0.115.0 (required for web_search_20260209 response parsing).
-- **Tests**: 9 new reference_info tests; `fetch_reference_info_bg` mocked to no-op in conftest — no API credits consumed by test suite.
-
-### Changes in 2026-06-30 session (third)
-- **Observations source**: DB migration adds `'import'` to CHECK constraint. Import confirm saves observations with `source='import'`; flag notes get `source='auto'`. Templates show "Import Note" badge (blue) vs "AI Analysis" (green) vs "Manual Note" (grey).
-- **Inhabitants import fix**: `_find_duplicates` now checks count diff — same count auto-unchecks ("no change needed"), different count stays checked ("will update from X to Y"). Within-preview: earlier entries for same species auto-unchecked; `import_confirm` sorts inhabitants by date so latest wins on UPSERT. After count updates, saves an "Import updated inhabitants" observation.
-- **Plants species in prompt**: Rule 12 added — always populate scientific species name for plants (Java moss → Taxiphyllum barbieri, etc.).
-- **Issues list**: Client-side filter bar — status pills (All/Open/Monitoring/Resolved), text search, oldest/newest sort toggle.
-- **Timeline**: Server-side filtering — date range, kind (events, issues, equipment, population, plants, hardscape), text search. Plants and hardscape added to timeline query with their own dot/badge colors.
-- **Plants & Hardscape page**: New `/tanks/{id}/plants` page with CRUD for both. Router: `plants_hardscape.py`. Template: `plants/list.html`. Sidebar link added to base.html between Inhabitants and Equipment.
-- **CSS**: `.filter-bar`, `.filter-pills`, `.pill`, `.pill-active` styles; `.obs-import` badge; `.tl-dot-plant`, `.tl-dot-hardscape`, `.tl-badge-plant`, `.tl-badge-hardscape` timeline styles.
-
-### Changes in 2026-06-30 session (second)
-- Quick Log: dashboard modal → sessionStorage handoff → `/tanks/{id}/quick-log-page` with auto-start parse
-- Refactor: `_extraction_sse_stream` extracted from `import_preview`; both import and quick-log reuse it
-- New routes: `GET/POST /tanks/{id}/quick-log`, `GET /tanks/{id}/quick-log-page`
-- New template: `tanks/quick_log.html`
-- CSS: `.action-btn-primary` for highlighted Quick Log button
-- Tests: 6 new quick-log endpoint tests
-
-### Changes in 2026-06-30 session (first)
-- Recurring schedule feature added (see above)
-
-### Changes in 2026-06-29 session
-- Schema: `plants` and `hardscape` tables (both cascade-delete with tank)
-- UI: events show date only (no time, no amount); tank specs panel on dashboard; plants/hardscape cards; modal close CSS fix (flex !important vs display: none); inhabitants "many" toggle (null count)
-- AI: chat context now injects all water params explicitly, plants, hardscape, open issues, 5 observations, tank hardware/substrate; debug log for context length; ai_analysis includes plants/hardscape in summary prompt
-- Import: rich extraction prompt covering issues, plants, hardscape, observations, tank_specs, narrative equipment; interactive flagged review UI with editable tables, per-row checkboxes, amber flag highlighting; sidebar nav link added
-- Tests: 118 pytest integration tests added (`fathom/tests/`); `pytest.ini` with `pythonpath = fathom`; AI and DB isolated per test via monkeypatch
-- Repo: MIT LICENSE added; `.gitignore` updated with pytest/coverage entries
+UI changes: start `bin/run` and drive the flow with venv Playwright (`.venv/bin/python`, `sync_playwright`). Chromium by default. WebKit when layout or WebKit bugs matter. Don't write test data into the real Fish Tank; use a scratch tank.

@@ -74,6 +74,74 @@ def test_init_db_idempotent(tmp_path, monkeypatch):
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='goals'"
         ).fetchone()[0]
         assert "paused" in goals_sql
+        assert "reference_info" not in tables
+        assert "schema_migrations" in tables
+        version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+        assert version == 1
+        event_cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+        assert "schedule_id" in event_cols
+        chat_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_conversations)").fetchall()}
+        assert "culture_id" in chat_cols
+        obs_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='observations'"
+        ).fetchone()[0]
+        assert "'import'" in obs_sql
+
+
+def test_legacy_reference_info_moves_to_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute("DELETE FROM schema_migrations")
+        conn.execute(
+            """CREATE TABLE reference_info (
+                id INTEGER PRIMARY KEY,
+                entity_type TEXT,
+                entity_name TEXT,
+                common_name TEXT,
+                description TEXT,
+                care_notes TEXT,
+                image_url TEXT,
+                image_source TEXT,
+                image_attribution TEXT,
+                fetched_at TEXT
+            )"""
+        )
+        conn.execute(
+            """INSERT INTO reference_info
+               (entity_type, entity_name, common_name, description, fetched_at)
+               VALUES ('species', 'danio rerio', 'Zebra Danio', 'striped', '2026-01-01')"""
+        )
+    init_db()
+    with get_db() as conn:
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reference_info'"
+        ).fetchone() is None
+        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 1
+    with _db.get_ref_db() as ref_conn:
+        row = ref_conn.execute(
+            "SELECT common_name, description FROM reference_info WHERE entity_name='danio rerio'"
+        ).fetchone()
+        assert row["common_name"] == "Zebra Danio"
+        assert row["description"] == "striped"
+    init_db()
+    with _db.get_ref_db() as ref_conn:
+        assert ref_conn.execute(
+            "SELECT COUNT(*) FROM reference_info WHERE entity_name='danio rerio'"
+        ).fetchone()[0] == 1
+
+
+def test_legacy_db_missing_columns_is_not_stamped(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "old.db"))
+    monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "old_ref.db"))
+    import sqlite3
+    conn = sqlite3.connect(tmp_path / "old.db")
+    conn.execute("CREATE TABLE tanks (id INTEGER PRIMARY KEY, name TEXT)")
+    conn.commit()
+    conn.close()
+    with pytest.raises(RuntimeError, match="missing current columns"):
+        init_db()
 
 
 def test_get_db_rolls_back_on_error(tmp_path, monkeypatch):

@@ -177,7 +177,8 @@ crontab -e
 aquarium-tracker/
 ├── fathom/
 │   ├── main.py              # FastAPI app, router includes, startup init_db()
-│   ├── database.py          # Schema, migrations, connection helpers
+│   ├── database.py          # Connections; schema upgrades live in schema.py
+│   ├── schema.py            # Canonical schema + versioned migrations
 │   ├── ai_config.py         # CLAUDE_MODEL and token budgets
 │   ├── routers/
 │   │   ├── tanks.py         # Tank CRUD + dashboard + chart data
@@ -198,10 +199,11 @@ aquarium-tracker/
 │   │   ├── today.py
 │   │   ├── home_water.py
 │   │   ├── cultures.py      # Live-food stations (not tanks)
-│   │   └── ai_analysis.py   # Background analysis / summary / recommendation
+│   │   ├── ai_analysis.py   # Background analysis / summary / recommendation
+│   │   └── ai_prompts.py    # Prompt text, formatters, response parsers
 │   ├── templates/           # Jinja2 (tanks, cultures, today, home water, chat, …)
-│   ├── static/              # CSS + JS + vendored Chart.js
-│   ├── data/                # SQLite DB (gitignored)
+│   ├── static/              # CSS + JS (page scripts included) + vendored Chart.js
+│   ├── data/                # fathom.db + reference_cache.db (gitignored)
 │   ├── tests/               # pytest
 │   └── scripts/
 │       └── backup_db.sh

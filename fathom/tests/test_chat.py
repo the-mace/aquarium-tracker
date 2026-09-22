@@ -10,6 +10,7 @@ import sqlite3
 import pytest
 
 import database as _db
+from database import get_schema_text
 from routers.chat import _build_system_prompt, _run_query_db, _title_from_message
 
 
@@ -272,6 +273,43 @@ def test_run_query_db_returns_rows_for_valid_select(client, tank_id):
     result = _run_query_db(f"SELECT id, name FROM tanks WHERE id = {tank_id}", tank_id)
     assert "rows" in result
     assert result["rows"][0]["id"] == tank_id
+
+
+def test_query_db_reads_reference_cache(client, tank_id):
+    conn = sqlite3.connect(_db.REFERENCE_CACHE_DB_PATH)
+    conn.execute(
+        """INSERT INTO reference_info
+           (entity_type, entity_name, common_name, description, scientific_name, fetched_at)
+           VALUES ('species', 'cache only fish', 'Cache Only', 'from cache', 'Cacheus onlyus', '2026-09-01')"""
+    )
+    conn.commit()
+    conn.close()
+    result = _run_query_db(
+        "SELECT common_name, scientific_name FROM reference_info WHERE entity_name = 'cache only fish'",
+        tank_id,
+    )
+    assert "rows" in result, result
+    assert result["rows"][0]["common_name"] == "Cache Only"
+    assert result["rows"][0]["scientific_name"] == "Cacheus onlyus"
+    with _db.get_db() as main:
+        assert main.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reference_info'"
+        ).fetchone() is None
+    schema = get_schema_text()
+    assert "reference_info(" in schema
+    assert "scientific_name" in schema
+    assert "schema_migrations(" not in schema
+    culture_schema = get_schema_text({
+        "cultures", "culture_vessels", "culture_log", "culture_log_vessels", "culture_schedule",
+    })
+    assert "reference_info(" not in culture_schema
+    assert "error" in _run_query_db("SELECT * FROM refcache.reference_info", tank_id)
+    assert "error" in _run_query_db("SELECT common_name FROM reference_info", scope="culture")
+    blocked = _run_query_db(
+        "UPDATE reference_info SET common_name = 'nope' WHERE entity_name = 'cache only fish'",
+        tank_id,
+    )
+    assert "error" in blocked
 
 
 def test_run_query_db_requires_tank_id_on_tank_tables(client, tank_id):

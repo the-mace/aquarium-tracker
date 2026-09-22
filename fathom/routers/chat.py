@@ -59,6 +59,7 @@ _JOIN_SCOPED_TABLES = {
 }
 _BLOCKED_IDENTIFIERS = {
     "sqlite_master", "sqlite_temp_master", "sqlite_schema", "sqlite_sequence",
+    "schema_migrations", "refcache",
 }
 _CULTURE_ALLOWED_TABLES = frozenset({
     "cultures", "culture_vessels", "culture_log", "culture_log_vessels", "culture_schedule",
@@ -118,7 +119,8 @@ def _query_db_tool(tank_id):
             f"older observations. This tank's id is {tank_id}. Every query that touches a "
             f"tank-scoped table MUST include tank_id = {tank_id} (no other tank). "
             f"Queries on tanks must include id = {tank_id}. Cross-tank comparison is not "
-            f"available through this tool. Returns up to {QUERY_ROW_LIMIT} rows as JSON.\n\n"
+            f"available through this tool. reference_info is the shared species/plant/hardscape "
+            f"cache and has no tank_id. Returns up to {QUERY_ROW_LIMIT} rows as JSON.\n\n"
             f"Schema:\n{get_schema_text()}"
         ),
         "input_schema": {
