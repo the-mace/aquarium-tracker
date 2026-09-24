@@ -277,7 +277,10 @@ _KEEPER_LOG_RULE = (
     "equipment changes). Treat it as fact. It overrides earlier AI analyses and prior goal "
     "progress notes: if the log reports fry, berried females, a spawn, or a temporary change "
     "(e.g. UV run 24/7 for a stretch, then back to normal), do not say it hasn't happened or "
-    "leave it out when it bears on goals, issues, or recent history."
+    "leave it out when it bears on goals, issues, or recent history. "
+    "When Recent Events and the keeper log disagree about the same thing (e.g. an event says the "
+    "UV schedule was turned off, a later observation says it was put back on a schedule), the "
+    "entry with the newest timestamp is the current state; describe older entries as history."
 )
 
 

@@ -830,3 +830,9 @@ def test_ai_prompts_include_keeper_log():
     ):
         assert "Keeper log" in prompt
         assert "Fry spotted under the driftwood" in prompt
+
+
+def test_keeper_log_rule_says_newest_entry_wins():
+    tank = {"name": "Shrimp", "water_type": "fresh", "volume_gallons": 5}
+    prompt = build_summary_prompt(tank, [], [], [], [], [], "analysis")
+    assert "newest timestamp is the current state" in prompt
