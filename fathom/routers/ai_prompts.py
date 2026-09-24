@@ -224,6 +224,63 @@ def load_home_water_tests(conn, limit=24):
     ).fetchall())
 
 
+KEEPER_LOG_DAYS = 90
+_KEEPER_LOG_LIMIT = 60
+_KEEPER_LOG_TEXT_MAX = 600
+
+
+def load_keeper_log(conn, tank_id, days=KEEPER_LOG_DAYS, limit=_KEEPER_LOG_LIMIT):
+    """First-hand keeper history for tank AI: manual/imported observations, population
+    changes (births, deaths, additions), equipment installs/removals, plant/hardscape adds,
+    and issue open/resolve — newest first, last `days` days.
+
+    Events are left out (prompts list them separately). AI-written observations are left
+    out so earlier analyses don't feed back into later ones as if they were facts.
+    """
+    from datetime import datetime, timedelta, timezone
+    from routers.timeline import _QUERY
+
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+    rows = rows_to_list(conn.execute(_QUERY, (tank_id,) * 9).fetchall())
+    kept = [
+        r for r in rows
+        if r["kind"] != "event"
+        and not (r["kind"] == "observation" and r.get("subtype") == "auto")
+        and (r.get("ts") or "")[:10] >= cutoff
+    ]
+    return kept[:limit]
+
+
+def _fmt_keeper_log(rows):
+    if not rows:
+        return "  None logged."
+    lines = []
+    for r in rows:
+        kind = r["kind"]
+        header = "observation" if kind == "observation" else kind
+        if kind == "population":
+            header += f"/{r.get('subtype')}"
+            count = r.get("amount")
+            label = f"{int(count)}x {r.get('label')}" if count is not None else r.get("label")
+        else:
+            label = r.get("label")
+        detail = (r.get("detail") or "").strip()
+        if len(detail) > _KEEPER_LOG_TEXT_MAX:
+            detail = detail[:_KEEPER_LOG_TEXT_MAX].rstrip() + "…"
+        text = " — ".join(filter(None, [label, detail]))
+        lines.append(f"  {(r.get('ts') or '')[:16]} [{header}] {text}".rstrip())
+    return "\n".join(lines)
+
+
+_KEEPER_LOG_RULE = (
+    "The keeper log is first-hand record from the keeper (their own observations, births/deaths, "
+    "equipment changes). Treat it as fact. It overrides earlier AI analyses and prior goal "
+    "progress notes: if the log reports fry, berried females, a spawn, or a temporary change "
+    "(e.g. UV run 24/7 for a stretch, then back to normal), do not say it hasn't happened or "
+    "leave it out when it bears on goals, issues, or recent history."
+)
+
+
 def _fmt_inhabitants(rows):
     if not rows:
         return "  None"
@@ -395,7 +452,7 @@ Now write the actual response. Cover only what's relevant, briefly:
 
 
 def build_analysis_prompt(tank, test_results, issues, events, inhabitants, plants, hardscape,
-                          schedule_rows=None, home_water_tests=None, goals=None):
+                          schedule_rows=None, home_water_tests=None, goals=None, keeper_log=None):
     schedule_rows = schedule_rows or []
     home_water_tests = home_water_tests or []
     goals = goals or []
@@ -431,6 +488,11 @@ Recurring schedule (current planned feeding/dosing/maintenance — authoritative
 Recent Events (last 30 days — evidence of actual practices, including water source and dosing):
 {_fmt_events(events)}
 
+Keeper log (last {KEEPER_LOG_DAYS} days — the keeper's own observations, births/deaths, equipment changes; newest first):
+{_fmt_keeper_log(keeper_log)}
+
+{_KEEPER_LOG_RULE}
+
 {_CURRENT_PRACTICES_RULE}
 
 {_PARAMETER_BASELINE_RULE}
@@ -447,7 +509,8 @@ Keep your response concise and practical. Use plain text, no markdown formatting
 
 
 def build_summary_prompt(tank, test_results, issues, inhabitants, plants, hardscape, latest_analysis,
-                         schedule_rows=None, events=None, home_water_tests=None, goals=None):
+                         schedule_rows=None, events=None, home_water_tests=None, goals=None,
+                         keeper_log=None):
     schedule_rows = schedule_rows or []
     events = events or []
     home_water_tests = home_water_tests or []
@@ -484,6 +547,11 @@ Recurring schedule (current planned feeding/dosing/maintenance — authoritative
 Recent Events (last 30 days — evidence of actual practices, including water source and dosing):
 {_fmt_events(events)}
 
+Keeper log (last {KEEPER_LOG_DAYS} days — the keeper's own observations, births/deaths, equipment changes; newest first):
+{_fmt_keeper_log(keeper_log)}
+
+{_KEEPER_LOG_RULE}
+
 Latest Analysis:
 {latest_analysis}
 
@@ -491,10 +559,11 @@ Latest Analysis:
 
 {_PARAMETER_BASELINE_RULE}
 
-Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events and home-water readings, not obsolete notes), active goals when they matter for "what the keeper is working toward", and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
+Write the summary as plain text, no markdown. Be specific about current parameter values, inhabitants, current water source and dosing practice (from schedule/events and home-water readings, not obsolete notes), active goals when they matter for "what the keeper is working toward" (including breeding milestones from the keeper log), recent temporary changes from the keeper log or events, and any active concerns. If the latest analysis or the latest test's notes mention a new development (an inhabitant added/removed, an action taken) not yet reflected in the Inhabitants/Plants/Hardscape lists above, mention it — this summary is what future questions rely on for "what's currently going on" context."""
 
 
-def build_goal_progress_prompt(tank, goals, test_results, inhabitants, events, home_water_tests=None):
+def build_goal_progress_prompt(tank, goals, test_results, inhabitants, events, home_water_tests=None,
+                               keeper_log=None):
     """Prompt for per-goal progress blurbs after a water test (JSON response)."""
     home_water_tests = home_water_tests or []
     return f"""You are assessing progress toward aquarium goals right after a new water test.
@@ -514,13 +583,18 @@ Fill water for water changes (tap WC source and/or bottled only — NOT raw/diag
 Recent Events (last 30 days):
 {_fmt_events(events)}
 
+Keeper log (last {KEEPER_LOG_DAYS} days — the keeper's own observations, births/deaths, equipment changes; newest first):
+{_fmt_keeper_log(keeper_log)}
+
+{_KEEPER_LOG_RULE}
+
 Active goals to update (use the id field exactly):
 {_fmt_goals_for_progress(goals)}
 
 {_PARAMETER_BASELINE_RULE}
 
 For EACH goal above, write a short progress assessment (2-4 sentences, plain text, no markdown):
-- How current water params / stock / events stand relative to the goal's target and description
+- How current water params / stock / events / keeper log stand relative to the goal's target and description
 - Whether dependencies still block it (name them)
 - What concrete next step would move it forward (one sentence max)
 - Do not invent readings that aren't in the data; if data is sparse, say so briefly

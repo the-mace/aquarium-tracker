@@ -768,3 +768,65 @@ def test_parse_issue_updates_extracts_array_from_surrounding_text():
     raw = 'Here is my answer:\n[{"issue_id": 7, "status": "resolved", "reason": "Stable"}]\nThanks.'
     updates = _parse_issue_updates(raw, {7})
     assert updates[0]["issue_id"] == 7
+
+
+def test_load_keeper_log_includes_manual_observations_and_births(tmp_path, monkeypatch):
+    from routers.ai_prompts import load_keeper_log, _fmt_keeper_log
+
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "keeper_log.db"))
+    init_db()
+    with get_db() as conn:
+        tank_id = conn.execute("INSERT INTO tanks (name) VALUES ('Shrimp')").lastrowid
+        inh_id = conn.execute(
+            "INSERT INTO inhabitants (tank_id, common_name, count) VALUES (?, 'Fire Red Shrimp', 10)",
+            (tank_id,),
+        ).lastrowid
+        conn.execute(
+            "INSERT INTO observations (tank_id, source, text, created_at) VALUES (?, 'manual', ?, datetime('now','-5 days'))",
+            (tank_id, "Saw shrimplets on the moss"),
+        )
+        conn.execute(
+            "INSERT INTO observations (tank_id, source, text, created_at) VALUES (?, 'manual', ?, datetime('now','-40 days'))",
+            (tank_id, "UV on 24/7 for clado outbreak"),
+        )
+        conn.execute(
+            "INSERT INTO observations (tank_id, source, text) VALUES (?, 'auto', 'AI said no fry yet')",
+            (tank_id,),
+        )
+        conn.execute(
+            "INSERT INTO observations (tank_id, source, text, created_at) VALUES (?, 'manual', 'ancient', datetime('now','-200 days'))",
+            (tank_id,),
+        )
+        conn.execute(
+            "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, timestamp) VALUES (?, ?, 'born', 6, datetime('now','-3 days'))",
+            (tank_id, inh_id),
+        )
+        conn.execute(
+            "INSERT INTO events (tank_id, event_type, notes) VALUES (?, 'water_change', 'wc')",
+            (tank_id,),
+        )
+        rows = load_keeper_log(conn, tank_id)
+
+    text = _fmt_keeper_log(rows)
+    assert "Saw shrimplets" in text
+    assert "UV on 24/7" in text
+    assert "[population/born] 6x Fire Red Shrimp" in text
+    assert "AI said no fry yet" not in text
+    assert "ancient" not in text
+    assert "wc" not in text
+
+
+def test_ai_prompts_include_keeper_log():
+    from routers.ai_prompts import build_goal_progress_prompt
+
+    tank = {"name": "Shrimp", "water_type": "fresh", "volume_gallons": 10}
+    log = [{"kind": "observation", "ts": "2026-09-20 12:00:00", "subtype": "manual",
+            "label": None, "detail": "Fry spotted under the driftwood", "amount": None}]
+    goals = [{"id": 1, "title": "Breed Fire Red Shrimp", "status": "open"}]
+    for prompt in (
+        build_analysis_prompt(tank, [], [], [], [], [], [], keeper_log=log),
+        build_summary_prompt(tank, [], [], [], [], [], "analysis", keeper_log=log),
+        build_goal_progress_prompt(tank, goals, [], [], [], keeper_log=log),
+    ):
+        assert "Keeper log" in prompt
+        assert "Fry spotted under the driftwood" in prompt

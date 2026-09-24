@@ -163,6 +163,7 @@ from routers.ai_prompts import (
     build_recommendation_prompt,
     build_summary_prompt,
     load_home_water_tests,
+    load_keeper_log,
 )
 
 async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
@@ -219,12 +220,13 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
             ).fetchall())
 
             home_water_tests = load_home_water_tests(conn)
+            keeper_log = load_keeper_log(conn, tank_id)
 
         client = anthropic.Anthropic(api_key=api_key)
 
         analysis_prompt = build_analysis_prompt(
             tank, test_results, issues, events, inhabitants, plants, hardscape, schedule_rows,
-            home_water_tests=home_water_tests, goals=goals,
+            home_water_tests=home_water_tests, goals=goals, keeper_log=keeper_log,
         )
         _, analysis_text = await _claude_text(
             client,
@@ -291,6 +293,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         summary_prompt = build_summary_prompt(
             tank, test_results, issues, inhabitants, plants, hardscape, analysis_text,
             schedule_rows, events, home_water_tests=home_water_tests, goals=goals,
+            keeper_log=keeper_log,
         )
         _, summary_text = await _claude_text(
             client,
@@ -528,11 +531,12 @@ async def run_goal_progress(tank_id: int, result_id: int | None = None):
             ).fetchall())
 
             home_water_tests = load_home_water_tests(conn)
+            keeper_log = load_keeper_log(conn, tank_id)
 
         client = anthropic.Anthropic(api_key=api_key)
         prompt = build_goal_progress_prompt(
             tank, goals, test_results, inhabitants, events,
-            home_water_tests=home_water_tests,
+            home_water_tests=home_water_tests, keeper_log=keeper_log,
         )
         _, raw = await _claude_text(
             client,

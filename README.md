@@ -73,7 +73,7 @@ Open `http://localhost:8000`. `bin/stop` kills a local uvicorn process.
 
 ### AI
 
-- **Background analysis** after each water test or event: observation + tank-state summary. Tank notes override generic species norms when they describe accepted baselines
+- **Background analysis** after each water test or event: observation + tank-state summary. Reads your last 90 days of manual observations, births/deaths, and equipment changes alongside tests and events. Tank notes override generic species norms when they describe accepted baselines
 - **Ask AI (tanks)**: persisted conversations on the tank, with a read-only `query_db` tool for history (test trends, when something was added, spend) and write tools to log observations, events, and append notes when you ask. Popup on tank pages plus a full-page thread list
 - **Ask AI (cultures)**: same UI on a culture station (`/cultures/{id}`). Knows **all** culture stations (green water feeds live food) — bins, logs, schedules, harvest destinations as names. Does not include tank chemistry or livestock; `query_db` is limited to culture tables. Can log a culture note or append standing notes when you ask
 - **Reference info**: on inhabitant/plant/hardscape add (and list load), Claude fetches a description, care notes, and an image. Thumbnail in the table; click for the full card and a refresh button
