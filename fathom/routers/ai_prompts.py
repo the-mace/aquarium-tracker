@@ -19,8 +19,9 @@ def _fmt_tank_notes(tank):
         "\nTank notes (setup hardware, accepted parameter targets/baselines, and other keeper "
         "context. Prefer this tank's accepted parameter targets over generic species norms. "
         "Notes may include historical setup details that are no longer current — for water source, "
-        "dosing products, and maintenance practices, prefer the recurring schedule and recent events "
-        f"when those contradict the notes): {notes}"
+        "dosing products, equipment settings, and maintenance practices, prefer the recurring schedule, "
+        "recent events, and newer keeper-log entries when those contradict the notes; a dated change "
+        f"in the notes is superseded by any later-dated entry about the same thing): {notes}"
     )
 
 
@@ -280,7 +281,10 @@ _KEEPER_LOG_RULE = (
     "leave it out when it bears on goals, issues, or recent history. "
     "When Recent Events and the keeper log disagree about the same thing (e.g. an event says the "
     "UV schedule was turned off, a later observation says it was put back on a schedule), the "
-    "entry with the newest timestamp is the current state; describe older entries as history."
+    "entry with the newest timestamp is the current state; describe older entries as history. "
+    "The same applies to tank notes: a later-dated keeper-log entry or event overrides a dated "
+    "statement in the notes (e.g. notes say 'UV off as of 9/4', a 9/17 observation says UV is back "
+    "on Tue/Thu — UV is on Tue/Thu)."
 )
 
 
@@ -980,7 +984,8 @@ def _parse_goal_progress_updates(raw: str, valid_ids: set[int]) -> list[dict]:
     return out
 
 
-def build_notes_proposal_prompt(tank, schedule_rows, events, test_results, home_water_tests=None):
+def build_notes_proposal_prompt(tank, schedule_rows, events, test_results, home_water_tests=None,
+                                keeper_log=None):
     """Ask Claude whether tank notes should be refreshed from schedule/events."""
     current = (tank.get("notes") or "").strip() or "(empty — no notes set)"
     home_water_tests = home_water_tests or []
@@ -997,6 +1002,11 @@ Active recurring schedule (authoritative for planned maintenance/dosing/feeding)
 Recent events (last 30 days — evidence of actual water source and dosing):
 {_fmt_events(events)}
 
+Keeper log (last {KEEPER_LOG_DAYS} days — the keeper's own observations, births/deaths, equipment changes; newest first):
+{_fmt_keeper_log(keeper_log)}
+
+{_KEEPER_LOG_RULE}
+
 Fill water readings (tap WC source and/or bottled only — measured incoming water for changes; prefer over free-text guesses):
 {_fmt_home_water_block(home_water_tests)}
 
@@ -1009,13 +1019,14 @@ Focus only on durable standing facts that notes should capture:
 - regular dosing products (Equilibrium, Flourish, Prime, Potassium, Iron, etc.)
 - accepted parameter targets/baselines the keeper has explicitly accepted (e.g. KH ~10 is permanent)
 - regular water-change practice when it differs from what notes claim
+- standing equipment settings (e.g. UV/light schedule) when a newer event or keeper-log entry changed them
 - optional: approximate home-water GH/KH when structured home-water readings exist and notes still invent different numbers
 
 Do NOT propose an update for:
 - trivial wording or style differences
 - feeding details (those live on the schedule)
 - one-off events, temporary issues, or inhabitant count changes
-- inventing facts not supported by schedule, events, home-water readings, or test notes
+- inventing facts not supported by schedule, events, keeper log, home-water readings, or test notes
 - inventing multi-reading "typical bands" for a parameter from only 1–2 early readings (especially TDS after a new pen) — only revise accepted baselines when notes are clearly wrong vs sustained history or explicit keeper acceptance
 - copying every home-water history row into notes (a single current tap baseline is enough if useful)
 

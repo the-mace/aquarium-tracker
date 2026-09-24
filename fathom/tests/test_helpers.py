@@ -515,7 +515,7 @@ def test_fmt_tank_notes_present():
     assert "Targets: GH 7-8, KH 2-10" in result
     assert "accepted parameter targets" in result
     # Prefer schedule/events over stale operational notes
-    assert "prefer the recurring schedule and recent events" in result
+    assert "prefer the recurring schedule, " in result
 
 
 def test_build_recommendation_prompt_includes_tank_notes():
@@ -836,3 +836,12 @@ def test_keeper_log_rule_says_newest_entry_wins():
     tank = {"name": "Shrimp", "water_type": "fresh", "volume_gallons": 5}
     prompt = build_summary_prompt(tank, [], [], [], [], [], "analysis")
     assert "newest timestamp is the current state" in prompt
+    assert "overrides a dated statement in the notes" in prompt
+
+
+def test_notes_proposal_prompt_includes_keeper_log():
+    tank = {"name": "Shrimp", "water_type": "fresh", "volume_gallons": 5, "notes": "UV off as of 9/4"}
+    log = [{"kind": "observation", "ts": "2026-09-17 12:54:20", "subtype": "manual",
+            "label": None, "detail": "UV reverted to Tue/Thu 12am-3am schedule", "amount": None}]
+    prompt = build_notes_proposal_prompt(tank, [], [], [], keeper_log=log)
+    assert "UV reverted to Tue/Thu" in prompt

@@ -327,6 +327,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
         # for the user to accept/dismiss on the dashboard (never auto-write notes).
         await _maybe_propose_tank_notes_update(
             client, tank_id, tank, schedule_rows, events, test_results, home_water_tests,
+            keeper_log=keeper_log,
         )
 
         logger.info("AI analysis complete for tank %d", tank_id)
@@ -337,7 +338,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
 
 
 async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows, events, test_results,
-                                          home_water_tests=None):
+                                          home_water_tests=None, keeper_log=None):
     """If notes look stale vs schedule/events, store a pending proposal for user confirmation."""
     home_water_tests = home_water_tests or []
     with get_db() as conn:
@@ -356,6 +357,7 @@ async def _maybe_propose_tank_notes_update(client, tank_id, tank, schedule_rows,
 
     prompt = build_notes_proposal_prompt(
         tank, schedule_rows, events, test_results, home_water_tests=home_water_tests,
+        keeper_log=keeper_log,
     )
     try:
         _, proposal_raw = await _claude_text(
