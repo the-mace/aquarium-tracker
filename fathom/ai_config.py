@@ -1,6 +1,6 @@
 """Shared Anthropic model selection for all Fathom LLM call sites.
 
-Policy (see CLAUDE.md "AI model strategy"):
+Policy (see AGENTS.md "Model policy"):
 - Single provider: Anthropic Claude only (no dual-provider maintenance).
 - Mass-class Sonnet only — not Opus/Fable (overkill/price) and not Haiku (too light).
 - Pin to the current Sonnet generation; bump this constant when a new Sonnet ships
