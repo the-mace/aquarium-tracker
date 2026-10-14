@@ -27,3 +27,14 @@ def test_unparseable_title():
     is_patch_bump = _load().is_patch_bump
     assert is_patch_bump("chore: something else") is None
     assert is_patch_bump("") is None
+
+
+def test_automerge_policy():
+    f = _load().is_automerge_bump
+    assert f("deps: bump uvicorn from 0.52.0 to 0.52.1") is True
+    assert f("Bump requests from 2.31.0 to 2.32.0") is True
+    assert f("deps: bump anthropic from 0.120.2 to 0.121.0") is False
+    assert f("Bump fastapi from 0.115.0 to 0.116.0") is False
+    assert f("ci: bump actions/checkout from 4 to 7") is False
+    assert f("Bump jinja2 from 3.1.6 to 4.0.0") is False
+    assert f("chore: something else") is None
