@@ -4,8 +4,6 @@ import sqlite3
 import database as _db
 
 
-# ── Equipment ──────────────────────────────────────────────────────────────
-
 def test_add_equipment_returns_id(client, tank_id):
     r = client.post(
         f"/tanks/{tank_id}/equipment",
@@ -83,8 +81,6 @@ def test_delete_equipment(client, tank_id):
     conn.close()
     assert count == 0
 
-
-# ── Observations ──────────────────────────────────────────────────────────
 
 def test_add_observation_returns_id(client, tank_id):
     r = client.post(
@@ -357,8 +353,6 @@ def test_delete_observation(client, tank_id):
     conn.close()
     assert count == 0
 
-
-# ── Purchases ─────────────────────────────────────────────────────────────
 
 def test_add_purchase_returns_id(client, tank_id):
     r = client.post(

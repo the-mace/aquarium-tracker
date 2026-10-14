@@ -5,8 +5,6 @@ import database as _db
 from routers.import_data import _strip_html, _find_duplicates, _merge_results, _split_chunks, _existing_inhabitants_context
 
 
-# ── _strip_html unit tests ──────────────────────────────────────────────────
-
 def test_strip_html_removes_tags():
     result = _strip_html("<p>Hello <b>world</b></p>")
     assert "<" not in result
@@ -56,8 +54,6 @@ def test_strip_html_plain_text_unchanged():
     assert _strip_html(plain) == plain
 
 
-# ── _existing_inhabitants_context unit tests ────────────────────────────────
-
 def test_existing_inhabitants_context_empty():
     assert _existing_inhabitants_context([]) == ""
     assert _existing_inhabitants_context(None) == ""
@@ -76,8 +72,6 @@ def test_existing_inhabitants_context_null_count_shows_many():
     ctx = _existing_inhabitants_context(rows)
     assert "many/unknown" in ctx
 
-
-# ── import/confirm endpoint tests ───────────────────────────────────────────
 
 def test_import_confirm_empty_preview(client, tank_id):
     r = client.post(f"/tanks/{tank_id}/import/confirm", json={"preview": {}})
@@ -387,8 +381,6 @@ def test_import_page_404_for_unknown_tank(client):
     assert client.get("/tanks/9999/import-page").status_code == 404
 
 
-# ── _find_duplicates unit tests ──────────────────────────────────────────────
-
 def test_find_duplicates_no_existing_data(tank_id):
     preview = {
         "test_results": [{"timestamp": "2026-01-01 00:00:00", "ph": 7.0, "ammonia": 0.0, "nitrate": 10.0}],
@@ -557,8 +549,6 @@ def test_find_duplicates_multiple_sections(client, tank_id):
     assert sections == {"events", "hardscape"}
 
 
-# ── check-duplicates endpoint tests ─────────────────────────────────────────
-
 def test_check_duplicates_endpoint_no_dups(client, tank_id):
     preview = {"test_results": [{"timestamp": "2026-05-01 00:00:00", "ph": 7.0}]}
     r = client.post(f"/tanks/{tank_id}/import/check-duplicates", json={"preview": preview})
@@ -584,8 +574,6 @@ def test_check_duplicates_endpoint_404_for_unknown_tank(client):
     r = client.post("/tanks/9999/import/check-duplicates", json={"preview": {}})
     assert r.status_code == 404
 
-
-# ── Rule 8: split multi-type entries (same date → multiple sections) ──────────
 
 def test_confirm_multi_type_same_date_all_inserted(client, tank_id):
     """A single dated log block with a test, two events, and an observation produces separate rows in each table."""
@@ -649,8 +637,6 @@ def test_confirm_same_date_cross_section_not_deduped(client, tank_id):
     assert r.json()["inserted"]["events"] == 1
 
 
-# ── Rule 9: test kit methodology notes stored in notes field, not as param ────
-
 def test_confirm_test_result_methodology_in_notes_not_param(client, tank_id):
     """kh=None with methodology text in notes: notes are stored, kh stays null."""
     preview = {
@@ -688,8 +674,6 @@ def test_confirm_test_result_notes_only_no_params(client, tank_id):
     assert row[0] is None
     assert "Visual check" in (row[1] or "")
 
-
-# ── _merge_results unit tests ─────────────────────────────────────────────────
 
 def test_merge_results_combines_sections():
     chunk1 = {
@@ -736,8 +720,6 @@ def test_merge_results_empty_sections_preserved_as_lists():
     assert merged["events"] == []
 
 
-# ── _split_chunks unit tests ──────────────────────────────────────────────────
-
 def test_split_chunks_short_content_not_split():
     content = "short content"
     assert _split_chunks(content, max_chars=1000) == [content]
@@ -761,8 +743,6 @@ def test_split_chunks_no_content_lost():
     for para in paras:
         assert para in rejoined
 
-
-# ── quick-log endpoint tests ──────────────────────────────────────────────────
 
 def test_quick_log_page_returns_200(client, tank_id):
     r = client.get(f"/tanks/{tank_id}/quick-log-page")

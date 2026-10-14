@@ -894,8 +894,6 @@ def _store_assistant_reply(conn, conversation_id, reply, done_at):
     return turn_count, title
 
 
-# ── Full-page views (left-nav) ──────────────────────────────────────────────
-
 @router.get("/new", response_class=HTMLResponse)
 async def new_chat_page(request: Request, tank_id: int):
     with get_db() as conn:
@@ -923,8 +921,6 @@ async def conversation_page(request: Request, tank_id: int, conversation_id: int
         "active_conversation_id": conv["id"],
     })
 
-
-# ── JSON API ────────────────────────────────────────────────────────────────
 
 @router.get("/conversations")
 async def list_conversations(tank_id: int):
@@ -1106,8 +1102,6 @@ async def chat(tank_id: int, body: ChatMessage, request: Request):
         "writes": runner.writes,
     })
 
-
-# ── Culture Ask AI (all stations, no tank data) ─────────────────────────────
 
 @culture_router.get("/new", response_class=HTMLResponse)
 async def new_culture_chat_page(request: Request, culture_id: int):

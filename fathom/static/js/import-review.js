@@ -114,7 +114,6 @@ async function confirmReviewed() {
   }
 }
 
-// ── Section config ──────────────────────────────────────────────────────────
 const SECTION_CONFIG = {
   test_results: {
     label: 'Test Results',
@@ -188,7 +187,6 @@ const SECTION_CONFIG = {
   },
 };
 
-// ── Flag helpers ────────────────────────────────────────────────────────────
 function buildFlagMap(flags) {
   const map = {};
   for (const f of flags) {
@@ -199,21 +197,18 @@ function buildFlagMap(flags) {
   return map;
 }
 
-// ── Render ──────────────────────────────────────────────────────────────────
 function showPreview(preview, counts, flags) {
   document.getElementById(reviewConfig.inputSectionId).style.display = 'none';
   document.getElementById('preview-section').style.display = 'block';
 
   const flagMap = buildFlagMap(flags || []);
 
-  // Counts bar
   const countsEl = document.getElementById('preview-counts');
   countsEl.innerHTML = Object.entries(counts)
     .filter(([k]) => k === 'tank_specs' || SECTION_CONFIG[k])
     .map(([k, v]) => `<span class="count-chip"><strong>${esc(String(v))}</strong> ${esc(k.replace(/_/g,' '))}</span>`)
     .join('');
 
-  // Flags banner
   const flagsEl = document.getElementById('preview-flags');
   if (flags && flags.length > 0) {
     flagsEl.style.display = 'block';
@@ -232,7 +227,6 @@ function showPreview(preview, counts, flags) {
     if (specKeys.length) dataEl.appendChild(renderSpecsSection(preview.tank_specs, specKeys));
   }
 
-  // Array sections
   for (const [key, config] of Object.entries(SECTION_CONFIG)) {
     const items = preview[key];
     if (!items || items.length === 0) continue;
@@ -362,11 +356,9 @@ function toggleAll(section, checked) {
   document.querySelectorAll(`.row-check[data-section="${section}"]`).forEach(cb => cb.checked = checked);
 }
 
-// ── Collect edited data ─────────────────────────────────────────────────────
 function getEditedData() {
   const result = {};
 
-  // Tank specs
   const applySpecs = document.getElementById('apply-specs');
   if (applySpecs && applySpecs.checked) {
     const specs = {};
@@ -378,7 +370,6 @@ function getEditedData() {
     if (Object.keys(specs).length) result.tank_specs = specs;
   }
 
-  // Array sections
   for (const key of Object.keys(SECTION_CONFIG)) {
     const table = document.getElementById(`table-${key}`);
     if (!table) continue;
@@ -406,7 +397,6 @@ function getEditedData() {
   return result;
 }
 
-// ── Convert accepted flags to observations ──────────────────────────────────
 const FLAG_DATE_FIELD = {
   test_results: 'timestamp', events: 'timestamp', purchases: 'purchase_date',
   inhabitants: 'added_date', plants: 'added_date', equipment: 'installed_date',
@@ -438,7 +428,6 @@ function getSelectedFlagObservations() {
   return obs;
 }
 
-// ── Duplicate detection ─────────────────────────────────────────────────────
 async function checkDuplicates(preview) {
   try {
     const res = await fetch(`/tanks/${TANK_ID}/import/check-duplicates`, {

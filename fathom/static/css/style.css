@@ -1,4 +1,3 @@
-/* ── Tokens ─────────────────────────────────────────────────────────────── */
 :root {
   --bg:        #0a0f1e;
   --surface:   #111827;
@@ -17,7 +16,6 @@
   --radius-lg: 12px;
 }
 
-/* ── Reset ──────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 15px; }
 body {
@@ -34,7 +32,6 @@ a:hover { text-decoration: underline; }
 strong { font-weight: 600; }
 p { margin-bottom: .5rem; }
 
-/* ── Sidebar ────────────────────────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-w);
   background: var(--surface);
@@ -61,7 +58,6 @@ p { margin-bottom: .5rem; }
 .brand-icon { font-size: 1.4rem; color: var(--primary); }
 .brand-name { letter-spacing: -.02em; }
 
-/* ── Mobile top bar / drawer controls ──────────────────────────────────── */
 .mobile-topbar { display: none; }
 .sidebar-close-btn { display: none; }
 .sidebar-overlay { display: none; }
@@ -99,7 +95,6 @@ p { margin-bottom: .5rem; }
 }
 .sidebar-link-btn:hover { background: var(--card); color: var(--text); }
 
-/* ── Chat conversation list (sidebar) ───────────────────────────────────── */
 .chat-conv-list {
   max-height: 220px;
   overflow-y: auto;
@@ -153,7 +148,6 @@ p { margin-bottom: .5rem; }
 .chat-conv-item.active .chat-conv-delete { opacity: 1; }
 .chat-conv-delete:hover { color: var(--danger); background: rgba(239,68,68,.12); }
 
-/* ── Main ───────────────────────────────────────────────────────────────── */
 .main {
   flex: 1;
   min-width: 0;
@@ -162,7 +156,6 @@ p { margin-bottom: .5rem; }
 }
 .content {}
 
-/* ── Page Header ────────────────────────────────────────────────────────── */
 .page-header {
   display: flex;
   align-items: flex-start;
@@ -185,7 +178,6 @@ p { margin-bottom: .5rem; }
 .header-actions { display: flex; gap: .5rem; align-items: center; }
 .header-right { display: flex; gap: .5rem; align-items: center; }
 
-/* ── Meta Chip ──────────────────────────────────────────────────────────── */
 .meta-chip {
   font-size: .75rem;
   background: var(--card);
@@ -195,7 +187,6 @@ p { margin-bottom: .5rem; }
   color: var(--muted);
 }
 
-/* ── Badge ──────────────────────────────────────────────────────────────── */
 .badge {
   font-size: .7rem;
   font-weight: 600;
@@ -221,7 +212,6 @@ p { margin-bottom: .5rem; }
 .badge-removed { background: rgba(148,163,184,.15); color: var(--muted); }
 .badge-born   { background: rgba(56,189,248,.15); color: var(--accent); }
 
-/* ── Tank notes proposal (AI, needs confirm) ────────────────────────────── */
 .notes-proposal-card {
   background: linear-gradient(135deg, rgba(245,158,11,.1), rgba(245,158,11,.04));
   border: 1px solid rgba(245,158,11,.35);
@@ -296,7 +286,6 @@ p { margin-bottom: .5rem; }
   margin-top: .85rem;
 }
 
-/* ── AI analysis failure banner ─────────────────────────────────────────── */
 .analysis-fail-banner {
   background: rgba(245, 158, 11, .1);
   border: 1px solid rgba(245, 158, 11, .4);
@@ -321,7 +310,6 @@ p { margin-bottom: .5rem; }
   white-space: pre-wrap;
 }
 
-/* ── Summary Card ───────────────────────────────────────────────────────── */
 .summary-card {
   background: linear-gradient(135deg, rgba(0,196,160,.08), rgba(56,189,248,.05));
   border: 1px solid rgba(0,196,160,.2);
@@ -344,7 +332,6 @@ p { margin-bottom: .5rem; }
 .summary-time { margin-left: auto; font-weight: 400; color: var(--muted); }
 .summary-text { font-size: .9rem; color: var(--muted); white-space: pre-wrap; }
 
-/* ── Stats Row ──────────────────────────────────────────────────────────── */
 .stats-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -373,7 +360,6 @@ p { margin-bottom: .5rem; }
 }
 .stat-card-footer { font-size: .75rem; color: var(--muted); margin-top: auto; padding-top: .5rem; }
 
-/* ── Param Grid ─────────────────────────────────────────────────────────── */
 .param-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
@@ -419,7 +405,6 @@ p { margin-bottom: .5rem; }
 .param-danger { color: #f87171; }
 .param-warn   { color: var(--warning); }
 
-/* ── Inhabitant / Issue lists inside stat card ───────────────────────────── */
 .inhabitant-list { display: flex; flex-direction: column; gap: .3rem; }
 .inhabitant-row  { display: flex; align-items: baseline; gap: .4rem; font-size: .85rem; }
 .inh-count { font-weight: 700; color: var(--primary); min-width: 1.5rem; text-align: right; }
@@ -436,7 +421,6 @@ p { margin-bottom: .5rem; }
 .status-resolved   .issue-status-dot, .issue-status-dot.status-resolved   { background: var(--primary); }
 .issue-title { flex: 1; }
 
-/* ── Quick Actions ──────────────────────────────────────────────────────── */
 .quick-actions {
   display: flex;
   gap: .75rem;
@@ -462,7 +446,6 @@ p { margin-bottom: .5rem; }
 .action-btn-primary:hover { background: var(--primary-dim, #00a88a); border-color: var(--primary-dim, #00a88a); color: #000; }
 .action-icon { font-size: 1rem; }
 
-/* ── Charts ─────────────────────────────────────────────────────────────── */
 .charts-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -485,7 +468,6 @@ p { margin-bottom: .5rem; }
 }
 .chart-toggle-btn.active { border-color: currentColor; }
 
-/* ── Two-col Row ────────────────────────────────────────────────────────── */
 .two-col-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -493,7 +475,6 @@ p { margin-bottom: .5rem; }
   margin-bottom: 1.5rem;
 }
 
-/* ── Panel ──────────────────────────────────────────────────────────────── */
 .panel {
   background: var(--card);
   border: 1px solid var(--border);
@@ -510,7 +491,6 @@ p { margin-bottom: .5rem; }
 .panel-header h3 { font-size: .85rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .panel-empty { font-size: .875rem; }
 
-/* ── Observation ────────────────────────────────────────────────────────── */
 .observation-item {
   padding: .75rem 0;
   border-bottom: 1px solid var(--border);
@@ -532,7 +512,6 @@ p { margin-bottom: .5rem; }
 .obs-link-pill:hover { background: rgba(56,189,248,.25); text-decoration: none; }
 .observations-list .observation-item { margin-bottom: .5rem; }
 
-/* ── Event Row ──────────────────────────────────────────────────────────── */
 .event-list { display: flex; flex-direction: column; gap: .3rem; }
 .event-row { display: flex; align-items: baseline; gap: .5rem; font-size: .83rem; flex-wrap: wrap; }
 .event-type { font-weight: 600; color: var(--accent); text-transform: uppercase; font-size: .7rem; letter-spacing: .04em; }
@@ -540,7 +519,6 @@ p { margin-bottom: .5rem; }
 .event-time { color: var(--muted); font-size: .72rem; margin-left: auto; }
 .event-notes { color: var(--muted); font-size: .78rem; width: 100%; }
 
-/* ── Equipment Grid ─────────────────────────────────────────────────────── */
 .equipment-grid { display: flex; flex-wrap: wrap; gap: .5rem; }
 .equipment-item {
   display: flex; align-items: center; gap: .4rem; font-size: .83rem;
@@ -549,7 +527,6 @@ p { margin-bottom: .5rem; }
 .eq-category { font-weight: 600; color: var(--accent); font-size: .7rem; text-transform: uppercase; }
 .eq-name { color: var(--text); }
 
-/* ── Danger Zone ────────────────────────────────────────────────────────── */
 .danger-zone {
   margin-top: 2rem;
   border: 1px solid rgba(239,68,68,.25);
@@ -569,7 +546,6 @@ p { margin-bottom: .5rem; }
 .danger-item:last-child { border-bottom: 0; }
 .danger-item p { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
 
-/* ── Buttons ────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -597,10 +573,8 @@ p { margin-bottom: .5rem; }
 .btn-link { background: none; border: none; padding: 0; color: var(--primary); cursor: pointer; font-size: inherit; }
 .btn-link:hover { text-decoration: underline; }
 
-/* ── Link small ─────────────────────────────────────────────────────────── */
 .link-sm { font-size: .78rem; color: var(--primary); }
 
-/* ── Forms ──────────────────────────────────────────────────────────────── */
 .form-card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -648,7 +622,6 @@ p { margin-bottom: .5rem; }
   border-top: 1px solid var(--border);
 }
 
-/* ── Modals ─────────────────────────────────────────────────────────────── */
 .modal {
   position: fixed;
   inset: 0;
@@ -706,7 +679,6 @@ p { margin-bottom: .5rem; }
   border-top: 1px solid var(--border);
 }
 
-/* ── Tables ─────────────────────────────────────────────────────────────── */
 .table-wrapper { overflow-x: auto; }
 .pop-event-log-scroll { max-height: 420px; overflow-y: auto; }
 .pop-event-log-scroll thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
@@ -744,7 +716,6 @@ p { margin-bottom: .5rem; }
 .actions-cell > * + * { margin-left: .35rem; }
 .italic { font-style: italic; }
 
-/* ── Tank Grid (list page) ──────────────────────────────────────────────── */
 .tank-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -773,8 +744,6 @@ p { margin-bottom: .5rem; }
 .text-warning { color: var(--warning); }
 .tank-card-notes { font-size: .8rem; color: var(--muted); margin-top: .25rem; }
 
-/* ── Issue Cards ────────────────────────────────────────────────────────── */
-/* ── Filter bar ─────────────────────────────────────────────────────────── */
 .filter-bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .filter-pills { display: flex; gap: .35rem; }
 .pill { padding: .2rem .65rem; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .78rem; cursor: pointer; transition: background .15s, color .15s; }
@@ -799,7 +768,6 @@ p { margin-bottom: .5rem; }
 .issue-card-footer { display: flex; align-items: center; gap: 1rem; margin-top: .75rem; flex-wrap: wrap; }
 .issue-actions { margin-left: auto; display: flex; gap: .4rem; }
 
-/* ── Goal Cards ─────────────────────────────────────────────────────────── */
 .goal-cards { display: flex; flex-direction: column; gap: .75rem; }
 .goal-card {
   background: var(--card);
@@ -920,7 +888,6 @@ p { margin-bottom: .5rem; }
 .goal-status-dot.status-paused { background: #94a3b8; }
 .goal-status-dot.status-blocked { background: var(--warning); }
 
-/* ── Count Badge ────────────────────────────────────────────────────────── */
 .count-badge {
   display: inline-block;
   min-width: 28px;
@@ -933,7 +900,6 @@ p { margin-bottom: .5rem; }
   font-size: .9rem;
 }
 
-/* ── Total Badge ────────────────────────────────────────────────────────── */
 .total-badge {
   font-size: .875rem;
   font-weight: 600;
@@ -943,7 +909,6 @@ p { margin-bottom: .5rem; }
   border-radius: var(--radius);
 }
 
-/* ── Empty State ────────────────────────────────────────────────────────── */
 .empty-state {
   text-align: center;
   padding: 4rem 2rem;
@@ -953,7 +918,6 @@ p { margin-bottom: .5rem; }
 .empty-state p { margin-bottom: 1rem; }
 .empty-icon { font-size: 3rem; margin-bottom: .75rem; opacity: .3; }
 
-/* ── Chat Panel ─────────────────────────────────────────────────────────── */
 .chat-overlay {
   position: fixed;
   inset: 0;
@@ -1039,7 +1003,6 @@ p { margin-bottom: .5rem; }
 .btn-danger-text { color: var(--danger) !important; }
 .btn-danger-text:hover { color: #fca5a5 !important; }
 
-/* ── Full-page chat (left-nav) ──────────────────────────────────────────── */
 .chat-page {
   display: flex;
   flex-direction: column;
@@ -1097,7 +1060,6 @@ p { margin-bottom: .5rem; }
   font-size: .925rem;
 }
 
-/* ── Import ─────────────────────────────────────────────────────────────── */
 .drop-zone {
   border: 2px dashed var(--border);
   border-radius: var(--radius-lg);
@@ -1147,14 +1109,12 @@ p { margin-bottom: .5rem; }
 .specs-review-table td:first-child { color: var(--muted); width: 45%; }
 .specs-review-table input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: .2rem .4rem; font-family: inherit; font-size: .85rem; }
 
-/* ── Import progress ────────────────────────────────────────────────────── */
 .import-progress { margin-top: 1.25rem; }
 .import-phase { font-size: .85rem; color: var(--muted); margin-bottom: .5rem; }
 .import-progress-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .import-progress-fill { height: 100%; width: 0%; background: var(--primary); border-radius: 3px; transition: width .25s ease; }
 .import-progress-pct { font-size: .72rem; color: var(--muted); margin-top: .3rem; text-align: right; }
 
-/* ── Tank Specs Panel ───────────────────────────────────────────────────── */
 .specs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1164,7 +1124,6 @@ p { margin-bottom: .5rem; }
 .spec-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .spec-value { font-size: .9rem; color: var(--text); }
 
-/* ── Many Badge (inhabitants) ───────────────────────────────────────────── */
 .many-badge {
   display: inline-block;
   background: rgba(56,189,248,.1);
@@ -1176,14 +1135,12 @@ p { margin-bottom: .5rem; }
 }
 .checkbox-label { display: inline-flex; align-items: center; gap: .35rem; font-size: .875rem; cursor: pointer; color: var(--muted); white-space: nowrap; }
 
-/* ── Plants / Hardscape Panels ──────────────────────────────────────────── */
 .plant-list, .hardscape-list { display: flex; flex-direction: column; gap: .3rem; }
 .plant-row, .hardscape-row { display: flex; align-items: baseline; gap: .5rem; font-size: .875rem; }
 .plant-name, .hs-name { color: var(--text); }
 .plant-species { color: var(--muted); font-size: .8rem; font-style: italic; }
 .hs-qty { color: var(--primary); font-weight: 600; font-size: .85rem; min-width: 1.5rem; }
 
-/* ── Timeline ───────────────────────────────────────────────────────────── */
 .tl-legend {
   display: flex;
   gap: 1rem;
@@ -1302,7 +1259,6 @@ p { margin-bottom: .5rem; }
   word-break: break-word;
 }
 
-/* ── Schedule (dashboard widgets + management page) ────────────────────── */
 .sched-group { margin-bottom: .6rem; }
 .sched-group-label {
   font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
@@ -1323,7 +1279,6 @@ p { margin-bottom: .5rem; }
 .maint-due-today { color: var(--warning); font-weight: 600; }
 .maint-upcoming { color: var(--muted); }
 
-/* ── Today page ──────────────────────────────────────────────────────────── */
 .today-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -1367,7 +1322,6 @@ p { margin-bottom: .5rem; }
 .sched-overdue { color: #f87171; font-weight: 600; }
 .sched-due-today { color: var(--warning); font-weight: 600; }
 
-/* ── Reference Info (thumbnails + detail modal) ─────────────────────────── */
 .ref-thumb-col { width: 52px; padding: 0; }
 .ref-trigger { display: inline-flex; cursor: pointer; }
 .ref-thumb-cell { padding: .25rem .35rem; vertical-align: middle; }
@@ -1400,11 +1354,9 @@ p { margin-bottom: .5rem; }
 .ref-modal-text { font-size: .9rem; line-height: 1.55; color: var(--text); margin: 0; }
 .ref-attribution { font-size: .7rem; color: var(--muted); margin: .5rem 0 0; }
 
-/* ── Utility ────────────────────────────────────────────────────────────── */
 .muted { color: var(--muted); }
 .muted.panel-empty { padding: .5rem 0; }
 
-/* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   :root { --sidebar-w: 0; }
 
@@ -1512,7 +1464,6 @@ p { margin-bottom: .5rem; }
   .responsive-cards .data-table td.actions-cell > * + * { margin-left: 0; }
 }
 
-/* ── Toast banner ───────────────────────────────────────────────────────── */
 .toast-banner {
   display: flex;
   align-items: center;
@@ -1536,7 +1487,6 @@ p { margin-bottom: .5rem; }
 }
 .toast-banner .toast-close:hover { color: var(--text); }
 
-/* ── Cultures (live-food stations) ──────────────────────────────────────── */
 .culture-vessel-chips { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .25rem; }
 .culture-isolation {
   font-size: .85rem;

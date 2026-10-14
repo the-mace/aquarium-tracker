@@ -53,7 +53,6 @@ def test_update_issue_to_resolved_sets_resolved_at(client, tank_id):
 
 def test_update_already_resolved_does_not_overwrite_resolved_at(client, tank_id):
     issue_id = _add_issue(client, tank_id, title="Old Issue")
-    # First resolution
     client.post(
         f"/tanks/{tank_id}/issues/{issue_id}/update",
         data={"title": "Old Issue", "status": "resolved"},

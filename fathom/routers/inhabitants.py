@@ -28,7 +28,6 @@ async def list_inhabitants(request: Request, background_tasks: BackgroundTasks, 
             (tank_id,),
         ).fetchall())
 
-    # Merge reference info from persistent cache DB
     if inhabitants:
         entity_names = list({
             _canonical(i.get("species") or i.get("common_name") or "")

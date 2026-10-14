@@ -336,8 +336,6 @@ async def reset_tank_data(tank_id: int, confirmation: str = Form(...)):
     return RedirectResponse(url=f"/tanks/{tank_id}", status_code=303)
 
 
-# ── Chart data endpoints ───────────────────────────────────────────────────────
-
 @router.get("/{tank_id}/charts/water-params")
 async def chart_water_params(tank_id: int, limit: int = 30):
     limit = clamp_limit(limit)

@@ -1,4 +1,3 @@
-/* ── Today panel navigation ───────────────────────────────────────────── */
 function goToTank(event, tankId) {
   if (event.target.closest('a, input, label, button, form')) return;
   window.location.href = `/tanks/${tankId}`;
@@ -8,7 +7,6 @@ function goToCulture(event, cultureId) {
   window.location.href = `/cultures/${cultureId}`;
 }
 
-/* ── Mobile nav drawer ─────────────────────────────────────────────────── */
 function openSidebar() {
   document.querySelector('.sidebar')?.classList.add('open');
   document.querySelector('.sidebar-overlay')?.classList.add('open');
@@ -18,7 +16,6 @@ function closeSidebar() {
   document.querySelector('.sidebar-overlay')?.classList.remove('open');
 }
 
-/* ── Modals ────────────────────────────────────────────────────────────── */
 function openModal(id) {
   const el = document.getElementById(id);
   if (el) el.style.display = '';
@@ -34,7 +31,6 @@ document.addEventListener('keydown', e => {
   }
 });
 
-/* ── Chat (popup panel + full page) ─────────────────────────────────────── */
 let activeConversationId = null;
 let chatMsgCounter = 0;
 let chatSending = false;
@@ -298,14 +294,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (chatConfig()) loadConversations();
 });
 
-/* ── Dashboard init ─────────────────────────────────────────────────────── */
 function initDashboard(tankId) {
   loadWaterChart(tankId);
   loadPopChart(tankId);
   loadCostCharts(tankId);
 }
 
-/* ── Water Parameters Chart ─────────────────────────────────────────────── */
 const PARAM_COLORS = {
   ph:      { color: '#38bdf8', label: 'pH' },
   ammonia: { color: '#f87171', label: 'NH₃' },
@@ -372,7 +366,6 @@ async function loadWaterChart(tankId) {
   } catch (e) { console.warn('Water chart error:', e); }
 }
 
-/* ── Population Chart ───────────────────────────────────────────────────── */
 // Pest/hitchhiker invertebrates (snails, worms, copepods, ostracods, etc.) commonly
 // go from a countable number to "many" once they start breeding — once that happens
 // they're not worth a line on the chart (nothing actionable, just clutter). Fish and
@@ -463,7 +456,6 @@ async function loadPopChart(tankId) {
   } catch (e) { console.warn('Pop chart error:', e); }
 }
 
-/* ── Cost Charts ────────────────────────────────────────────────────────── */
 async function loadCostCharts(tankId) {
   const costCanvas = document.getElementById('costChart');
   const monthlyCanvas = document.getElementById('monthlyChart');
@@ -512,7 +504,6 @@ async function loadCostCharts(tankId) {
   } catch (e) { console.warn('Cost chart error:', e); }
 }
 
-/* ── Timestamps: stored UTC, shown/entered in browser-local time ─────────── */
 function _pad(n) { return String(n).padStart(2, '0'); }
 
 // Build the "YYYY-MM-DDTHH:mm" a <input type="datetime-local"> needs, using

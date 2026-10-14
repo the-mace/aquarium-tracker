@@ -193,7 +193,6 @@
 </div>
 {% endif %}
 
-{# ── Add modal: Manual | Lab upload ─────────────────────────────────────── #}
 <div id="modal-add-home-water" class="modal" style="display:none">
   <div class="modal-box" style="max-width:40rem">
     <div class="modal-header">
@@ -206,7 +205,6 @@
       <button type="button" class="pill" id="tab-lab" onclick="switchAddTab('lab')">Lab report (PDF/CSV)</button>
     </div>
 
-    {# Manual #}
     <div id="panel-manual">
       <form method="post" action="/home-water" onsubmit="return prepareLocalTimestamps(this)">
         <div class="form-group">
@@ -256,7 +254,6 @@
       </form>
     </div>
 
-    {# Lab upload #}
     <div id="panel-lab" style="display:none">
       <div id="lab-upload-step">
         <p class="muted" style="font-size:.85rem;margin-bottom:.85rem">
@@ -311,7 +308,6 @@
   </div>
 </div>
 
-{# ── Edit modal ─────────────────────────────────────────────────────────── #}
 <div id="modal-edit-home-water" class="modal" style="display:none">
   <div class="modal-box">
     <div class="modal-header">

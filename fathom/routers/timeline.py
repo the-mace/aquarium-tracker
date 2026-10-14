@@ -168,7 +168,6 @@ async def tank_timeline(
     rows.sort(key=lambda r: r.get("kind") or "")
     rows.sort(key=lambda r: r.get("ts") or "", reverse=True)
 
-    # Apply Python-level filters
     allowed_kinds = _KIND_GROUPS.get(kind) if kind else None
     search_lower = search.lower() if search else None
 

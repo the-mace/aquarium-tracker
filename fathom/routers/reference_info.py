@@ -147,10 +147,8 @@ USE_KNOWN_IMAGES = True
 # Curated image URLs — checked before web search. Add entries here to pin an image
 # permanently or provide a fallback. Keys: (entity_type, canonical_entity_name).
 KNOWN_IMAGES: dict[tuple[str, str], str] = {
-    # hardscape
     ("hardscape", "spider wood"): "https://aquaticmotiv.com/cdn/shop/files/spider-wood-driftwood-196_500x.webp?v=1764192167",
     ("hardscape", "petrified wood accent"): "https://aquarockscolorado.com/cdn/shop/products/IMG_5807_29e8f183-ebe4-4a86-99cb-565cbb4dd82d.jpg?v=1620172777&width=1800",
-    # plants
     ("plant", "hygrophila sp."):     "https://upload.wikimedia.org/wikipedia/commons/a/a8/Hygrophila_polysperma.JPG",
     ("plant", "littorella uniflora"): "https://upload.wikimedia.org/wikipedia/commons/5/57/Littorella_uniflora_kz01.jpg",
     ("plant", "monosolenium tenerum"): "https://upload.wikimedia.org/wikipedia/commons/8/86/Pellia_endiviifolia_(Clouange-12).JPG",
@@ -161,7 +159,6 @@ KNOWN_IMAGES: dict[tuple[str, str], str] = {
     ("plant", "limnobium laevigatum"): "https://upload.wikimedia.org/wikipedia/commons/1/1c/Limnobium_spongia_02.jpg",
     ("plant", "frogbit"):              "https://upload.wikimedia.org/wikipedia/commons/1/1c/Limnobium_spongia_02.jpg",
     ("plant", "helanthium tenellum"):  "https://www.aquariumcoop.com/cdn/shop/files/dwarf-chain-sword-1814832.jpg?v=1766095149&width=832",
-    # species
     ("species", "copepoda spp."):    "https://upload.wikimedia.org/wikipedia/commons/2/28/Copepodkils.jpg",
     ("species", "neocaridina davidi"): "https://upload.wikimedia.org/wikipedia/commons/d/d9/Neocaridina-heteropoda-var-red.jpg",
     # "Neritina sp." is used for non-zebra nerite snails, but Claude's own training-knowledge
