@@ -16,7 +16,6 @@
   </div>
 </div>
 
-<!-- Filter bar -->
 <form method="get" action="/tanks/{{ tank.id }}/timeline" class="filter-bar" style="margin-bottom:1.25rem">
   <input type="text" name="search" value="{{ filter_search }}" placeholder="Search…" style="width:180px;font-size:.85rem;padding:.35rem .6rem">
   <select name="kind" style="font-size:.85rem;padding:.35rem .5rem;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text)">
@@ -96,7 +95,6 @@
 
       <div class="tl-body">
         <div class="tl-header">
-          {# ── Kind badge ── #}
           {%- if item.kind == 'event' %}
             <span class="tl-badge tl-badge-event">{{ item.subtype.replace('_',' ') }}</span>
             {% if item.amount %}<span class="tl-amount">{{ item.amount }}%</span>{% endif %}

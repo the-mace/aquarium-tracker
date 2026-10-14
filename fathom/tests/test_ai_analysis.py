@@ -26,8 +26,6 @@ from ai_config import (
 from routers.ai_analysis import run_ai_analysis as _real_run_ai_analysis
 
 
-# ── Fake Anthropic surface ──────────────────────────────────────────────────
-
 class _ThinkingBlock:
     """Mirrors anthropic.types.ThinkingBlock: type=thinking, no .text attribute."""
 
@@ -128,8 +126,6 @@ def _thinking_mode(kwargs):
     """None = adaptive (field omitted); dict = explicit thinking config."""
     return kwargs.get("thinking")
 
-
-# ── Happy path ──────────────────────────────────────────────────────────────
 
 def test_run_ai_analysis_writes_auto_observation_and_summary(client, tank_id, monkeypatch):
     result_id = _add_test(client, tank_id, notes="weekly check")
@@ -292,8 +288,6 @@ def test_run_ai_analysis_missing_api_key_records_failure(client, tank_id, monkey
     assert "ANTHROPIC_API_KEY" in fails[0]["text"]
 
 
-# ── Wait-page + dashboard contracts ─────────────────────────────────────────
-
 def test_run_ai_analysis_makes_summary_status_ready(client, tank_id, monkeypatch):
     result_id = _add_test(client, tank_id)
     since = "2026-07-27 17:21:31"
@@ -391,8 +385,6 @@ def test_run_ai_analysis_observation_appears_on_observations_and_timeline(client
     assert "Unique analysis marker XYZ-991." in timeline.text
 
 
-# ── Issue review branch ─────────────────────────────────────────────────────
-
 def test_run_ai_analysis_with_open_issue_runs_issue_review(client, tank_id, monkeypatch):
     conn = sqlite3.connect(_db.DB_PATH)
     cur = conn.execute(
@@ -418,8 +410,6 @@ def test_run_ai_analysis_with_open_issue_runs_issue_review(client, tank_id, monk
     status = _db_rows("SELECT status FROM issues WHERE id=?", (issue_id,))[0]["status"]
     assert status == "monitoring"
 
-
-# ── Shape / config guards ───────────────────────────────────────────────────
 
 def test_thinking_block_has_no_text_attr():
     block = _ThinkingBlock()

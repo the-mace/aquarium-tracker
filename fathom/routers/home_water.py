@@ -1011,7 +1011,6 @@ async def extract_lab_report(
             text = text[:100_000] + "\n...[truncated]"
         content_blocks = [{"type": "text", "text": prompt + "\n\n--- REPORT TEXT ---\n" + text}]
     else:
-        # Sniff PDF magic
         if raw[:4] == b"%PDF":
             b64 = base64.standard_b64encode(raw).decode("ascii")
             content_blocks = [
@@ -1054,7 +1053,6 @@ async def extract_lab_report(
         msg.usage.input_tokens, msg.usage.output_tokens, time.monotonic() - t0,
     )
 
-    # Collect text blocks from the response
     text_out = ""
     for block in msg.content:
         if getattr(block, "type", None) == "text":

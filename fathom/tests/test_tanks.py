@@ -239,7 +239,6 @@ def test_accept_notes_proposal_updates_tank_notes(client, tank_id):
     conn.close()
     assert notes == "Water source: home tap. Flourish weekly."
     assert status == "accepted"
-    # Proposal banner gone
     assert b"Update tank notes?" not in client.get(f"/tanks/{tank_id}").content
 
 

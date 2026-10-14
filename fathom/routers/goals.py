@@ -204,7 +204,6 @@ async def list_goals(request: Request, tank_id: int, background_tasks: Backgroun
         ).fetchall())
         goals = _enrich_goals(conn, goals)
         picker_goals = load_all_goals_for_picker(conn)
-        # Group picker by tank for the template
         picker_by_tank: dict[str, list[dict]] = {}
         for pg in picker_goals:
             picker_by_tank.setdefault(pg["tank_name"], []).append(pg)

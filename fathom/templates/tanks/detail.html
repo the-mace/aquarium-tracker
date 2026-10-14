@@ -66,7 +66,6 @@
 </div>
 {% endif %}
 
-<!-- Summary Banner -->
 {% if summary and summary.summary_text %}
 <div class="summary-card">
   <div class="summary-header">
@@ -78,7 +77,6 @@
 </div>
 {% endif %}
 
-<!-- Quick Stats Row -->
 <div class="stats-row">
   {% if latest_test %}
   <div class="stat-card">
@@ -236,7 +234,6 @@
   </div>
 </div>
 
-<!-- Tank Specs -->
 {% if tank.dimensions_l or tank.manufacturer or tank.substrate_type or tank.notes %}
 <div class="panel" style="margin-bottom:1.25rem">
   <div class="panel-header">
@@ -278,7 +275,6 @@
 </div>
 {% endif %}
 
-<!-- Schedule Widgets -->
 {% if today_schedule or maintenance_items %}
 <div class="two-col-row">
   {% if today_schedule %}
@@ -337,7 +333,6 @@
 </div>
 {% endif %}
 
-<!-- Quick Actions -->
 <div class="quick-actions">
   <button class="action-btn action-btn-primary" onclick="openModal('modal-quick-log')">
     <span class="action-icon">⚡</span> Quick Log
@@ -365,7 +360,6 @@
   </a>
 </div>
 
-<!-- Charts Row -->
 <div class="charts-row">
   <div class="chart-card">
     <div class="chart-header">
@@ -390,7 +384,6 @@
   </div>
 </div>
 
-<!-- Observations & Events Row -->
 <div class="two-col-row">
   <div class="panel">
     <div class="panel-header">
@@ -433,7 +426,6 @@
   </div>
 </div>
 
-<!-- Equipment -->
 {% if equipment %}
 <div class="panel">
   <div class="panel-header">
@@ -451,7 +443,6 @@
 </div>
 {% endif %}
 
-<!-- Plants & Hardscape -->
 {% if plants or hardscape %}
 <div class="two-col-row">
   {% if plants %}
@@ -483,7 +474,6 @@
 </div>
 {% endif %}
 
-<!-- Danger Zone -->
 <details class="danger-zone">
   <summary>Danger Zone</summary>
   <div class="danger-content">
@@ -504,7 +494,6 @@
   </div>
 </details>
 
-<!-- Modals -->
 <div id="modal-quick-log" class="modal" style="display:none">
   <div class="modal-box">
     <div class="modal-header"><h3>Quick Log</h3><button class="modal-close" onclick="closeModal('modal-quick-log')">×</button></div>
@@ -623,7 +612,6 @@
   </div>
 </div>
 
-<!-- Import Page Link -->
 <a href="/tanks/{{ tank.id }}/import-page" style="display:none" id="import-page-link"></a>
 {% endblock %}
 

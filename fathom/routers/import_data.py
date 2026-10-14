@@ -772,7 +772,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
 
         maybe_fetch_tank_dimensions(background_tasks, tank_id)
 
-        # Test results
         for tr in preview.get("test_results", []):
             ts = tr.get("timestamp")
             if ts:
@@ -793,7 +792,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 )
         inserted["test_results"] = len(preview.get("test_results", []))
 
-        # Events
         for ev in preview.get("events", []):
             ts = ev.get("timestamp")
             if ts:
@@ -808,7 +806,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 )
         inserted["events"] = len(preview.get("events", []))
 
-        # Purchases
         for pur in preview.get("purchases", []):
             conn.execute(
                 "INSERT INTO purchases (tank_id, item, category, vendor, cost, purchase_date, notes) VALUES (?,?,?,?,?,?,?)",
@@ -891,7 +888,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                     )
         inserted["inhabitants"] = len(inh_preview)
 
-        # Plants
         for pl in preview.get("plants", []):
             cur = conn.execute(
                 "INSERT INTO plants (tank_id, species, common_name, added_date, source, notes, status) VALUES (?,?,?,?,?,?,?)",
@@ -903,7 +899,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                     plant_id_by_name[_canonical(name)] = cur.lastrowid
         inserted["plants"] = len(preview.get("plants", []))
 
-        # Equipment
         for eq in preview.get("equipment", []):
             specs_val = eq.get("specs")
             if isinstance(specs_val, dict):
@@ -923,7 +918,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 equipment_id_by_name.setdefault(_canonical(eq["category"]), cur.lastrowid)
         inserted["equipment"] = len(preview.get("equipment", []))
 
-        # Hardscape
         for hs in preview.get("hardscape", []):
             cur = conn.execute(
                 "INSERT INTO hardscape (tank_id, item, quantity, source, cost, added_date, notes) VALUES (?,?,?,?,?,?,?)",
@@ -1006,7 +1000,6 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
                 )
         inserted["observations"] = len(preview.get("observations", []))
 
-        # If any inhabitant counts changed, add an import summary observation
         if inh_updates:
             conn.execute(
                 "INSERT INTO observations (tank_id, source, text) VALUES (?,?,?)",
@@ -1059,6 +1052,5 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
         if entity_name:
             maybe_fetch_reference_info(background_tasks, "hardscape", entity_name, hs.get("item", ""))
 
-    # Only report non-zero counts
     inserted = {k: v for k, v in inserted.items() if v}
     return JSONResponse({"status": "imported", "inserted": inserted})

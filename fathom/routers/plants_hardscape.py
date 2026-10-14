@@ -29,7 +29,6 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
             (tank_id,),
         ).fetchall())
 
-    # Merge reference info from persistent cache DB for plants
     if plants:
         plant_names = list({
             _canonical(p.get("species") or p.get("common_name") or "")
@@ -57,7 +56,6 @@ async def list_plants(request: Request, background_tasks: BackgroundTasks, tank_
             pl["ref_image_attribution"] = ref.get("image_attribution")
             pl["ref_fetched_at"] = ref.get("fetched_at")
 
-    # Merge reference info for hardscape
     if hardscape:
         hs_names = list({
             _canonical(h.get("item") or "")

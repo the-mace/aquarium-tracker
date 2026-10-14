@@ -15,8 +15,6 @@ from routers.ai_analysis import (
 from routers.home_water import build_home_water_baseline
 
 
-# ── database helpers ────────────────────────────────────────────────────────
-
 def test_row_to_dict_none():
     assert row_to_dict(None) is None
 
@@ -158,8 +156,6 @@ def test_get_db_rolls_back_on_error(tmp_path, monkeypatch):
     assert count == 0
 
 
-# ── Claude response text extraction ─────────────────────────────────────────
-
 class _Blk:
     def __init__(self, type=None, text=None, thinking=None):
         self.type = type
@@ -208,8 +204,6 @@ def test_message_text_skips_redacted_thinking():
     ])
     assert _message_text(msg) == "visible"
 
-
-# ── ai_analysis formatter helpers ───────────────────────────────────────────
 
 def test_fmt_home_water_empty():
     assert "No home/source water" in _fmt_home_water([])

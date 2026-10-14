@@ -21,8 +21,6 @@ def _seed_ref(entity_type, entity_name, **kwargs):
     conn.close()
 
 
-# ── GET /reference-info ────────────────────────────────────────────────────
-
 def test_get_reference_info_404_when_missing(client):
     r = client.get("/reference-info?entity_type=species&entity_name=fakefish")
     assert r.status_code == 404
@@ -37,8 +35,6 @@ def test_get_reference_info_returns_row(client, tank_id):
     assert data["entity_name"] == "betta splendens"
     assert data["description"] == "Small labyrinth fish"
 
-
-# ── POST /reference-info/refresh ──────────────────────────────────────────
 
 def test_refresh_queues_task(client):
     r = client.post(
@@ -65,8 +61,6 @@ def test_refresh_missing_entity_type_returns_400(client):
     r = client.post("/reference-info/refresh", json={"entity_name": "betta"})
     assert r.status_code == 400
 
-
-# ── maybe_fetch_reference_info inserts placeholder ────────────────────────
 
 def test_maybe_fetch_inserts_placeholder(client, tank_id):
     from unittest.mock import MagicMock
@@ -104,8 +98,6 @@ def test_maybe_fetch_requeues_stuck_placeholder(client, tank_id):
     bt.add_task.assert_called_once()  # should re-queue despite row existing
 
 
-# ── Inhabitants list joins reference_info ─────────────────────────────────
-
 def test_inhabitants_list_shows_ref_data(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/inhabitants",
@@ -119,8 +111,6 @@ def test_inhabitants_list_shows_ref_data(client, tank_id):
     assert "upload.wikimedia.org" in r.text
 
 
-# ── Plants list joins reference_info ─────────────────────────────────────
-
 def test_plants_list_shows_ref_data(client, tank_id):
     client.post(
         f"/tanks/{tank_id}/plants",
@@ -133,8 +123,6 @@ def test_plants_list_shows_ref_data(client, tank_id):
     assert r.status_code == 200
     assert "upload.wikimedia.org" in r.text
 
-
-# ── maybe_fetch_tank_dimensions ───────────────────────────────────────────
 
 def test_maybe_fetch_dimensions_queues_when_manufacturer_known_and_dims_missing(client, tank_id):
     from unittest.mock import MagicMock
