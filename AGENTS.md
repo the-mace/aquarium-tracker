@@ -61,7 +61,7 @@ Logs (uvicorn + app) go to `/tmp/fathom.log` as well as stdout. On the mini, lau
 
 ## Production data
 
-Dev and the Mac mini have **separate databases** and will keep diverging. Dev is for development. The mini is the real aquarium. Do not copy either DB over the other without an explicit yes. `bin/deploy-mini` takes an S3 backup of the mini DB before pulling code. The mini clone fetches with the repo deploy key (`core.sshCommand` → `~/.ssh/deploy_aquarium-tracker_ed25519`, host keys in `~/.ssh/known_hosts_github`), not a forwarded agent.
+Dev and the Mac mini have **separate databases** and will keep diverging. Dev is for development. The mini is the real aquarium. Do not copy either DB over the other without an explicit yes. `bin/deploy-mini` takes an S3 backup of the mini DB before pulling code. The mini clone fetches with the repo deploy key (`core.sshCommand` → `~/.ssh/deploy_aquarium-tracker_ed25519`), not a forwarded agent.
 
 Host, SSH alias, and clone path are in gitignored `CLAUDE.local.md` and in `FATHOM_MINI_HOST` / `FATHOM_MINI_REPO` in `.env`.
 
