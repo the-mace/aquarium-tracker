@@ -44,6 +44,7 @@ Fathom is a personal aquarium and live-food tracking web app with AI analysis. S
 - **Templates**: Jinja2, plain HTML/CSS/JS. No React, no build step
 - **Charts**: Chart.js, vendored at `fathom/static/js/chart.umd.min.js`
 - **AI**: Anthropic Python SDK, model id `CLAUDE_MODEL` in `fathom/ai_config.py` (current: `claude-sonnet-5`). One model for analysis, chat, import, and reference info
+- **Prompt caching**: chat calls send top-level `cache_control` so tool rounds re-read the prefix; the round-cap synthesis call keeps `tools` and sets `tool_choice: none` (dropping tools invalidates the whole cache). Multi-chunk import puts `IMPORT_PROMPT` in its own cached block. Logs show `cache_read=`/`cache_write=`; if `cache_read` stays 0 on a chat's second round, something in `system`/`tools` changed between calls
 - **Env**: `.env` at repo root (gitignored). `chmod 600`. Secret scan: `git config core.hooksPath scripts/git-hooks` (CI runs the same scan)
 
 ## How to run

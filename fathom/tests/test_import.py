@@ -2,7 +2,10 @@
 import json
 import sqlite3
 import database as _db
-from routers.import_data import _strip_html, _find_duplicates, _merge_results, _split_chunks, _existing_inhabitants_context
+from routers.import_data import (
+    IMPORT_PROMPT, _existing_inhabitants_context, _extraction_content, _find_duplicates,
+    _merge_results, _split_chunks, _strip_html,
+)
 
 
 def test_strip_html_removes_tags():
@@ -794,3 +797,15 @@ def test_quick_log_rejects_overlong_text(client, tank_id, monkeypatch):
     r = client.post(f"/tanks/{tank_id}/quick-log", json={"text": "p" * 100001})
     assert r.status_code == 400
     assert "100000" in r.json()["detail"]
+
+
+def test_extraction_content_caches_shared_prompt_across_chunks():
+    blocks = _extraction_content("\nEXISTING: Otos", "[Part 1 of 2]\n\nchunk text", 2)
+    assert blocks[0]["text"] == IMPORT_PROMPT + "\nEXISTING: Otos"
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert blocks[1] == {"type": "text", "text": "[Part 1 of 2]\n\nchunk text"}
+
+
+def test_extraction_content_single_chunk_skips_cache_write():
+    blocks = _extraction_content("", "chunk text", 1)
+    assert "cache_control" not in blocks[0]

@@ -542,11 +542,11 @@ def test_chat_retries_when_thinking_burns_budget(client, tank_id, monkeypatch):
 
 
 def test_chat_answers_after_tool_round_cap(client, tank_id, monkeypatch):
-    """When every tools-on turn keeps requesting query_db, omit tools and answer."""
+    """When every tools-on turn keeps requesting query_db, set tool_choice=none and answer."""
 
     class _Msgs(_RecordingMessages):
         def _respond(self, kwargs):
-            if kwargs.get("tools"):
+            if kwargs.get("tools") and kwargs.get("tool_choice") != {"type": "none"}:
                 n = len(self.calls)
                 return _FakeMessage(
                     [_FakeToolUseBlock(f"tool_{n}", "query_db", {"sql": "SELECT 1"})],
@@ -563,8 +563,12 @@ def test_chat_answers_after_tool_round_cap(client, tank_id, monkeypatch):
     assert "Here's what I found" in r.json()["reply"]
     assert "allotted lookups" not in r.json()["reply"]
     assert len(msgs.calls) == 5  # 4 tool rounds + 1 no-tools synthesis
-    assert all(c.get("tools") for c in msgs.calls[:4])
-    assert "tools" not in msgs.calls[4]
+    assert all(c.get("tools") for c in msgs.calls)
+    assert all("tool_choice" not in c for c in msgs.calls[:4])
+    # Tools stay byte-identical on the synthesis call so the cached prefix holds.
+    assert msgs.calls[4]["tools"] == msgs.calls[0]["tools"]
+    assert msgs.calls[4]["tool_choice"] == {"type": "none"}
+    assert all(c.get("cache_control") == {"type": "ephemeral"} for c in msgs.calls)
 
 
 def test_chat_thinking_exhausted_uses_generic_fallback(client, tank_id, monkeypatch):

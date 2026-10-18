@@ -267,6 +267,18 @@ def _existing_inhabitants_context(existing_inhabitants: list) -> str:
     )
 
 
+def _extraction_content(existing_inh_ctx: str, chunk_text: str, n_chunks: int) -> list:
+    """User content for one extraction chunk: shared prompt block, then the chunk.
+
+    IMPORT_PROMPT + the inhabitants context is identical for every chunk, so it
+    gets a cache breakpoint when there is more than one chunk to read it back.
+    """
+    shared = {"type": "text", "text": IMPORT_PROMPT + existing_inh_ctx}
+    if n_chunks > 1:
+        shared["cache_control"] = {"type": "ephemeral"}
+    return [shared, {"type": "text", "text": chunk_text}]
+
+
 async def _extraction_sse_stream(content: str, api_key: str, existing_inhabitants: list = None):
     """Async generator yielding SSE event strings for Claude-based text extraction."""
     import anthropic
@@ -321,7 +333,8 @@ async def _extraction_sse_stream(content: str, api_key: str, existing_inhabitant
             async with client.messages.stream(
                 model=CLAUDE_MODEL,
                 max_tokens=32000,
-                messages=[{"role": "user", "content": IMPORT_PROMPT + existing_inh_ctx + chunk_header + chunk}],
+                messages=[{"role": "user", "content": _extraction_content(
+                    existing_inh_ctx, chunk_header + chunk, n_chunks)}],
             ) as stream:
                 async for text in stream.text_stream:
                     full_text += text
@@ -354,9 +367,12 @@ async def _extraction_sse_stream(content: str, api_key: str, existing_inhabitant
                 yield evt({"phase": "analyzing", "label": finish_label,
                            "current": lines_done + chunk_total, "total": total_lines})
                 final_msg = await stream.get_final_message()
-            logger.info("Claude done: import | chunk=%d/%d | in=%d out=%d elapsed=%.1fs stop=%s",
-                        i + 1, n_chunks,
-                        final_msg.usage.input_tokens, final_msg.usage.output_tokens,
+            logger.info("Claude done: import | chunk=%d/%d | in=%d cache_read=%d cache_write=%d "
+                        "out=%d elapsed=%.1fs stop=%s",
+                        i + 1, n_chunks, final_msg.usage.input_tokens,
+                        final_msg.usage.cache_read_input_tokens or 0,
+                        final_msg.usage.cache_creation_input_tokens or 0,
+                        final_msg.usage.output_tokens,
                         time.monotonic() - t_chunk, final_msg.stop_reason)
 
             if final_msg.stop_reason == 'max_tokens':

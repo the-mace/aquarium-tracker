@@ -682,16 +682,24 @@ _NO_REPLY_FALLBACK = (
 )
 
 
-async def _claude_chat_create(client, *, system, messages, log_label, tools=None, thinking=None):
+async def _claude_chat_create(client, *, system, messages, log_label, tools=None, thinking=None,
+                              allow_tools=True):
     kwargs = {
         "model": CLAUDE_MODEL,
         "max_tokens": CLAUDE_MAX_TOKENS_CHAT,
         "system": system,
         "messages": messages,
         "timeout": _CLAUDE_TIMEOUT,
+        # Auto-breakpoint on the newest block: each tool round re-reads the
+        # system prompt, tools, and prior rounds from cache.
+        "cache_control": {"type": "ephemeral"},
     }
     if tools:
         kwargs["tools"] = tools
+        if not allow_tools:
+            # Keep tools in the request (dropping them invalidates the whole
+            # cache); tool_choice=none only invalidates the messages tier.
+            kwargs["tool_choice"] = {"type": "none"}
     if thinking is not None:
         kwargs["thinking"] = thinking
     attempt = "no_thinking" if thinking else "adaptive"
@@ -701,6 +709,8 @@ async def _claude_chat_create(client, *, system, messages, log_label, tools=None
     usage = getattr(response, "usage", None)
     in_tok = getattr(usage, "input_tokens", 0) if usage else 0
     out_tok = getattr(usage, "output_tokens", 0) if usage else 0
+    cache_read = (getattr(usage, "cache_read_input_tokens", 0) or 0) if usage else 0
+    cache_write = (getattr(usage, "cache_creation_input_tokens", 0) or 0) if usage else 0
     stop = getattr(response, "stop_reason", None)
     if stop == "max_tokens":
         logger.warning(
@@ -708,8 +718,10 @@ async def _claude_chat_create(client, *, system, messages, log_label, tools=None
             log_label, attempt,
         )
     logger.info(
-        "Claude done: %s | thinking=%s | in=%d out=%d elapsed=%.1fs stop=%s",
-        log_label, attempt, in_tok, out_tok, time.monotonic() - t0, stop,
+        "Claude done: %s | thinking=%s | in=%d cache_read=%d cache_write=%d out=%d "
+        "elapsed=%.1fs stop=%s",
+        log_label, attempt, in_tok, cache_read, cache_write, out_tok,
+        time.monotonic() - t0, stop,
     )
     return response
 
@@ -772,7 +784,7 @@ async def _claude_chat_reply(*, api_key, system_prompt, tools, api_history, run_
     question can burn the whole budget on a ThinkingBlock (prod 2026-08-24:
     Fish Tank Otos Ask AI, out=1024, no text) and look like a tool-round miss.
     Empty text → one thinking-disabled retry. After MAX_TOOL_ROUNDS, a further
-    call is made with tools omitted so the model has to answer from what it has.
+    call is made with tool_choice=none so the model has to answer from what it has.
     """
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
@@ -782,15 +794,16 @@ async def _claude_chat_reply(*, api_key, system_prompt, tools, api_history, run_
     thinking_retry = False
     t0 = time.monotonic()
     for _ in range(_MAX_CHAT_API_CALLS):
-        use_tools = tools if tool_rounds_used < MAX_TOOL_ROUNDS else None
+        use_tools = tool_rounds_used < MAX_TOOL_ROUNDS
         thinking = CLAUDE_THINKING_DISABLED if thinking_retry else None
         response = await _claude_chat_create(
             client,
             system=system_prompt,
             messages=working_messages,
             log_label=log_label,
-            tools=use_tools,
+            tools=tools,
             thinking=thinking,
+            allow_tools=use_tools,
         )
         if response.stop_reason == "tool_use" and use_tools:
             _apply_tool_calls(response, run_tool, working_messages, log_label)
