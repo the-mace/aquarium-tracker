@@ -55,6 +55,15 @@ _PARAMETER_BASELINE_RULE = (
     "readings differ from one earlier sparse reading."
 )
 
+_PHOSPHATE_RULE = (
+    "PHOSPHATE is ppm PO4 from an API kit, tested only in some tanks and not on every test. "
+    "A missing value means it was not measured, never 0. When it is present, judge it against "
+    "the plants and any phosphate or fertilizer dosing in the events and schedule: 0 ppm in a "
+    "planted tank means plants are phosphorus-limited, and readings right after a dose show "
+    "the dose, not a steady level. Say whether the current dose looks too low, about right, "
+    "or too high for this tank."
+)
+
 
 def _fmt_test_results(rows):
     if not rows:
@@ -62,7 +71,7 @@ def _fmt_test_results(rows):
     lines = []
     for r in rows:
         parts = []
-        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp"):
+        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "phosphate", "tds", "temp"):
             val = r.get(field)
             if val is not None:
                 parts.append(f"{field.upper()}={val}")
@@ -228,6 +237,22 @@ def load_home_water_tests(conn, limit=24):
 KEEPER_LOG_DAYS = 90
 _KEEPER_LOG_LIMIT = 60
 _KEEPER_LOG_TEXT_MAX = 600
+
+
+def with_latest_phosphate(conn, tank_id, test_results):
+    """Append the newest phosphate reading when it is older than the rows given.
+
+    Phosphate is tested far less often than the other parameters, so it can fall
+    out of a recent-tests window while the dose it guided is still in effect.
+    """
+    if any(r.get("phosphate") is not None for r in test_results):
+        return test_results
+    row = conn.execute(
+        "SELECT * FROM test_results WHERE tank_id = ? AND phosphate IS NOT NULL"
+        " ORDER BY timestamp DESC LIMIT 1",
+        (tank_id,),
+    ).fetchone()
+    return test_results + [dict(row)] if row else test_results
 
 
 def load_keeper_log(conn, tank_id, days=KEEPER_LOG_DAYS, limit=_KEEPER_LOG_LIMIT):
@@ -504,6 +529,8 @@ Keeper log (last {KEEPER_LOG_DAYS} days — the keeper's own observations, birth
 
 {_PARAMETER_BASELINE_RULE}
 
+{_PHOSPHATE_RULE}
+
 Please provide:
 1. A brief analysis of the water chemistry trends (include how tank parameters relate to fill/source water when relevant, especially after water changes)
 2. Any flags or concerns about parameters outside the *safe tolerance* range for this tank's inhabitants — use precise, species-specific ranges rather than overly cautious defaults. A value outside a narrower "ideal"/breeding-optimal sub-range but still within safe tolerance is NOT a concern — at most note it's outside the ideal range for breeding/growth; reserve concern language for values actually near or outside the safe tolerance boundary.
@@ -653,7 +680,7 @@ def build_goal_review_prompt(tank, draft, existing_goals, latest_test=None, inha
 
     if latest_test:
         params = []
-        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp"):
+        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "phosphate", "tds", "temp"):
             val = latest_test.get(field)
             if val is not None:
                 params.append(f"{field.upper()}={val}")

@@ -375,3 +375,33 @@ def test_multiple_test_results_ordered_by_chart(client, tank_id):
     data = client.get(f"/tanks/{tank_id}/charts/water-params").json()["data"]
     phs = [row["ph"] for row in data]
     assert phs == sorted(phs)  # chart returns chronological order (oldest first)
+
+
+def test_phosphate_saved_and_editable(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"nitrate": "20", "phosphate": "0"},
+        headers={"Accept": "application/json"},
+    )
+    result_id = r.json()["id"]
+    conn = sqlite3.connect(_db.DB_PATH)
+    assert conn.execute("SELECT phosphate FROM test_results WHERE id=?", (result_id,)).fetchone()[0] == 0
+    conn.close()
+
+    client.post(f"/tanks/{tank_id}/tests/{result_id}/update", data={"nitrate": "20", "phosphate": "0.5"})
+    conn = sqlite3.connect(_db.DB_PATH)
+    assert conn.execute("SELECT phosphate FROM test_results WHERE id=?", (result_id,)).fetchone()[0] == 0.5
+    conn.close()
+    assert "PO₄" in client.get(f"/tanks/{tank_id}/tests").text
+
+
+def test_blank_phosphate_stays_null(client, tank_id):
+    r = client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"nitrate": "20", "phosphate": ""},
+        headers={"Accept": "application/json"},
+    )
+    conn = sqlite3.connect(_db.DB_PATH)
+    row = conn.execute("SELECT phosphate FROM test_results WHERE id=?", (r.json()["id"],)).fetchone()
+    conn.close()
+    assert row[0] is None

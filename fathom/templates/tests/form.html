@@ -25,6 +25,7 @@
       <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" name="ammonia" placeholder="0.0" value="{{ latest.ammonia if latest and latest.ammonia is not none else '' }}"></div>
       <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" name="nitrite" placeholder="0.0" value="{{ latest.nitrite if latest and latest.nitrite is not none else '' }}"></div>
       <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" name="nitrate" value="{{ latest.nitrate if latest and latest.nitrate is not none else '' }}"></div>
+      <div class="form-group"><label>Phosphate (ppm)</label><input type="number" step="0.25" min="0" name="phosphate" placeholder="Leave blank if not tested"></div>
       <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" name="tds" value="{{ latest.tds if latest and latest.tds is not none else '' }}"></div>
       <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" name="temp" value="{{ latest.temp if latest and latest.temp is not none else '' }}"></div>
     </div>

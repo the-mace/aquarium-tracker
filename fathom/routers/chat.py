@@ -257,7 +257,7 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
 
     if latest_test:
         params = []
-        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp"):
+        for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "phosphate", "tds", "temp"):
             val = latest_test.get(field)
             if val is not None:
                 params.append(f"{field.upper()}={val}")

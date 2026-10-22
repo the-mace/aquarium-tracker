@@ -10,7 +10,7 @@ Add the next change as a function in _apply_pending and bump SCHEMA_VERSION.
 Recorded versions are not run again.
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Columns the previous startup migrations left on every database that has
 # been opened by current code. A legacy file missing one of these is older
@@ -74,6 +74,7 @@ CANONICAL_SCHEMA = """
                 ammonia REAL,
                 nitrite REAL,
                 nitrate REAL,
+                phosphate REAL,
                 tds REAL,
                 temp REAL,
                 notes TEXT,
@@ -520,7 +521,12 @@ def ensure_schema(conn):
 
 def _apply_pending(conn, current):
     """Migrations after the version-1 baseline. Each bumps current."""
-    return
+    if current < 2:
+        # A fresh database already has the column from CANONICAL_SCHEMA.
+        if "phosphate" not in _columns(conn, "test_results"):
+            conn.execute("ALTER TABLE test_results ADD COLUMN phosphate REAL")
+        _stamp(conn, 2)
+        current = 2
 
 
 def _stamp(conn, version):

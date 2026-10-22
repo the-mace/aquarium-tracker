@@ -341,7 +341,7 @@ async def chart_water_params(tank_id: int, limit: int = 30):
     limit = clamp_limit(limit)
     with get_db() as conn:
         rows = rows_to_list(conn.execute(
-            """SELECT timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp
+            """SELECT timestamp, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp
                FROM test_results WHERE tank_id = ?
                ORDER BY timestamp DESC LIMIT ?""",
             (tank_id, limit),

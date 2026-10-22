@@ -59,7 +59,7 @@ Open `http://localhost:8000`. `bin/stop` kills a local uvicorn process.
 ### Per tank
 
 - **Dashboard**: latest water parameters, inhabitants, plants/hardscape, open issues, goals, AI summary, Chart.js water/population/cost charts, today's schedule and maintenance due
-- **Water tests**: pH, GH, KH, ammonia, nitrite, nitrate, TDS, temperature. Form prefills from the last test. Saving queues background AI analysis + a short next-action recommendation, then waits on a status page until the dashboard summary is fresh
+- **Water tests**: pH, GH, KH, ammonia, nitrite, nitrate, phosphate, TDS, temperature. Form prefills from the last test, except phosphate (optional, for tanks where you dose it; blank means not tested, and the AI analysis is told so). Saving queues background AI analysis + a short next-action recommendation, then waits on a status page until the dashboard summary is fresh
 - **Inhabitants**: per-species counts (or "many" when uncountable) with a population event log (added/died/removed/born)
 - **Plants & hardscape**: active plants and hardscape items
 - **Equipment and purchases**: add/edit/delete; cost charts by category and month

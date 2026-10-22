@@ -13,6 +13,8 @@ from routers.ai_analysis import (
     build_notes_proposal_prompt, _parse_notes_proposal,
 )
 from routers.home_water import build_home_water_baseline
+from routers.ai_prompts import with_latest_phosphate
+from schema import SCHEMA_VERSION
 
 
 def test_row_to_dict_none():
@@ -75,7 +77,9 @@ def test_init_db_idempotent(tmp_path, monkeypatch):
         assert "reference_info" not in tables
         assert "schema_migrations" in tables
         version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-        assert version == 1
+        assert version == SCHEMA_VERSION
+        test_cols = {row[1] for row in conn.execute("PRAGMA table_info(test_results)").fetchall()}
+        assert "phosphate" in test_cols
         event_cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
         assert "schedule_id" in event_cols
         chat_cols = {row[1] for row in conn.execute("PRAGMA table_info(chat_conversations)").fetchall()}
@@ -116,7 +120,7 @@ def test_legacy_reference_info_moves_to_cache(tmp_path, monkeypatch):
         assert conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='reference_info'"
         ).fetchone() is None
-        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == SCHEMA_VERSION
     with _db.get_ref_db() as ref_conn:
         row = ref_conn.execute(
             "SELECT common_name, description FROM reference_info WHERE entity_name='danio rerio'"
@@ -853,3 +857,55 @@ def test_build_home_water_baseline_ignores_temp():
     baseline = build_home_water_baseline(rows, now=now)
     assert "temp" not in baseline["by_key"]
     assert baseline["has_stale"] is False
+
+
+def test_version_1_database_gains_phosphate_column(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute("INSERT INTO tanks (name) VALUES ('Old')")
+        tank_id = conn.execute("SELECT id FROM tanks").fetchone()[0]
+        conn.execute("INSERT INTO test_results (tank_id, nitrate) VALUES (?, 20)", (tank_id,))
+        conn.execute("ALTER TABLE test_results DROP COLUMN phosphate")
+        conn.execute("DELETE FROM schema_migrations WHERE version > 1")
+    init_db()
+    with get_db() as conn:
+        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == SCHEMA_VERSION
+        row = conn.execute("SELECT nitrate, phosphate FROM test_results").fetchone()
+        assert row["nitrate"] == 20
+        assert row["phosphate"] is None
+
+
+def test_fmt_test_results_includes_phosphate_only_when_measured():
+    out = _fmt_test_results([
+        {"timestamp": "2026-10-22", "nitrate": 20, "phosphate": 0.5},
+        {"timestamp": "2026-10-21", "nitrate": 20, "phosphate": None},
+    ])
+    first, second = out.splitlines()
+    assert "PHOSPHATE=0.5" in first
+    assert "PHOSPHATE" not in second
+
+
+def test_analysis_prompt_explains_blank_phosphate():
+    tank = {"name": "T", "water_type": "freshwater", "volume_gallons": 10}
+    prompt = build_analysis_prompt(tank, [], [], [], [], [], [])
+    assert "missing value means it was not measured" in prompt
+
+
+def test_with_latest_phosphate_appends_older_reading(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute("INSERT INTO tanks (name) VALUES ('T')")
+        tank_id = conn.execute("SELECT id FROM tanks").fetchone()[0]
+        conn.execute(
+            "INSERT INTO test_results (tank_id, timestamp, phosphate) VALUES (?, '2026-10-01 12:00:00', 0)",
+            (tank_id,),
+        )
+        recent = [{"timestamp": "2026-10-20 12:00:00", "nitrate": 20, "phosphate": None}]
+        rows = with_latest_phosphate(conn, tank_id, recent)
+        assert len(rows) == 2
+        assert rows[1]["phosphate"] == 0
+        assert with_latest_phosphate(conn, tank_id, rows) == rows

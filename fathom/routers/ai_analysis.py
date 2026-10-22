@@ -164,6 +164,7 @@ from routers.ai_prompts import (
     build_summary_prompt,
     load_home_water_tests,
     load_keeper_log,
+    with_latest_phosphate,
 )
 
 async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
@@ -185,6 +186,7 @@ async def run_ai_analysis(tank_id: int, trigger_type: str, trigger_id: int):
                 "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 10",
                 (tank_id,),
             ).fetchall())
+            test_results = with_latest_phosphate(conn, tank_id, test_results)
 
             issues = rows_to_list(conn.execute(
                 "SELECT * FROM issues WHERE tank_id = ? AND status != 'resolved' ORDER BY opened_at DESC",
@@ -522,6 +524,7 @@ async def run_goal_progress(tank_id: int, result_id: int | None = None):
                 "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 10",
                 (tank_id,),
             ).fetchall())
+            test_results = with_latest_phosphate(conn, tank_id, test_results)
 
             inhabitants = rows_to_list(conn.execute(
                 "SELECT * FROM inhabitants WHERE tank_id = ?", (tank_id,),

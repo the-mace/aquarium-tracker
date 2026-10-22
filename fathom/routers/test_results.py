@@ -65,6 +65,7 @@ async def add_test_result(
     ammonia: Optional[str] = Form(None),
     nitrite: Optional[str] = Form(None),
     nitrate: Optional[str] = Form(None),
+    phosphate: Optional[str] = Form(None),
     tds: Optional[str] = Form(None),
     temp: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
@@ -73,22 +74,23 @@ async def add_test_result(
     from security import require_ai_budget
     require_ai_budget(request)
     ts = timestamp or None
-    ph, gh, kh, ammonia, nitrite, nitrate, tds, temp = (
+    ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp = (
         _parse_float(ph), _parse_float(gh), _parse_float(kh), _parse_float(ammonia),
-        _parse_float(nitrite), _parse_float(nitrate), _parse_float(tds), _parse_float(temp),
+        _parse_float(nitrite), _parse_float(nitrate), _parse_float(phosphate),
+        _parse_float(tds), _parse_float(temp),
     )
     with get_db() as conn:
         if ts:
             cur = conn.execute(
-                """INSERT INTO test_results (tank_id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (tank_id, ts, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes),
+                """INSERT INTO test_results (tank_id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (tank_id, ts, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes),
             )
         else:
             cur = conn.execute(
-                """INSERT INTO test_results (tank_id, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (tank_id, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes),
+                """INSERT INTO test_results (tank_id, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (tank_id, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes),
             )
         result_id = cur.lastrowid
 
@@ -182,13 +184,15 @@ async def update_test_result(
     ammonia: Optional[str] = Form(None),
     nitrite: Optional[str] = Form(None),
     nitrate: Optional[str] = Form(None),
+    phosphate: Optional[str] = Form(None),
     tds: Optional[str] = Form(None),
     temp: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
-    ph, gh, kh, ammonia, nitrite, nitrate, tds, temp = (
+    ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp = (
         _parse_float(ph), _parse_float(gh), _parse_float(kh), _parse_float(ammonia),
-        _parse_float(nitrite), _parse_float(nitrate), _parse_float(tds), _parse_float(temp),
+        _parse_float(nitrite), _parse_float(nitrate), _parse_float(phosphate),
+        _parse_float(tds), _parse_float(temp),
     )
     with get_db() as conn:
         existing = conn.execute(
@@ -199,14 +203,14 @@ async def update_test_result(
         if timestamp:
             conn.execute(
                 """UPDATE test_results SET timestamp=?, ph=?, gh=?, kh=?, ammonia=?, nitrite=?,
-                   nitrate=?, tds=?, temp=?, notes=?, updated_at=datetime('now') WHERE id=?""",
-                (timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes, result_id),
+                   nitrate=?, phosphate=?, tds=?, temp=?, notes=?, updated_at=datetime('now') WHERE id=?""",
+                (timestamp, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes, result_id),
             )
         else:
             conn.execute(
                 """UPDATE test_results SET ph=?, gh=?, kh=?, ammonia=?, nitrite=?,
-                   nitrate=?, tds=?, temp=?, notes=?, updated_at=datetime('now') WHERE id=?""",
-                (ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes, result_id),
+                   nitrate=?, phosphate=?, tds=?, temp=?, notes=?, updated_at=datetime('now') WHERE id=?""",
+                (ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes, result_id),
             )
     return JSONResponse({"status": "updated"})
 

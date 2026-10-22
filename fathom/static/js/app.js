@@ -305,6 +305,7 @@ const PARAM_COLORS = {
   ammonia: { color: '#f87171', label: 'NH₃' },
   nitrite: { color: '#fb923c', label: 'NO₂' },
   nitrate: { color: '#facc15', label: 'NO₃' },
+  phosphate: { color: '#f472b6', label: 'PO₄' },
   gh:      { color: '#a78bfa', label: 'GH' },
   kh:      { color: '#818cf8', label: 'KH' },
   temp:    { color: '#34d399', label: 'Temp' },

@@ -117,10 +117,10 @@ async function confirmReviewed() {
 const SECTION_CONFIG = {
   test_results: {
     label: 'Test Results',
-    fields:  ['timestamp','ph','gh','kh','ammonia','nitrite','nitrate','tds','temp','notes'],
-    headers: ['Date','pH','GH','KH','NH₃','NO₂','NO₃','TDS','Temp','Notes'],
-    types:   ['text','num','num','num','num','num','num','num','num','text'],
-    widths:  ['130px','55px','55px','55px','60px','60px','60px','60px','60px','120px'],
+    fields:  ['timestamp','ph','gh','kh','ammonia','nitrite','nitrate','phosphate','tds','temp','notes'],
+    headers: ['Date','pH','GH','KH','NH₃','NO₂','NO₃','PO₄','TDS','Temp','Notes'],
+    types:   ['text','num','num','num','num','num','num','num','num','num','text'],
+    widths:  ['130px','55px','55px','55px','60px','60px','60px','60px','60px','60px','120px'],
   },
   events: {
     label: 'Events',

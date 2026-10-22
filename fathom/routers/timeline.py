@@ -111,6 +111,7 @@ _PARAM_DEFS = [
     ("ammonia", "NH3", lambda v: "danger" if v > 0.25 else ("warn" if v > 0 else None)),
     ("nitrite", "NO2", lambda v: "danger" if v > 0.1 else None),
     ("nitrate", "NO3", lambda v: "warn" if v > 40 else None),
+    ("phosphate", "PO4", None),
     ("tds", "TDS", None),
     ("temp", "Temp", None),
 ]
@@ -145,7 +146,7 @@ async def tank_timeline(
             raise HTTPException(status_code=404, detail="Tank not found")
         rows = rows_to_list(conn.execute(_QUERY, (tank_id,) * 9).fetchall())
         test_results = rows_to_list(conn.execute(
-            "SELECT id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes"
+            "SELECT id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes"
             " FROM test_results WHERE tank_id = ?",
             (tank_id,),
         ).fetchall())

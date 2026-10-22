@@ -20,6 +20,7 @@
         <th>NH₃</th>
         <th>NO₂</th>
         <th>NO₃</th>
+        <th>PO₄</th>
         <th>TDS</th>
         <th>Temp</th>
         <th>Notes</th>
@@ -36,6 +37,7 @@
         <td data-label="NH₃" class="{% if t.ammonia is not none and t.ammonia > 0.25 %}cell-danger{% elif t.ammonia is not none and t.ammonia > 0 %}cell-warn{% endif %}">{{ t.ammonia if t.ammonia is not none else '—' }}</td>
         <td data-label="NO₂" class="{% if t.nitrite is not none and t.nitrite > 0.1 %}cell-danger{% endif %}">{{ t.nitrite if t.nitrite is not none else '—' }}</td>
         <td data-label="NO₃" class="{% if t.nitrate is not none and t.nitrate > 40 %}cell-warn{% endif %}">{{ t.nitrate if t.nitrate is not none else '—' }}</td>
+        <td data-label="PO₄">{{ t.phosphate if t.phosphate is not none else '—' }}</td>
         <td data-label="TDS">{{ t.tds if t.tds is not none else '—' }}</td>
         <td data-label="Temp">{{ t.temp if t.temp is not none else '—' }}</td>
         <td class="muted" data-label="Notes">{{ t.notes or '' }}</td>
@@ -45,6 +47,7 @@
                   data-ph="{{ t.ph if t.ph is not none else '' }}" data-gh="{{ t.gh if t.gh is not none else '' }}"
                   data-kh="{{ t.kh if t.kh is not none else '' }}" data-ammonia="{{ t.ammonia if t.ammonia is not none else '' }}"
                   data-nitrite="{{ t.nitrite if t.nitrite is not none else '' }}" data-nitrate="{{ t.nitrate if t.nitrate is not none else '' }}"
+                  data-phosphate="{{ t.phosphate if t.phosphate is not none else '' }}"
                   data-tds="{{ t.tds if t.tds is not none else '' }}" data-temp="{{ t.temp if t.temp is not none else '' }}"
                   data-notes="{{ (t.notes or '')|e }}">✎ Edit</button>
           <button class="btn btn-xs btn-ghost" onclick="deleteTest({{ t.id }})">✕</button>
@@ -76,6 +79,7 @@
         <div class="form-group"><label>Ammonia (ppm)</label><input type="number" step="0.01" id="edit-test-ammonia"></div>
         <div class="form-group"><label>Nitrite (ppm)</label><input type="number" step="0.01" id="edit-test-nitrite"></div>
         <div class="form-group"><label>Nitrate (ppm)</label><input type="number" step="0.1" id="edit-test-nitrate"></div>
+        <div class="form-group"><label>Phosphate (ppm)</label><input type="number" step="0.25" min="0" id="edit-test-phosphate"></div>
         <div class="form-group"><label>TDS (ppm)</label><input type="number" step="1" id="edit-test-tds"></div>
         <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" id="edit-test-temp"></div>
       </div>
@@ -104,6 +108,7 @@ function openEditTest(btn) {
   document.getElementById('edit-test-ammonia').value = d.ammonia;
   document.getElementById('edit-test-nitrite').value = d.nitrite;
   document.getElementById('edit-test-nitrate').value = d.nitrate;
+  document.getElementById('edit-test-phosphate').value = d.phosphate;
   document.getElementById('edit-test-tds').value = d.tds;
   document.getElementById('edit-test-temp').value = d.temp;
   document.getElementById('edit-test-notes').value = d.notes;
@@ -122,6 +127,7 @@ document.getElementById('edit-test-form').addEventListener('submit', function (e
     ammonia: document.getElementById('edit-test-ammonia').value,
     nitrite: document.getElementById('edit-test-nitrite').value,
     nitrate: document.getElementById('edit-test-nitrate').value,
+    phosphate: document.getElementById('edit-test-phosphate').value,
     tds: document.getElementById('edit-test-tds').value,
     temp: document.getElementById('edit-test-temp').value,
     notes: document.getElementById('edit-test-notes').value,

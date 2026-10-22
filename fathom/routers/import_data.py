@@ -71,7 +71,7 @@ Return ONLY valid JSON (no markdown fences, no explanation). Include only top-le
   },
   "test_results": [
     {"timestamp": "YYYY-MM-DD HH:MM:SS", "ph": 7.0, "gh": 8.0, "kh": 5.0,
-     "ammonia": 0.0, "nitrite": 0.0, "nitrate": 10.0, "tds": 150.0, "temp": 76.0, "notes": ""}
+     "ammonia": 0.0, "nitrite": 0.0, "nitrate": 10.0, "phosphate": null, "tds": 150.0, "temp": 76.0, "notes": ""}
   ],
   "events": [
     {"timestamp": "YYYY-MM-DD HH:MM:SS", "event_type": "water_change", "notes": "", "amount": null}
@@ -523,11 +523,11 @@ def _find_duplicates(tank_id: int, preview: dict, conn) -> list:
 
     # test_results: same date + at least 2 numeric params match
     existing = conn.execute(
-        "SELECT date(timestamp), ph, ammonia, nitrate, nitrite, gh, kh, tds, temp"
+        "SELECT date(timestamp), ph, ammonia, nitrate, nitrite, gh, kh, tds, temp, phosphate"
         " FROM test_results WHERE tank_id=?", (tank_id,)
     ).fetchall()
     param_fields = [("ph", 1), ("ammonia", 2), ("nitrate", 3), ("nitrite", 4),
-                    ("gh", 5), ("kh", 6), ("tds", 7), ("temp", 8)]
+                    ("gh", 5), ("kh", 6), ("tds", 7), ("temp", 8), ("phosphate", 9)]
     for i, tr in enumerate(preview.get("test_results", [])):
         ts = (tr.get("timestamp") or "")[:10]
         if not ts:
@@ -792,18 +792,18 @@ async def import_confirm(tank_id: int, request: Request, background_tasks: Backg
             ts = tr.get("timestamp")
             if ts:
                 conn.execute(
-                    "INSERT INTO test_results (tank_id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO test_results (tank_id, timestamp, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (tank_id, ts, tr.get("ph"), tr.get("gh"), tr.get("kh"),
-                     tr.get("ammonia"), tr.get("nitrite"), tr.get("nitrate"),
+                     tr.get("ammonia"), tr.get("nitrite"), tr.get("nitrate"), tr.get("phosphate"),
                      tr.get("tds"), tr.get("temp"), tr.get("notes")),
                 )
             else:
                 conn.execute(
-                    "INSERT INTO test_results (tank_id, ph, gh, kh, ammonia, nitrite, nitrate, tds, temp, notes)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO test_results (tank_id, ph, gh, kh, ammonia, nitrite, nitrate, phosphate, tds, temp, notes)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (tank_id, tr.get("ph"), tr.get("gh"), tr.get("kh"),
-                     tr.get("ammonia"), tr.get("nitrite"), tr.get("nitrate"),
+                     tr.get("ammonia"), tr.get("nitrite"), tr.get("nitrate"), tr.get("phosphate"),
                      tr.get("tds"), tr.get("temp"), tr.get("notes")),
                 )
         inserted["test_results"] = len(preview.get("test_results", []))
