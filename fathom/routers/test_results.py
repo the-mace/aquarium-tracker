@@ -11,7 +11,34 @@ router = APIRouter(prefix="/tanks/{tank_id}/tests", tags=["tests"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
-_PREFILL_FIELDS = ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp")
+PARAM_FIELDS = ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "phosphate", "tds", "temp")
+
+
+def load_latest_test(conn, tank_id: int) -> Optional[dict]:
+    """Newest test, with each blank parameter filled from the newest test that measured it.
+
+    A partial test (e.g. phosphate only) would otherwise hide every other reading.
+    ``older`` maps each filled-in field to the timestamp of the test it came from.
+    """
+    latest = row_to_dict(conn.execute(
+        "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1",
+        (tank_id,),
+    ).fetchone())
+    if not latest:
+        return None
+    latest["older"] = {}
+    for field in PARAM_FIELDS:
+        if latest.get(field) is not None:
+            continue
+        row = conn.execute(
+            f"SELECT {field}, timestamp FROM test_results WHERE tank_id = ? AND {field} IS NOT NULL"
+            " ORDER BY timestamp DESC, id DESC LIMIT 1",
+            (tank_id,),
+        ).fetchone()
+        if row:
+            latest[field] = row[0]
+            latest["older"][field] = row[1]
+    return latest
 
 
 def _parse_float(value: Optional[str]) -> Optional[float]:
@@ -37,16 +64,7 @@ async def new_test_form(request: Request, tank_id: int):
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
-        # Per field, so a partial test (e.g. phosphate only) doesn't blank the rest.
-        latest = {}
-        for field in _PREFILL_FIELDS:
-            row = conn.execute(
-                f"SELECT {field} FROM test_results WHERE tank_id = ? AND {field} IS NOT NULL"
-                " ORDER BY timestamp DESC, id DESC LIMIT 1",
-                (tank_id,),
-            ).fetchone()
-            if row:
-                latest[field] = row[0]
+        latest = load_latest_test(conn, tank_id)
         # Unresolved issues (open + monitoring) — shown on the form so notes can
         # reference current issue status without leaving the page.
         open_issues = rows_to_list(conn.execute(

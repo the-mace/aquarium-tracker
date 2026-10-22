@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from database import get_db, row_to_dict, rows_to_list
+from routers.test_results import load_latest_test
 
 router = APIRouter(prefix="/tanks/{tank_id}/goals", tags=["goals"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -261,10 +262,7 @@ async def review_goal(
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
         existing = load_active_goals(conn, tank_id)
-        latest_test = row_to_dict(conn.execute(
-            "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (tank_id,),
-        ).fetchone())
+        latest_test = load_latest_test(conn, tank_id)
         inhabitants = rows_to_list(conn.execute(
             "SELECT * FROM inhabitants WHERE tank_id = ?", (tank_id,),
         ).fetchall())

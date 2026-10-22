@@ -422,3 +422,41 @@ def test_new_test_form_prefills_past_partial_test(client, tank_id):
     assert 'name="ph" placeholder="7.0" value="7.4"' in r.text
     assert 'name="nitrate" value="40.0"' in r.text
     assert 'name="phosphate" placeholder="Leave blank if not tested">' in r.text
+
+
+def _post_full_then_phosphate_only(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"timestamp": "2026-10-15 15:00:00", "ph": "7.4", "nitrate": "40"},
+        headers={"Accept": "application/json"},
+    )
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"timestamp": "2026-10-19 16:00:00", "phosphate": "0"},
+        headers={"Accept": "application/json"},
+    )
+
+
+def test_dashboard_keeps_older_readings_after_partial_test(client, tank_id):
+    _post_full_then_phosphate_only(client, tank_id)
+    html = client.get(f"/tanks/{tank_id}").text
+    card = html[html.index("Latest Parameters"):html.index("stat-card-footer")]
+    assert ">7.4<" in card
+    assert ">40.0<" in card
+    assert 'data-utc="2026-10-15 15:00:00"' in card
+    po4 = card[card.index("PO₄"):]
+    assert 'class="param-asof' not in po4[:po4.index("</div>")]
+
+
+def test_ask_ai_context_keeps_older_readings_after_partial_test(client, tank_id):
+    from routers.chat import _gather_tank_context, _build_system_prompt
+    _post_full_then_phosphate_only(client, tank_id)
+    with _db.get_db() as conn:
+        latest = _gather_tank_context(conn, tank_id)["latest_test"]
+    assert latest["ph"] == 7.4
+    assert latest["phosphate"] == 0
+    assert latest["older"] == {"ph": "2026-10-15 15:00:00", "nitrate": "2026-10-15 15:00:00"}
+    prompt = _build_system_prompt({"name": "T"}, latest, [], [], [], [], None, [])
+    assert "PH=7.4 (from 2026-10-15)" in prompt
+    assert "PHOSPHATE=0.0" in prompt
+    assert "PHOSPHATE=0.0 (from" not in prompt

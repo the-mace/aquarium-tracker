@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db, get_db_readonly, get_schema_text, rows_to_list, row_to_dict
+from routers.test_results import load_latest_test
 from security import require_ai_budget
 from ai_config import CLAUDE_MODEL, CLAUDE_THINKING_DISABLED, CLAUDE_MAX_TOKENS_CHAT
 from routers.ai_analysis import (
@@ -260,7 +261,8 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
         for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "phosphate", "tds", "temp"):
             val = latest_test.get(field)
             if val is not None:
-                params.append(f"{field.upper()}={val}")
+                as_of = (latest_test.get("older") or {}).get(field)
+                params.append(f"{field.upper()}={val}" + (f" (from {as_of[:10]})" if as_of else ""))
         if params:
             ts = (latest_test.get("timestamp") or "")[:10]
             parts.append(f"\nLatest Water Parameters ({ts}):\n  " + ", ".join(params))
@@ -386,10 +388,7 @@ def _gather_tank_context(conn, tank_id: int) -> dict:
         "summary": row_to_dict(conn.execute(
             "SELECT summary_text FROM tank_state_summary WHERE tank_id = ?", (tank_id,),
         ).fetchone()),
-        "latest_test": row_to_dict(conn.execute(
-            "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (tank_id,),
-        ).fetchone()),
+        "latest_test": load_latest_test(conn, tank_id),
         "inhabitants": rows_to_list(conn.execute(
             "SELECT common_name, species, count, added_date FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
             (tank_id,),

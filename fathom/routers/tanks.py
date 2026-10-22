@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import Optional
 from database import get_db, rows_to_list, row_to_dict
+from routers.test_results import load_latest_test
 from routers.reference_info import maybe_fetch_tank_dimensions
 from routers.home_water import latest_wc_source_test, wc_source_baseline
 from security import clamp_limit
@@ -84,10 +85,7 @@ async def tank_detail(request: Request, tank_id: int):
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
 
-        latest_test = row_to_dict(conn.execute(
-            "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (tank_id,),
-        ).fetchone())
+        latest_test = load_latest_test(conn, tank_id)
 
         inhabitants = rows_to_list(conn.execute(
             "SELECT * FROM inhabitants WHERE tank_id = ? AND (count IS NULL OR count > 0)"

@@ -683,7 +683,8 @@ def build_goal_review_prompt(tank, draft, existing_goals, latest_test=None, inha
         for field in ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "phosphate", "tds", "temp"):
             val = latest_test.get(field)
             if val is not None:
-                params.append(f"{field.upper()}={val}")
+                as_of = (latest_test.get("older") or {}).get(field)
+                params.append(f"{field.upper()}={val}" + (f" (from {as_of[:10]})" if as_of else ""))
         latest_line = ", ".join(params) if params else "no numeric params"
         latest_block = f"  {(latest_test.get('timestamp') or '')[:10]}: {latest_line}"
     else:
