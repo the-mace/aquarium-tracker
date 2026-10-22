@@ -405,3 +405,20 @@ def test_blank_phosphate_stays_null(client, tank_id):
     row = conn.execute("SELECT phosphate FROM test_results WHERE id=?", (r.json()["id"],)).fetchone()
     conn.close()
     assert row[0] is None
+
+
+def test_new_test_form_prefills_past_partial_test(client, tank_id):
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"timestamp": "2026-10-15 15:00:00", "ph": "7.4", "nitrate": "40", "phosphate": "0.5"},
+        headers={"Accept": "application/json"},
+    )
+    client.post(
+        f"/tanks/{tank_id}/tests",
+        data={"timestamp": "2026-10-19 16:00:00", "phosphate": "0"},
+        headers={"Accept": "application/json"},
+    )
+    r = client.get(f"/tanks/{tank_id}/tests/new")
+    assert 'name="ph" placeholder="7.0" value="7.4"' in r.text
+    assert 'name="nitrate" value="40.0"' in r.text
+    assert 'name="phosphate" placeholder="Leave blank if not tested">' in r.text

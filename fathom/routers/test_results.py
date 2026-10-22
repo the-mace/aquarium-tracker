@@ -11,6 +11,9 @@ router = APIRouter(prefix="/tanks/{tank_id}/tests", tags=["tests"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
+_PREFILL_FIELDS = ("ph", "gh", "kh", "ammonia", "nitrite", "nitrate", "tds", "temp")
+
+
 def _parse_float(value: Optional[str]) -> Optional[float]:
     return float(value) if value and value.strip() else None
 
@@ -34,10 +37,16 @@ async def new_test_form(request: Request, tank_id: int):
         tank = row_to_dict(conn.execute("SELECT * FROM tanks WHERE id = ?", (tank_id,)).fetchone())
         if not tank:
             raise HTTPException(status_code=404, detail="Tank not found")
-        latest = row_to_dict(conn.execute(
-            "SELECT * FROM test_results WHERE tank_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1",
-            (tank_id,),
-        ).fetchone())
+        # Per field, so a partial test (e.g. phosphate only) doesn't blank the rest.
+        latest = {}
+        for field in _PREFILL_FIELDS:
+            row = conn.execute(
+                f"SELECT {field} FROM test_results WHERE tank_id = ? AND {field} IS NOT NULL"
+                " ORDER BY timestamp DESC, id DESC LIMIT 1",
+                (tank_id,),
+            ).fetchone()
+            if row:
+                latest[field] = row[0]
         # Unresolved issues (open + monitoring) — shown on the form so notes can
         # reference current issue status without leaving the page.
         open_issues = rows_to_list(conn.execute(
