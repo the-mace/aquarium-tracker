@@ -112,7 +112,7 @@
       {% if p.is_stale %}{% set ns.visible_stale = true %}{% endif %}
       <div class="param-item{% if p.is_stale %} param-item-stale{% endif %}">
         <span class="param-label">{{ p.label }}</span>
-        <span class="param-value">{{ p.value }}{% if p.key == 'temp' %}°{% endif %}</span>
+        <span class="param-value">{{ p.value }}</span>
         {% if (home_water_baseline.is_composite or p.is_stale) and p.timestamp %}
         <span class="param-asof ts-local" data-utc="{{ p.timestamp }}" data-date-only="1">{{ p.timestamp }}</span>
         {% endif %}

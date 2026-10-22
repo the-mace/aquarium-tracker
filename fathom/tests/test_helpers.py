@@ -839,3 +839,17 @@ def test_notes_proposal_prompt_includes_keeper_log():
             "label": None, "detail": "UV reverted to Tue/Thu 12am-3am schedule", "amount": None}]
     prompt = build_notes_proposal_prompt(tank, [], [], [], keeper_log=log)
     assert "UV reverted to Tue/Thu" in prompt
+
+
+def test_build_home_water_baseline_ignores_temp():
+    from datetime import datetime, timezone
+    now = datetime(2026, 8, 5, 12, 0, 0, tzinfo=timezone.utc)
+    rows = [
+        {"id": 2, "timestamp": "2026-08-01 12:00:00", "gh": 8.0, "temp": None,
+         "sample_point": "tap"},
+        {"id": 1, "timestamp": "2024-02-15 12:00:00", "gh": 7.0, "temp": 65.7,
+         "sample_point": "tap"},
+    ]
+    baseline = build_home_water_baseline(rows, now=now)
+    assert "temp" not in baseline["by_key"]
+    assert baseline["has_stale"] is False

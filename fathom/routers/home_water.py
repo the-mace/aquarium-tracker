@@ -170,6 +170,8 @@ def _parse_is_lab(value: Optional[str]) -> int:
 
 
 # Display order for composite baseline cards / AI (kit-first, then less-common).
+# No temp: tap water is blended or left to reach room temp, so its reading
+# says nothing about the source and would only ever show as stale.
 HOME_WATER_PARAM_DEFS = (
     ("gh", "GH"),
     ("kh", "KH"),
@@ -178,7 +180,6 @@ HOME_WATER_PARAM_DEFS = (
     ("tds", "TDS"),
     ("ammonia", "NH₃"),
     ("nitrite", "NO₂"),
-    ("temp", "Temp"),
 )
 HOME_WATER_PARAM_KEYS = tuple(k for k, _ in HOME_WATER_PARAM_DEFS)
 
