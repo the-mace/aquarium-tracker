@@ -81,6 +81,7 @@ aquarium-tracker/
 │   ├── data/                # fathom.db, reference_cache.db (gitignored)
 │   └── tests/
 ├── bin/                     # run, stop, deploy-mini, mini-logs
+├── .agents/skills/          # agent skills (deploy-mini); .claude/skills/ symlinks them
 ├── requirements.txt         # production
 ├── requirements-dev.txt     # local, includes Playwright
 └── README.md
@@ -151,21 +152,9 @@ Order history, the room layout, and sitter logistics stay in gitignored `.claude
 
 ## Production deployment
 
-launchd plist `/Library/LaunchDaemons/com.fathom.plist` with `UserName` set to the login user (without it the daemon runs as root). Working directory is the clone's `fathom/`. Uvicorn is the venv binary built from pyenv 3.14, not `/usr/bin/python3`. `KeepAlive` restarts the process after `bin/deploy-mini` kills it, so routine deploys need no sudo. `sudo launchctl` needs a real TTY.
-
-macOS Application Firewall allow-lists by binary path. The pyenv Python must be added and unblocked or other machines time out on port 8000.
-
-`bin/deploy-mini` refuses a dirty mini checkout, S3-backs up the DB, fast-forwards `origin/main`, installs `requirements.txt` only, kills uvicorn, health-checks `GET /tanks`, and resets to the previous SHA if that check doesn't return 200.
-
-Non-interactive SSH on the mini has a PATH that makes Apple's git hit an Xcode license error. `deploy-mini` prefixes `/opt/homebrew/bin`. The backup cron needs the same prefix so `aws` resolves:
-
-```bash
-0 3 * * * PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin bash <clone>/fathom/scripts/backup_db.sh >> /tmp/fathom-backup.log 2>&1
-```
-
-Bucket `$S3_BACKUP_BUCKET`, 30-day lifecycle on `backups/`. The upload IAM user has no `DeleteObject`.
-
-VPN notes (L2TP to the home router, split tunnel, hairpin doesn't work from inside the LAN) live in `CLAUDE.local.md` along with the hostname.
+Deploys and mini operations (launchd, firewall, PATH, backup cron, rollback)
+are the **`deploy-mini`** project skill (`.agents/skills/deploy-mini/SKILL.md`;
+`/deploy-mini`). Read it before deploying or touching the mini.
 
 ## Testing
 
