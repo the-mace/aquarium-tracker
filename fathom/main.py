@@ -13,6 +13,10 @@ _ENV_PATH = Path(__file__).parent.parent / ".env"
 load_dotenv(_ENV_PATH)
 tighten_env_file_mode(_ENV_PATH)
 
+# /tmp is cleared on restart; ~/Library/Logs keeps history across reboots.
+LOG_FILE = Path.home() / "Library" / "Logs" / "fathom" / "fathom.log"
+LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
 logging.config.dictConfig({
     "version": 1,
     "disable_existing_loggers": False,
@@ -26,7 +30,7 @@ logging.config.dictConfig({
         "console": {"class": "logging.StreamHandler", "formatter": "default"},
         "file": {
             "class": "security.PrivateRotatingFileHandler",
-            "filename": "/tmp/fathom.log",
+            "filename": str(LOG_FILE),
             "maxBytes": 5_000_000,
             "backupCount": 2,
             "formatter": "default",

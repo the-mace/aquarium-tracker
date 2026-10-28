@@ -118,11 +118,13 @@ A **LaunchDaemon** without `UserName` runs as root and will leave the DB/venv ro
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/fathom.log</string>
-  <key>StandardErrorPath</key><string>/tmp/fathom.err</string>
+  <key>StandardOutPath</key><string>/Users/YOUR_LOGIN/Library/Logs/fathom/fathom.out</string>
+  <key>StandardErrorPath</key><string>/Users/YOUR_LOGIN/Library/Logs/fathom/fathom.err</string>
 </dict>
 </plist>
 ```
+
+launchd does not create the log directory, so run `mkdir -p ~/Library/Logs/fathom` as that user first. The app's own rotating log is `~/Library/Logs/fathom/fathom.log` (5 MB, 2 backups); keep launchd's stdout out of that file so rotation is not fought over.
 
 Load it with `launchctl load ~/Library/LaunchAgents/com.fathom.plist` (or `sudo launchctl load` for a LaunchDaemon).
 

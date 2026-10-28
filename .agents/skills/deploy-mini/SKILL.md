@@ -35,6 +35,8 @@ stash on the mini without a yes; those edits may be hand fixes.
 
 launchd plist `/Library/LaunchDaemons/com.fathom.plist` with `UserName` set to the login user (without it the daemon runs as root). Working directory is the clone's `fathom/`. Uvicorn is the venv binary built from pyenv 3.14, not `/usr/bin/python3`. `KeepAlive` restarts the process after `bin/deploy-mini` kills it, so routine deploys need no sudo. `sudo launchctl` needs a real TTY.
 
+Logs live in `~/Library/Logs/fathom/` so they survive restarts: `fathom.log` is the app's rotating log (5 MB, 2 backups), and the plist's `StandardOutPath` / `StandardErrorPath` are `fathom.out` / `fathom.err` there. launchd does not create that directory; the app does on startup. Changing the plist needs `sudo` and a reload: `sudo launchctl bootout system/com.fathom && sudo launchctl bootstrap system /Library/LaunchDaemons/com.fathom.plist`.
+
 macOS Application Firewall allow-lists by binary path. The pyenv Python must be added and unblocked or other machines time out on port 8000.
 
 `bin/deploy-mini` refuses a dirty mini checkout, S3-backs up the DB, fast-forwards `origin/main`, installs `requirements.txt` only, kills uvicorn, health-checks `GET /tanks`, and resets to the previous SHA if that check doesn't return 200.

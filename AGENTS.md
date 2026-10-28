@@ -57,7 +57,7 @@ cd fathom && source ../.venv/bin/activate && uvicorn main:app --reload --host 0.
 
 The `.venv` is at the repo root. `bin/stop` kills a local uvicorn.
 
-Logs (uvicorn + app) go to `/tmp/fathom.log` as well as stdout. On the mini, launchd stderr is `/tmp/fathom.err`. Use `bin/mini-logs` (`-n`, `-f`, `err`) instead of hand-written SSH.
+Logs (uvicorn + app) go to `~/Library/Logs/fathom/fathom.log` (rotating, survives restarts) as well as stdout. On the mini, launchd stdout/stderr are `~/Library/Logs/fathom/fathom.out` / `fathom.err`. Use `bin/mini-logs` (`-n`, `-f`, `err`) instead of hand-written SSH.
 
 ## Production data
 

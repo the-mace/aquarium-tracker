@@ -16,7 +16,7 @@ if [ -f "$REPO_ROOT/.env" ]; then
 fi
 
 MINI_HOST="${FATHOM_MINI_HOST:-mini}"
-LOG_FILE="/tmp/fathom.log"
+LOG_FILE="~/Library/Logs/fathom/fathom.log"
 LINES=100
 FOLLOW=false
 
@@ -24,7 +24,7 @@ for arg in "$@"; do
     case "$arg" in
         -f) FOLLOW=true ;;
         -n) : ;; # next arg is the count, handled below
-        err) LOG_FILE="/tmp/fathom.err" ;;
+        err) LOG_FILE="~/Library/Logs/fathom/fathom.err" ;;
         [0-9]*) LINES="$arg" ;;
     esac
 done

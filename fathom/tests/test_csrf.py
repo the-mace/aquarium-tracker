@@ -78,6 +78,18 @@ def test_private_log_and_env_are_owner_only(tmp_path):
     assert oct(env_path.stat().st_mode & 0o777) == "0o600"
 
 
+def test_app_log_is_persistent_and_rotated(client):
+    import logging
+    from pathlib import Path
+    from security import PrivateRotatingFileHandler
+
+    expected = Path.home() / "Library" / "Logs" / "fathom" / "fathom.log"
+    handlers = [h for h in logging.getLogger().handlers if isinstance(h, PrivateRotatingFileHandler)]
+    assert [h.baseFilename for h in handlers] == [str(expected)]
+    assert handlers[0].maxBytes == 5_000_000
+    assert handlers[0].backupCount == 2
+
+
 def test_security_headers_and_docs_disabled(client):
     r = client.get("/tanks")
     assert r.status_code == 200
