@@ -882,13 +882,26 @@ def test_version_2_database_gains_vessel_restarted_at(tmp_path, monkeypatch):
     monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
     init_db()
     with get_db() as conn:
+        cid = conn.execute("INSERT INTO cultures (name) VALUES ('D')").lastrowid
+        revived = conn.execute(
+            "INSERT INTO culture_vessels (culture_id, name, role) VALUES (?, 'R', 'daphnia')", (cid,)
+        ).lastrowid
+        never = conn.execute(
+            "INSERT INTO culture_vessels (culture_id, name, role) VALUES (?, 'N', 'daphnia')", (cid,)
+        ).lastrowid
+        for ts in ("2026-01-01 08:00:00", "2026-02-01 08:00:00"):
+            log = conn.execute(
+                "INSERT INTO culture_log (culture_id, timestamp, kind) VALUES (?, ?, 'crash')", (cid, ts)
+            ).lastrowid
+            conn.execute("INSERT INTO culture_log_vessels (log_id, vessel_id) VALUES (?, ?)", (log, revived))
         conn.execute("ALTER TABLE culture_vessels DROP COLUMN restarted_at")
         conn.execute("DELETE FROM schema_migrations WHERE version > 2")
     init_db()
     with get_db() as conn:
         assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == SCHEMA_VERSION
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(culture_vessels)")}
-        assert "restarted_at" in cols
+        got = {r["id"]: r["restarted_at"] for r in conn.execute("SELECT id, restarted_at FROM culture_vessels")}
+    assert got[revived] == "2026-02-01 08:00:00"
+    assert got[never] is None
 
 
 def test_fmt_test_results_includes_phosphate_only_when_measured():

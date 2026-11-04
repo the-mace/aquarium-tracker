@@ -531,6 +531,15 @@ def _apply_pending(conn, current):
     if current < 3:
         if "restarted_at" not in _columns(conn, "culture_vessels"):
             conn.execute("ALTER TABLE culture_vessels ADD COLUMN restarted_at TEXT")
+        # Bins already set back to active before this column existed: treat
+        # their latest crash log as the restart so old-stock feeds drop off.
+        conn.execute(
+            """UPDATE culture_vessels SET restarted_at = (
+                   SELECT MAX(l.timestamp) FROM culture_log l
+                   JOIN culture_log_vessels lv ON lv.log_id = l.id
+                   WHERE lv.vessel_id = culture_vessels.id AND l.kind = 'crash')
+               WHERE status = 'active' AND restarted_at IS NULL"""
+        )
         _stamp(conn, 3)
         current = 3
 
