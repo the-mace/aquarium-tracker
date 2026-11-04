@@ -1524,6 +1524,7 @@ p { margin-bottom: .5rem; }
 .bin-obs-row input.bin-temp-input { width: 6.5rem; max-width: 6.5rem; }
 .bin-obs-extra { display: flex; flex-direction: column; gap: .25rem; padding-left: 1.5rem; }
 .bin-obs-extra input[type=text] { width: 100%; max-width: 28rem; }
+.bin-obs-label { display: flex; flex-direction: column; gap: .1rem; font-size: .75rem; }
 .vessel-last-notes { font-size: .8rem; margin: .15rem 0 0; color: var(--muted); }
 .hitchhiker-note { font-size: .8rem; color: var(--warning); margin-top: .35rem; }
 .culture-next-action { font-size: .85rem; margin-top: .4rem; color: var(--accent); }

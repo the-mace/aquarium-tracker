@@ -10,7 +10,7 @@ Add the next change as a function in _apply_pending and bump SCHEMA_VERSION.
 Recorded versions are not run again.
 """
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Columns the previous startup migrations left on every database that has
 # been opened by current code. A legacy file missing one of these is older
@@ -409,6 +409,7 @@ CANONICAL_SCHEMA = """
                 sort_order INTEGER DEFAULT 0,
                 notes TEXT,
                 hitchhikers TEXT,
+                restarted_at TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (culture_id) REFERENCES cultures(id) ON DELETE CASCADE
@@ -527,6 +528,11 @@ def _apply_pending(conn, current):
             conn.execute("ALTER TABLE test_results ADD COLUMN phosphate REAL")
         _stamp(conn, 2)
         current = 2
+    if current < 3:
+        if "restarted_at" not in _columns(conn, "culture_vessels"):
+            conn.execute("ALTER TABLE culture_vessels ADD COLUMN restarted_at TEXT")
+        _stamp(conn, 3)
+        current = 3
 
 
 def _stamp(conn, version):

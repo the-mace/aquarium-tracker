@@ -4,8 +4,12 @@
 
 {% macro bin_standing_fields(v) %}
 <div class="bin-obs-extra">
-  <input type="text" name="hitchhikers_{{ v.id }}" value="{{ v.hitchhikers or '' }}" placeholder="Hitchhikers — leave in bin">
-  <input type="text" name="notes_{{ v.id }}" placeholder="Notes for this bin">
+  <label class="bin-obs-label">Note for this log
+    <input type="text" name="notes_{{ v.id }}" placeholder="e.g. added ~500 Daphnia">
+  </label>
+  <label class="bin-obs-label">Also living in bin <span class="muted">(stays on the bin card)</span>
+    <input type="text" name="hitchhikers_{{ v.id }}" value="{{ v.hitchhikers or '' }}" placeholder="e.g. 2 snails, frogbit, java moss">
+  </label>
 </div>
 {% endmacro %}
 
@@ -89,8 +93,8 @@
 </div>
 <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" placeholder="e.g. 10W hygger betta heater — growth experiment vs unheated right bin"></textarea></div>
 <div class="form-group">
-  <label>Hitchhikers</label>
-  <input type="text" name="hitchhikers" placeholder="e.g. 1 baby shrimp — leave in bin">
+  <label>Also living in bin</label>
+  <input type="text" name="hitchhikers" placeholder="e.g. 2 snails, frogbit, java moss">
 </div>
 {% endmacro %}
 
@@ -333,7 +337,7 @@
         {% endif %}
       </div>
       {% if v.hitchhikers %}
-      <p class="hitchhiker-note">Hitchhiker: {{ v.hitchhikers }}</p>
+      <p class="hitchhiker-note">Also in bin: {{ v.hitchhikers }}</p>
       {% endif %}
       {% if v.notes %}
       <p class="muted" style="font-size:.8rem;margin-top:.35rem">{{ v.notes }}</p>

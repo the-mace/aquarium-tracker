@@ -877,6 +877,20 @@ def test_version_1_database_gains_phosphate_column(tmp_path, monkeypatch):
         assert row["phosphate"] is None
 
 
+def test_version_2_database_gains_vessel_restarted_at(tmp_path, monkeypatch):
+    monkeypatch.setattr(_db, "DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setattr(_db, "REFERENCE_CACHE_DB_PATH", str(tmp_path / "test_ref_cache.db"))
+    init_db()
+    with get_db() as conn:
+        conn.execute("ALTER TABLE culture_vessels DROP COLUMN restarted_at")
+        conn.execute("DELETE FROM schema_migrations WHERE version > 2")
+    init_db()
+    with get_db() as conn:
+        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == SCHEMA_VERSION
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(culture_vessels)")}
+        assert "restarted_at" in cols
+
+
 def test_fmt_test_results_includes_phosphate_only_when_measured():
     out = _fmt_test_results([
         {"timestamp": "2026-10-22", "nitrate": 20, "phosphate": 0.5},

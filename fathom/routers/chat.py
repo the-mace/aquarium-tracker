@@ -582,7 +582,7 @@ def _fmt_culture_station(station, current_id=None):
                     feed += f" {v['last_feed_amount']}"
                 bits.append(feed)
             if v.get("hitchhikers"):
-                bits.append("hitchhikers: " + v["hitchhikers"])
+                bits.append("also in bin: " + v["hitchhikers"])
             if v.get("notes"):
                 bits.append("notes: " + v["notes"])
             lines.append("    - " + ", ".join(bits))

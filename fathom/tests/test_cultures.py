@@ -942,6 +942,51 @@ def test_seed_log_reactivates_crashed_bin(client):
     assert rows[archived] == "archived"
 
 
+def _feed(client, cid, v, ts, amount):
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "feed", "food": "spirulina", "amount_text": amount,
+              "timestamp": ts, "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    assert r.status_code == 201, r.text
+
+
+def _card_feed(cid, v):
+    from routers.cultures import _vessels
+    with get_db() as conn:
+        return next(x for x in _vessels(conn, cid) if x["id"] == v)["last_feed_amount"]
+
+
+def test_crashed_to_active_edit_clears_last_feed(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right")
+    _feed(client, cid, v, "2026-01-01 10:00:00", "old-stock-pinch")
+    client.post(f"/cultures/{cid}/log", data={"kind": "crash", "vessel_ids": [str(v)]}, headers=JSON)
+    assert _card_feed(cid, v) == "old-stock-pinch"
+    r = client.post(f"/cultures/{cid}/vessels/{v}/update", data={"name": "Right", "status": "active"}, headers=JSON)
+    assert r.status_code == 200, r.text
+    assert _card_feed(cid, v) is None
+    r = client.post(f"/cultures/{cid}/vessels/{v}/update", data={"name": "Right", "status": "active"}, headers=JSON)
+    _feed(client, cid, v, "2099-01-01 10:00:00", "new-stock-pinch")
+    assert _card_feed(cid, v) == "new-stock-pinch"
+
+
+def test_seed_log_on_crashed_bin_clears_earlier_feeds(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right", status="crashed")
+    other = _add_vessel(client, cid, "Left")
+    _feed(client, cid, v, "2026-01-01 10:00:00", "old-stock-pinch")
+    _feed(client, cid, other, "2026-01-01 10:00:00", "left-bin-pinch")
+    client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "seed", "timestamp": "2026-01-02 09:00:00", "vessel_ids": [str(v)]},
+        headers=JSON,
+    )
+    assert _card_feed(cid, v) is None
+    assert _card_feed(cid, other) == "left-bin-pinch"
+
+
 def test_temp_log_on_bin_shows_on_card_and_spells_out_humidity(client):
     cid = _create_culture(client, kind="daphnia")
     v = _add_vessel(client, cid, "Left")

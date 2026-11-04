@@ -407,6 +407,7 @@ def _vessels(conn, culture_id: int):
     latest_feed = """SELECT {col} FROM culture_log l
                      JOIN culture_log_vessels lv ON lv.log_id = l.id
                      WHERE lv.vessel_id = v.id AND l.kind = 'feed' AND COALESCE(l.held,0)=0
+                       AND (v.restarted_at IS NULL OR l.timestamp >= v.restarted_at)
                      ORDER BY l.timestamp DESC, l.id DESC LIMIT 1"""
     latest_temp = """SELECT {col} FROM culture_log l
                      JOIN culture_log_vessels lv ON lv.log_id = l.id
@@ -974,13 +975,16 @@ async def update_vessel(
         order = _int_or_none(sort_order)
         if order is None:
             order = existing["sort_order"]
+        restarted = existing["status"] == "crashed" and status == "active"
         conn.execute(
             """UPDATE culture_vessels
                SET name=?, role=?, volume_gallons=?, is_lit=?, is_heated=?, heater_set_f=?,
-                   status=?, sort_order=?, notes=?, hitchhikers=?, updated_at=datetime('now')
+                   status=?, sort_order=?, notes=?, hitchhikers=?,
+                   restarted_at=CASE WHEN ? THEN datetime('now') ELSE restarted_at END,
+                   updated_at=datetime('now')
                WHERE id=?""",
             (name, role, _float_or_none(volume_gallons), lit, heated, set_f, status, order,
-             _blank(notes), _blank(hitchhikers), vessel_id),
+             _blank(notes), _blank(hitchhikers), 1 if restarted else 0, vessel_id),
         )
     if _wants_json(request):
         return JSONResponse({"status": "updated"})
@@ -1057,7 +1061,7 @@ def _finalize_log_temps(form, kind, values, details):
                 values["temp_kind"] = "water"
 
 
-def _apply_log_vessel_state(conn, kind, details):
+def _apply_log_vessel_state(conn, kind, details, timestamp=None):
     """Write log fields that belong on the bin card (hitchhikers, crash, reseed)."""
     for d in details or []:
         if kind == "crash":
@@ -1069,11 +1073,13 @@ def _apply_log_vessel_state(conn, kind, details):
             )
         elif kind == "seed":
             # Restocking a crashed bin brings it back; archived bins stay archived.
+            # restarted_at hides the dead stock's feeds from the bin card.
             conn.execute(
                 """UPDATE culture_vessels
-                   SET status='active', updated_at=datetime('now')
+                   SET status='active', restarted_at=COALESCE(?, datetime('now')),
+                       updated_at=datetime('now')
                    WHERE id=? AND status='crashed'""",
-                (d["id"],),
+                (timestamp, d["id"]),
             )
         if d.get("hitchhikers_set"):
             conn.execute(
@@ -1129,7 +1135,10 @@ async def add_log(request: Request, culture_id: int):
             vessel_details=details,
             **values,
         )
-        _apply_log_vessel_state(conn, kind, details)
+        _apply_log_vessel_state(
+            conn, kind, details,
+            conn.execute("SELECT timestamp FROM culture_log WHERE id=?", (log_id,)).fetchone()[0],
+        )
         if kind == "feed":
             _advance_logged_schedules(
                 conn, culture_id, category="feeding",
@@ -1236,7 +1245,7 @@ async def update_log(request: Request, culture_id: int, log_id: int):
              1 if values["held"] else 0, log_id, culture_id),
         )
         _replace_log_vessels(conn, log_id, ids, details)
-        _apply_log_vessel_state(conn, values["kind"], details)
+        _apply_log_vessel_state(conn, values["kind"], details, values["timestamp"])
         # Harvest side effects (tank feeding / dest-culture feed) stay as they
         # were — this only edits the culture history row itself.
     if _wants_json(request):
