@@ -924,6 +924,24 @@ def test_crash_log_marks_bin_crashed(client):
     assert "crashed" in page.text
 
 
+def test_seed_log_reactivates_crashed_bin(client):
+    cid = _create_culture(client, kind="daphnia")
+    v = _add_vessel(client, cid, "Right", status="crashed")
+    archived = _add_vessel(client, cid, "Old", status="archived")
+    r = client.post(
+        f"/cultures/{cid}/log",
+        data={"kind": "seed", "vessel_ids": [str(v), str(archived)]},
+        headers=JSON,
+    )
+    assert r.status_code == 201
+    with get_db() as conn:
+        rows = {r["id"]: r["status"] for r in conn.execute(
+            "SELECT id, status FROM culture_vessels WHERE culture_id=?", (cid,)
+        ).fetchall()}
+    assert rows[v] == "active"
+    assert rows[archived] == "archived"
+
+
 def test_temp_log_on_bin_shows_on_card_and_spells_out_humidity(client):
     cid = _create_culture(client, kind="daphnia")
     v = _add_vessel(client, cid, "Left")

@@ -1058,13 +1058,21 @@ def _finalize_log_temps(form, kind, values, details):
 
 
 def _apply_log_vessel_state(conn, kind, details):
-    """Write log fields that belong on the bin card (hitchhikers, crash)."""
+    """Write log fields that belong on the bin card (hitchhikers, crash, reseed)."""
     for d in details or []:
         if kind == "crash":
             conn.execute(
                 """UPDATE culture_vessels
                    SET status='crashed', updated_at=datetime('now')
                    WHERE id=?""",
+                (d["id"],),
+            )
+        elif kind == "seed":
+            # Restocking a crashed bin brings it back; archived bins stay archived.
+            conn.execute(
+                """UPDATE culture_vessels
+                   SET status='active', updated_at=datetime('now')
+                   WHERE id=? AND status='crashed'""",
                 (d["id"],),
             )
         if d.get("hitchhikers_set"):
