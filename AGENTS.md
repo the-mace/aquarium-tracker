@@ -116,7 +116,7 @@ SQLite WAL and `foreign_keys=ON` are set in `get_connection()`.
 - **Reference info**: cache DB only. Fetched with web search when an inhabitant, plant, or hardscape item is added or missing on the list page. Tank manufacturer/model can backfill still-empty volume/dimensions.
 - **Import / Quick Log**: one extraction stream, one confirm path, one review script (`static/js/import-review.js`).
 - **Blocking calls**: `messages.create` from `async def` must run in `asyncio.to_thread`. A sync Anthropic call on the single uvicorn worker stalls every request.
-- **Model policy**: mass-class Sonnet only, one id in `ai_config.py`. No second provider. No prompt caching (prompts are built from live rows; volume is one user).
+- **Model policy**: mass-class Sonnet only, one id in `ai_config.py`. No second provider. Prompt caching is on for chat and multi-chunk import (see **Prompt caching** above). One-shot analysis calls are not cached because their prompts are built from live rows.
 
 ## Gotchas
 
