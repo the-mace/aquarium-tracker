@@ -1,0 +1,17 @@
+# Logic and policy live in the shared workflow:
+# https://github.com/the-mace/workflows (callers pin @main).
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows: ["Test"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  dependabot:
+    uses: the-mace/workflows/.github/workflows/dependabot-auto-merge.yml@main

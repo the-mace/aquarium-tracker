@@ -18,7 +18,8 @@ opinion.
 ## Before starting any work (repo specifics)
 
 Dependabot auto-merges here too (`.github/dependabot.yml` +
-`.github/workflows/dependabot-automerge.yml`). If `requirements.txt` or
+`.github/workflows/dependabot-auto-merge.yml`, a stub that calls the shared
+workflow in `the-mace/workflows`). If `requirements.txt` or
 `requirements-dev.txt` changed after the pull, reinstall:
 
 ```bash
