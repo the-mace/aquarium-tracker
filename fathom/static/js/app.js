@@ -33,10 +33,21 @@ if (!('commandForElement' in HTMLButtonElement.prototype)) {
     else if (cmd === 'close') closeModal(btn.getAttribute('commandfor'));
   });
 }
-// Native <dialog> handles Esc for modals; this is only for the chat side panel.
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeChatPanel();
-});
+// closedby="any" (click outside to close) is missing in Safari. Require press and release
+// outside the dialog's box so a text-selection drag ending on the backdrop doesn't close it.
+if (!('closedBy' in HTMLDialogElement.prototype)) {
+  const outside = (e, d) => {
+    const r = d.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    for (const d of document.querySelectorAll('dialog[closedby="any"]')) {
+      let pressedOutside = false;
+      d.addEventListener('pointerdown', e => { pressedOutside = outside(e, d); });
+      d.addEventListener('pointerup', e => { if (pressedOutside && outside(e, d)) d.close(); });
+    }
+  });
+}
 
 let activeConversationId = null;
 let chatMsgCounter = 0;
@@ -87,19 +98,14 @@ function chatEls() {
 function openChatPanel() {
   if (isChatPage()) return; // full page is already the chat surface
   const p = document.getElementById('chat-panel');
-  const o = document.getElementById('chat-overlay');
   if (!p) return;
-  p.style.display = 'flex';
-  if (o) o.style.display = 'block';
+  if (!p.open) p.showModal();
   document.getElementById('chat-input')?.focus();
   _updateChatChrome();
 }
 
 function closeChatPanel() {
-  const p = document.getElementById('chat-panel');
-  const o = document.getElementById('chat-overlay');
-  if (p) p.style.display = 'none';
-  if (o) o.style.display = 'none';
+  document.getElementById('chat-panel')?.close();
 }
 
 function _updateChatChrome() {

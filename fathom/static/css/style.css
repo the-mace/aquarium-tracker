@@ -924,25 +924,29 @@ dialog.modal::backdrop {
 .empty-state p { margin-bottom: 1rem; }
 .empty-icon { font-size: 3rem; margin-bottom: .75rem; opacity: .3; }
 
-.chat-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.4);
-  z-index: 90;
-}
-.chat-panel {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
+dialog.chat-panel {
+  inset: 0 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
   width: 420px;
   max-width: 95vw;
+  height: 100%;
+  max-height: none;
+  color: inherit;
   background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex;
   flex-direction: column;
-  z-index: 91;
+  overflow: hidden;
+  overscroll-behavior: contain;
   box-shadow: -4px 0 20px rgba(0,0,0,.4);
+}
+/* display only when open: an unconditional display would override the closed state */
+dialog.chat-panel[open] { display: flex; }
+dialog.chat-panel::backdrop {
+  background: rgba(0,0,0,.4);
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 .chat-header {
   display: flex;

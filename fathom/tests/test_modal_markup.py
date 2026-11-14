@@ -25,3 +25,10 @@ def test_command_buttons_target_existing_dialogs():
     for path, text in _templates().items():
         for target in re.findall(r'command="(?:show-modal|close)" commandfor="([^"]+)"', text):
             assert f'<dialog id="{target}"' in text, f"{path}: commandfor={target} has no dialog"
+
+
+def test_chat_panel_is_a_light_dismiss_dialog():
+    base = (TEMPLATES / "base.html").read_text()
+    panels = re.findall(r'<(\w+) id="chat-panel"([^>]*)>', base)
+    assert panels and all(tag == "dialog" and 'closedby="any"' in attrs for tag, attrs in panels)
+    assert "chat-overlay" not in base
