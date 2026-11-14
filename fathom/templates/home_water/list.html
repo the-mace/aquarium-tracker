@@ -193,11 +193,11 @@
 </div>
 {% endif %}
 
-<div id="modal-add-home-water" class="modal" style="display:none">
+<dialog id="modal-add-home-water" class="modal" aria-labelledby="modal-add-home-water-title">
   <div class="modal-box" style="max-width:40rem">
     <div class="modal-header">
-      <h3>Log Home Water</h3>
-      <button class="modal-close" type="button" onclick="closeModal('modal-add-home-water')">×</button>
+      <h3 id="modal-add-home-water-title">Log Home Water</h3>
+      <button class="modal-close" type="button" command="close" commandfor="modal-add-home-water">×</button>
     </div>
 
     <div class="filter-pills" style="margin:0 0 1rem;padding:0 .25rem" role="tablist">
@@ -248,7 +248,7 @@
           <textarea name="notes" rows="2" placeholder="Optional — flushed 2 min, etc."></textarea>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-home-water')">Cancel</button>
+          <button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-home-water">Cancel</button>
           <button class="btn btn-primary" type="submit">Save</button>
         </div>
       </form>
@@ -289,7 +289,7 @@
         </div>
         <p id="lab-extract-status" class="muted" style="font-size:.85rem;display:none;margin:.5rem 0"></p>
         <div class="modal-footer">
-          <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-home-water')">Cancel</button>
+          <button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-home-water">Cancel</button>
           <button class="btn btn-primary" type="button" id="lab-extract-btn" onclick="extractLabReport()">Extract with AI</button>
         </div>
       </div>
@@ -306,13 +306,13 @@
       </div>
     </div>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-home-water" class="modal" style="display:none">
+<dialog id="modal-edit-home-water" class="modal" aria-labelledby="modal-edit-home-water-title">
   <div class="modal-box">
     <div class="modal-header">
-      <h3>Edit Home Water</h3>
-      <button class="modal-close" type="button" onclick="closeModal('modal-edit-home-water')">×</button>
+      <h3 id="modal-edit-home-water-title">Edit Home Water</h3>
+      <button class="modal-close" type="button" command="close" commandfor="modal-edit-home-water">×</button>
     </div>
     <form id="edit-home-water-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
       <div class="form-group">
@@ -353,12 +353,12 @@
         <textarea name="notes" id="edit-home-water-notes" rows="2"></textarea>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-home-water')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-home-water">Cancel</button>
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

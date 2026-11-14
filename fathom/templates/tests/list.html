@@ -64,9 +64,9 @@
 </div>
 {% endif %}
 
-<div id="modal-edit-test" class="modal" style="display:none">
+<dialog id="modal-edit-test" class="modal" aria-labelledby="modal-edit-test-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit Test Result</h3><button class="modal-close" onclick="closeModal('modal-edit-test')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-test-title">Edit Test Result</h3><button class="modal-close" command="close" commandfor="modal-edit-test">×</button></div>
     <form id="edit-test-form">
       <div class="form-group">
         <label>Date &amp; Time</label>
@@ -84,10 +84,10 @@
         <div class="form-group"><label>Temperature (°F)</label><input type="number" step="0.1" id="edit-test-temp"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="edit-test-notes" rows="3"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-test')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-test">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

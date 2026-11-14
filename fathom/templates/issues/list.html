@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Issues — {{ tank.name }}</h1>
-  <button class="btn btn-primary" onclick="openModal('modal-add-issue')">+ New Issue</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-issue">+ New Issue</button>
 </div>
 
 {% if issues %}
@@ -61,13 +61,13 @@
 <div class="empty-state">
   <h2>No issues recorded</h2>
   <p class="muted">Good news — everything looks fine, or nothing's been logged yet.</p>
-  <button class="btn btn-primary" onclick="openModal('modal-add-issue')">Log an Issue</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-issue">Log an Issue</button>
 </div>
 {% endif %}
 
-<div id="modal-add-issue" class="modal" style="display:none">
+<dialog id="modal-add-issue" class="modal" aria-labelledby="modal-add-issue-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>New Issue</h3><button class="modal-close" onclick="closeModal('modal-add-issue')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-issue-title">New Issue</h3><button class="modal-close" command="close" commandfor="modal-add-issue">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/issues">
       <div class="form-group"><label>Title *</label><input type="text" name="title" required placeholder="e.g. Elevated nitrates"></div>
       <div class="form-group"><label>Status</label>
@@ -78,48 +78,48 @@
       </div>
       <div class="form-group"><label>Description</label><textarea name="description" rows="3"></textarea></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-issue')">Cancel</button><button class="btn btn-primary" type="submit">Create Issue</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-issue">Cancel</button><button class="btn btn-primary" type="submit">Create Issue</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-resolve-issue" class="modal" style="display:none">
+<dialog id="modal-resolve-issue" class="modal" aria-labelledby="modal-resolve-issue-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Resolve Issue</h3><button class="modal-close" onclick="closeModal('modal-resolve-issue')">×</button></div>
+    <div class="modal-header"><h3 id="modal-resolve-issue-title">Resolve Issue</h3><button class="modal-close" command="close" commandfor="modal-resolve-issue">×</button></div>
     <form id="resolve-issue-form" method="post">
       <input type="hidden" name="status" value="resolved">
       <input type="hidden" name="title" id="resolve-issue-title">
       <div class="form-group"><label>Resolved on</label><input type="date" name="resolved_at" id="resolve-issue-date" required></div>
       <div class="form-group"><label>Resolution comment (optional)</label><textarea name="comment" rows="3" placeholder="What fixed it / what changed?"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-resolve-issue')">Cancel</button><button class="btn btn-primary" type="submit">Mark Resolved</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-resolve-issue">Cancel</button><button class="btn btn-primary" type="submit">Mark Resolved</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-monitor-issue" class="modal" style="display:none">
+<dialog id="modal-monitor-issue" class="modal" aria-labelledby="modal-monitor-issue-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Move to Monitoring</h3><button class="modal-close" onclick="closeModal('modal-monitor-issue')">×</button></div>
+    <div class="modal-header"><h3 id="modal-monitor-issue-title">Move to Monitoring</h3><button class="modal-close" command="close" commandfor="modal-monitor-issue">×</button></div>
     <form id="monitor-issue-form" method="post">
       <input type="hidden" name="status" value="monitoring">
       <input type="hidden" name="title" id="monitor-issue-title">
       <div class="form-group"><label>Monitoring since</label><input type="date" name="monitoring_at" id="monitor-issue-date" required></div>
       <div class="form-group"><label>Note (optional)</label><textarea name="comment" rows="3" placeholder="What are you watching for?"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-monitor-issue')">Cancel</button><button class="btn btn-primary" type="submit">Move to Monitoring</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-monitor-issue">Cancel</button><button class="btn btn-primary" type="submit">Move to Monitoring</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-add-note-issue" class="modal" style="display:none">
+<dialog id="modal-add-note-issue" class="modal" aria-labelledby="modal-add-note-issue-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Note</h3><button class="modal-close" onclick="closeModal('modal-add-note-issue')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-note-issue-title">Add Note</h3><button class="modal-close" command="close" commandfor="modal-add-note-issue">×</button></div>
     <form id="add-note-issue-form" method="post" onsubmit="return prepareAddNoteSubmit(this)">
       <input type="hidden" name="status" id="add-note-issue-status">
       <input type="hidden" name="title" id="add-note-issue-title">
       <div class="form-group"><label>Note</label><textarea name="comment" id="add-note-issue-text" rows="4" required placeholder="What's changed since the last check-in?"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-note-issue')">Cancel</button><button class="btn btn-primary" type="submit">Add Note</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-note-issue">Cancel</button><button class="btn btn-primary" type="submit">Add Note</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

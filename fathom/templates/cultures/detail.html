@@ -281,17 +281,17 @@
 
 <div class="culture-actions">
   {% if culture.kind != 'green_water' %}
-  <button class="btn btn-primary" type="button" onclick="openModal('modal-feed')">Log feeding</button>
+  <button class="btn btn-primary" type="button" command="show-modal" commandfor="modal-feed">Log feeding</button>
   {% endif %}
-  <button class="btn btn-ghost" type="button" onclick="openModal('modal-look')">Log look</button>
-  <button class="btn btn-ghost" type="button" onclick="openModal('modal-harvest')">Harvest</button>
-  <button class="btn btn-ghost" type="button" onclick="openModal('modal-other')">Other</button>
+  <button class="btn btn-ghost" type="button" command="show-modal" commandfor="modal-look">Log look</button>
+  <button class="btn btn-ghost" type="button" command="show-modal" commandfor="modal-harvest">Harvest</button>
+  <button class="btn btn-ghost" type="button" command="show-modal" commandfor="modal-other">Other</button>
 </div>
 
 <div class="panel" style="margin-bottom:1rem">
   <div class="panel-header">
     <h3>Bins</h3>
-    <button class="btn btn-xs btn-ghost" type="button" onclick="openModal('modal-add-vessel')">+ Add bin</button>
+    <button class="btn btn-xs btn-ghost" type="button" command="show-modal" commandfor="modal-add-vessel">+ Add bin</button>
   </div>
   {% if vessels %}
   <div class="vessel-grid">
@@ -427,7 +427,7 @@
 <div class="panel" style="margin-bottom:1rem">
   <div class="panel-header">
     <h3>Schedule</h3>
-    <button class="btn btn-xs btn-ghost" type="button" onclick="openModal('modal-add-sched')">+ Add task</button>
+    <button class="btn btn-xs btn-ghost" type="button" command="show-modal" commandfor="modal-add-sched">+ Add task</button>
   </div>
   {% if schedule %}
   <div class="sched-list">
@@ -549,9 +549,9 @@
 
 
 {% if culture.kind != 'green_water' %}
-<div id="modal-feed" class="modal" style="display:none">
+<dialog id="modal-feed" class="modal" aria-labelledby="modal-feed-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Log feeding</h3><button class="modal-close" type="button" onclick="closeModal('modal-feed')">×</button></div>
+    <div class="modal-header"><h3 id="modal-feed-title">Log feeding</h3><button class="modal-close" type="button" command="close" commandfor="modal-feed">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
       <input type="hidden" name="kind" value="feed">
       {{ feed_bin_rows(vessels) }}
@@ -574,15 +574,15 @@
       </div>
       {{ log_time_field() }}
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-feed')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-feed">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endif %}
 
-<div id="modal-look" class="modal" style="display:none">
+<dialog id="modal-look" class="modal" aria-labelledby="modal-look-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Log look</h3><button class="modal-close" type="button" onclick="closeModal('modal-look')">×</button></div>
+    <div class="modal-header"><h3 id="modal-look-title">Log look</h3><button class="modal-close" type="button" command="close" commandfor="modal-look">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
       <input type="hidden" name="kind" value="look">
       {{ look_bin_rows(vessels) }}
@@ -596,14 +596,14 @@
       {% endif %}
       {{ log_time_field() }}
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" placeholder="{% if culture.kind == 'green_water' %}e.g. still clear, no milky bloom{% else %}e.g. leftover dust — hold food{% endif %}"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-look')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-look">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-harvest" class="modal" style="display:none">
+<dialog id="modal-harvest" class="modal" aria-labelledby="modal-harvest-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Harvest</h3><button class="modal-close" type="button" onclick="closeModal('modal-harvest')">×</button></div>
+    <div class="modal-header"><h3 id="modal-harvest-title">Harvest</h3><button class="modal-close" type="button" command="close" commandfor="modal-harvest">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
       <input type="hidden" name="kind" value="harvest">
       {{ vessel_checks(vessels, 'all_active') }}
@@ -629,14 +629,14 @@
         <p class="muted" style="font-size:.78rem;margin:.25rem 0 0">Does not run AI analysis.</p>
       </div>
       {% endif %}
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-harvest')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-harvest">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-other" class="modal" style="display:none">
+<dialog id="modal-other" class="modal" aria-labelledby="modal-other-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Other log</h3><button class="modal-close" type="button" onclick="closeModal('modal-other')">×</button></div>
+    <div class="modal-header"><h3 id="modal-other-title">Other log</h3><button class="modal-close" type="button" command="close" commandfor="modal-other">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/log" onsubmit="return prepareLocalTimestamps(this)">
       {{ vessel_checks(vessels, 'none', water_temp=true) }}
       <div class="form-grid">
@@ -685,54 +685,54 @@
       </div>
       {{ log_time_field() }}
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-other')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-other">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-add-vessel" class="modal" style="display:none">
+<dialog id="modal-add-vessel" class="modal" aria-labelledby="modal-add-vessel-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add bin</h3><button class="modal-close" type="button" onclick="closeModal('modal-add-vessel')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-vessel-title">Add bin</h3><button class="modal-close" type="button" command="close" commandfor="modal-add-vessel">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/vessels">
       {{ vessel_fields(none) }}
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-vessel')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-vessel">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-vessel" class="modal" style="display:none">
+<dialog id="modal-edit-vessel" class="modal" aria-labelledby="modal-edit-vessel-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit bin</h3><button class="modal-close" type="button" onclick="closeModal('modal-edit-vessel')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-vessel-title">Edit bin</h3><button class="modal-close" type="button" command="close" commandfor="modal-edit-vessel">×</button></div>
     <form id="edit-vessel-form" method="post" action="">
       {{ vessel_fields('edit') }}
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-vessel')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-vessel">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-add-sched" class="modal" style="display:none">
+<dialog id="modal-add-sched" class="modal" aria-labelledby="modal-add-sched-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add schedule</h3><button class="modal-close" type="button" onclick="closeModal('modal-add-sched')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-sched-title">Add schedule</h3><button class="modal-close" type="button" command="close" commandfor="modal-add-sched">×</button></div>
     <form method="post" action="/cultures/{{ culture.id }}/schedule">
       {{ schedule_fields(none) }}
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-sched')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-sched">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-sched" class="modal" style="display:none">
+<dialog id="modal-edit-sched" class="modal" aria-labelledby="modal-edit-sched-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit schedule</h3><button class="modal-close" type="button" onclick="closeModal('modal-edit-sched')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-sched-title">Edit schedule</h3><button class="modal-close" type="button" command="close" commandfor="modal-edit-sched">×</button></div>
     <form id="edit-sched-form" method="post" action="">
       {{ schedule_fields('edit') }}
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-sched')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-sched">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-log" class="modal" style="display:none">
+<dialog id="modal-edit-log" class="modal" aria-labelledby="edit-log-title">
   <div class="modal-box">
-    <div class="modal-header"><h3 id="edit-log-title">Edit log</h3><button class="modal-close" type="button" onclick="closeModal('modal-edit-log')">×</button></div>
+    <div class="modal-header"><h3 id="edit-log-title">Edit log</h3><button class="modal-close" type="button" command="close" commandfor="modal-edit-log">×</button></div>
     <form id="edit-log-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
       <input type="hidden" name="kind" id="edit-log-kind">
       <div class="form-group">
@@ -828,10 +828,10 @@
       </div>
       {{ log_time_field() }}
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-log')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-log">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

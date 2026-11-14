@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Inhabitants — {{ tank.name }}</h1>
-  <button class="btn btn-primary" onclick="openModal('modal-add-inh')">+ Add Inhabitant</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-inh">+ Add Inhabitant</button>
 </div>
 
 {% if inhabitants %}
@@ -94,7 +94,7 @@
 {% else %}
 <div class="empty-state">
   <h2>No inhabitants recorded</h2>
-  <button class="btn btn-primary" onclick="openModal('modal-add-inh')">Add First Inhabitant</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-inh">Add First Inhabitant</button>
 </div>
 {% endif %}
 
@@ -131,9 +131,9 @@
 </div>
 {% endif %}
 
-<div id="modal-add-inh" class="modal" style="display:none">
+<dialog id="modal-add-inh" class="modal" aria-labelledby="modal-add-inh-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Inhabitant</h3><button type="button" class="modal-close" onclick="closeModal('modal-add-inh')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-inh-title">Add Inhabitant</h3><button type="button" class="modal-close" command="close" commandfor="modal-add-inh">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/inhabitants">
       <div class="form-grid">
         <div class="form-group"><label>Common Name</label><input type="text" name="common_name"></div>
@@ -149,14 +149,14 @@
         <div class="form-group"><label>Source</label><input type="text" name="source" placeholder="LFS, breeder, friend…"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-inh')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-inh">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-inh" class="modal" style="display:none">
+<dialog id="modal-edit-inh" class="modal" aria-labelledby="modal-edit-inh-title">
   <div class="modal-box modal-box-sm">
-    <div class="modal-header"><h3>Edit Inhabitant</h3><button type="button" class="modal-close" onclick="closeModal('modal-edit-inh')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-inh-title">Edit Inhabitant</h3><button type="button" class="modal-close" command="close" commandfor="modal-edit-inh">×</button></div>
     <form id="edit-inh-form" method="post" action="">
       <div class="form-grid">
         <div class="form-group"><label>Common Name</label><input type="text" name="common_name" id="edit-inh-common"></div>
@@ -170,19 +170,19 @@
         </div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-inh-notes"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-inh')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-inh">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-ref-info" class="modal" style="display:none">
+<dialog id="modal-ref-info" class="modal" aria-labelledby="ref-modal-title">
   <div class="modal-box">
     <div class="modal-header">
       <div>
         <h3 id="ref-modal-title"></h3>
         <em id="ref-modal-scientific" class="muted" style="font-size:.85rem;display:none"></em>
       </div>
-      <button class="modal-close" onclick="closeModal('modal-ref-info')">×</button>
+      <button class="modal-close" command="close" commandfor="modal-ref-info">×</button>
     </div>
     <div class="ref-modal-body">
       <div id="ref-modal-img-wrap"></div>
@@ -202,15 +202,15 @@
       <button class="btn btn-ghost" id="ref-modal-set-image" type="button" style="white-space:nowrap">Set Image</button>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" type="button" onclick="closeModal('modal-ref-info')">Close</button>
+      <button class="btn btn-ghost" type="button" command="close" commandfor="modal-ref-info">Close</button>
       <button class="btn btn-ghost" id="ref-modal-refresh" type="button">Refresh Info</button>
     </div>
   </div>
-</div>
+</dialog>
 
-<div id="modal-pop-event" class="modal" style="display:none">
+<dialog id="modal-pop-event" class="modal" aria-labelledby="modal-pop-event-title">
   <div class="modal-box modal-box-sm">
-    <div class="modal-header"><h3>Log Population Event</h3><button class="modal-close" onclick="closeModal('modal-pop-event')">×</button></div>
+    <div class="modal-header"><h3 id="modal-pop-event-title">Log Population Event</h3><button class="modal-close" command="close" commandfor="modal-pop-event">×</button></div>
     <form id="pop-event-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
       <p id="pop-event-subject" class="muted"></p>
       <div class="form-grid">
@@ -230,14 +230,14 @@
         </div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-pop-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-pop-event">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-pop-event" class="modal" style="display:none">
+<dialog id="modal-edit-pop-event" class="modal" aria-labelledby="modal-edit-pop-event-title">
   <div class="modal-box modal-box-sm">
-    <div class="modal-header"><h3>Edit Population Event</h3><button class="modal-close" onclick="closeModal('modal-edit-pop-event')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-pop-event-title">Edit Population Event</h3><button class="modal-close" command="close" commandfor="modal-edit-pop-event">×</button></div>
     <form id="edit-pop-event-form" method="post" action="" onsubmit="return prepareLocalTimestamps(this)">
       <p id="edit-pop-event-subject" class="muted"></p>
       <div class="form-grid">
@@ -257,10 +257,10 @@
         </div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-pop-event-notes"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-pop-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-pop-event">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

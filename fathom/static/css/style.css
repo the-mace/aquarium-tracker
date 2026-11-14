@@ -622,18 +622,24 @@ p { margin-bottom: .5rem; }
   border-top: 1px solid var(--border);
 }
 
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.6);
-  z-index: 100;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
+dialog.modal {
+  margin: auto; /* the global margin reset otherwise pins it top-left */
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  width: calc(100% - 2rem);
+  max-width: 560px;
+  overscroll-behavior: contain;
 }
-.modal[style*="display:none"],
-.modal[style*="display: none"] { display: none !important; }
+dialog.modal:has(> .modal-box-sm) { max-width: 400px; }
+dialog.modal:has(> .modal-box-lg) { max-width: min(820px, 96vw); }
+/* overflow: hidden makes ::backdrop a scroll container so overscroll-behavior stops page scroll behind it */
+dialog.modal::backdrop {
+  background: rgba(0,0,0,.6);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
 .modal-box {
   background: var(--surface);
   border: 1px solid var(--border);

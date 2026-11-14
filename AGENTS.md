@@ -127,6 +127,7 @@ SQLite WAL and `foreign_keys=ON` are set in `get_connection()`.
 - `CHECK` constraints (culture feed, event type, issue status, and similar) need a versioned table rebuild to extend. The culture feed list is `spirulina`, `green_water`, `yeast`, `none`.
 - Page behavior for cultures, goals, home water, and import review lives in `fathom/static/js/`, not in the templates. Shared chrome is `app.js`.
 - Static files are served `Cache-Control: no-cache` because there is no hashed filename.
+- Modals are native `<dialog class="modal" aria-labelledby="…">` wrapping a `.modal-box`. Open/close from buttons with `command="show-modal"` / `command="close"` + `commandfor`, from script with `openModal(id)` / `closeModal(id)`. The browser handles Esc, focus, and the backdrop; don't add handlers for them. `app.js` has a small fallback for Safari before 26.2. `test_modal_markup.py` enforces this.
 
 ## Cultures
 

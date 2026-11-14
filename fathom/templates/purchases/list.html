@@ -7,7 +7,7 @@
   <h1>Purchases — {{ tank.name }}</h1>
   <div class="header-right">
     <span class="total-badge">Total: ${{ "%.2f"|format(total) }}</span>
-    <button class="btn btn-primary" onclick="openModal('modal-add-purchase')">+ Add Purchase</button>
+    <button class="btn btn-primary" command="show-modal" commandfor="modal-add-purchase">+ Add Purchase</button>
   </div>
 </div>
 
@@ -52,13 +52,13 @@
 {% else %}
 <div class="empty-state">
   <h2>No purchases recorded</h2>
-  <button class="btn btn-primary" onclick="openModal('modal-add-purchase')">Add First Purchase</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-purchase">Add First Purchase</button>
 </div>
 {% endif %}
 
-<div id="modal-add-purchase" class="modal" style="display:none">
+<dialog id="modal-add-purchase" class="modal" aria-labelledby="modal-add-purchase-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Purchase</h3><button class="modal-close" onclick="closeModal('modal-add-purchase')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-purchase-title">Add Purchase</h3><button class="modal-close" command="close" commandfor="modal-add-purchase">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/purchases">
       <div class="form-grid">
         <div class="form-group form-group-wide"><label>Item *</label><input type="text" name="item" required></div>
@@ -79,14 +79,14 @@
         <div class="form-group"><label>Date</label><input type="date" name="purchase_date"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-purchase')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-purchase">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-purchase" class="modal" style="display:none">
+<dialog id="modal-edit-purchase" class="modal" aria-labelledby="modal-edit-purchase-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit Purchase</h3><button class="modal-close" onclick="closeModal('modal-edit-purchase')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-purchase-title">Edit Purchase</h3><button class="modal-close" command="close" commandfor="modal-edit-purchase">×</button></div>
     <form id="edit-purchase-form" method="post" action="">
       <div class="form-grid">
         <div class="form-group form-group-wide"><label>Item *</label><input type="text" name="item" id="edit-purchase-item" required></div>
@@ -107,10 +107,10 @@
         <div class="form-group"><label>Date</label><input type="date" name="purchase_date" id="edit-purchase-date"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-purchase-notes"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-purchase')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-purchase">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

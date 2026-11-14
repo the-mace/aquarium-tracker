@@ -8,7 +8,7 @@
     <h1>Schedule — {{ tank.name }}</h1>
     <p class="muted" style="font-size:.85rem;margin-top:.25rem">Reference and maintenance tracking for recurring tasks.</p>
   </div>
-  <button class="btn btn-primary" onclick="openModal('modal-add')">+ Add Entry</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add">+ Add Entry</button>
 </div>
 
 {% for cat_key, cat_label in [('feeding','Feeding'), ('dosing','Dosing'), ('maintenance','Maintenance')] %}
@@ -84,15 +84,15 @@
 <div class="empty-state">
   <h2>No schedule entries</h2>
   <p class="muted">Add feeding plans, dosing reminders, and maintenance tasks.</p>
-  <button class="btn btn-primary" onclick="openModal('modal-add')">Add Entry</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add">Add Entry</button>
 </div>
 {% endif %}
 
-<div id="modal-add" class="modal" style="display:none">
+<dialog id="modal-add" class="modal" aria-labelledby="modal-add-title">
   <div class="modal-box">
     <div class="modal-header">
-      <h3>Add Schedule Entry</h3>
-      <button class="modal-close" onclick="closeModal('modal-add')">×</button>
+      <h3 id="modal-add-title">Add Schedule Entry</h3>
+      <button class="modal-close" command="close" commandfor="modal-add">×</button>
     </div>
     <form method="post" action="/tanks/{{ tank.id }}/schedule">
       <div class="form-grid">
@@ -139,18 +139,18 @@
         <input type="text" name="notes" placeholder="Optional">
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-add">Cancel</button>
         <button class="btn btn-primary" type="submit">Add</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit" class="modal" style="display:none">
+<dialog id="modal-edit" class="modal" aria-labelledby="modal-edit-title">
   <div class="modal-box">
     <div class="modal-header">
-      <h3>Edit Schedule Entry</h3>
-      <button class="modal-close" onclick="closeModal('modal-edit')">×</button>
+      <h3 id="modal-edit-title">Edit Schedule Entry</h3>
+      <button class="modal-close" command="close" commandfor="modal-edit">×</button>
     </div>
     <form id="edit-form" method="post">
       <div class="form-grid">
@@ -213,12 +213,12 @@
         </label>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit">Cancel</button>
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 
 {% endblock %}
 

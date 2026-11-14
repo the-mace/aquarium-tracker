@@ -335,19 +335,19 @@
 {% endif %}
 
 <div class="quick-actions">
-  <button class="action-btn action-btn-primary" onclick="openModal('modal-quick-log')">
+  <button class="action-btn action-btn-primary" command="show-modal" commandfor="modal-quick-log">
     <span class="action-icon">⚡</span> Quick Log
   </button>
-  <button class="action-btn" onclick="openModal('modal-test')">
+  <button class="action-btn" command="show-modal" commandfor="modal-test">
     <span class="action-icon">🧪</span> Log Test
   </button>
-  <button class="action-btn" onclick="openModal('modal-event')">
+  <button class="action-btn" command="show-modal" commandfor="modal-event">
     <span class="action-icon">📋</span> Log Event
   </button>
-  <button class="action-btn" onclick="openModal('modal-observation')">
+  <button class="action-btn" command="show-modal" commandfor="modal-observation">
     <span class="action-icon">👁</span> Note
   </button>
-  <button class="action-btn" onclick="openModal('modal-purchase')">
+  <button class="action-btn" command="show-modal" commandfor="modal-purchase">
     <span class="action-icon">🛒</span> Purchase
   </button>
   <a href="/tanks/{{ tank.id }}/inhabitants" class="action-btn">
@@ -483,35 +483,35 @@
         <strong>Reset Tank Data</strong>
         <p>Wipes all test results, events, inhabitants, purchases, observations, issues, and goals. Keeps tank and equipment.</p>
       </div>
-      <button class="btn btn-danger" onclick="openModal('modal-reset')">Reset Data</button>
+      <button class="btn btn-danger" command="show-modal" commandfor="modal-reset">Reset Data</button>
     </div>
     <div class="danger-item">
       <div>
         <strong>Delete Tank</strong>
         <p>Permanently deletes this tank and all associated data.</p>
       </div>
-      <button class="btn btn-danger" onclick="openModal('modal-delete')">Delete Tank</button>
+      <button class="btn btn-danger" command="show-modal" commandfor="modal-delete">Delete Tank</button>
     </div>
   </div>
 </details>
 
-<div id="modal-quick-log" class="modal" style="display:none">
+<dialog id="modal-quick-log" class="modal" aria-labelledby="modal-quick-log-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Quick Log</h3><button class="modal-close" onclick="closeModal('modal-quick-log')">×</button></div>
+    <div class="modal-header"><h3 id="modal-quick-log-title">Quick Log</h3><button class="modal-close" command="close" commandfor="modal-quick-log">×</button></div>
     <p class="muted" style="font-size:.85rem;margin-bottom:.75rem">Paste or type a freeform entry — test values, events, observations. Claude will parse it into structured records for review.</p>
     <div class="form-group">
       <textarea id="quick-log-text" rows="8" placeholder="e.g.&#10;pH 7.2, ammonia 0, nitrate 10&#10;20% water change&#10;Shrimp looking active"></textarea>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" type="button" onclick="closeModal('modal-quick-log')">Cancel</button>
+      <button class="btn btn-ghost" type="button" command="close" commandfor="modal-quick-log">Cancel</button>
       <button class="btn btn-primary" type="button" onclick="submitQuickLog()">Parse with AI →</button>
     </div>
   </div>
-</div>
+</dialog>
 
-<div id="modal-test" class="modal" style="display:none">
+<dialog id="modal-test" class="modal" aria-labelledby="modal-test-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Log Water Test</h3><button class="modal-close" onclick="closeModal('modal-test')">×</button></div>
+    <div class="modal-header"><h3 id="modal-test-title">Log Water Test</h3><button class="modal-close" command="close" commandfor="modal-test">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/tests" onsubmit="return prepareLocalTimestamps(this)">
       <div class="form-grid">
         <div class="form-group"><label>Timestamp</label><input type="datetime-local" class="dt-local"><input type="hidden" name="timestamp" class="dt-utc"></div>
@@ -526,14 +526,14 @@
         <div class="form-group"><label>Temp (°F)</label><input type="number" step="0.1" name="temp"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-test')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-test">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-event" class="modal" style="display:none">
+<dialog id="modal-event" class="modal" aria-labelledby="modal-event-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Log Event</h3><button class="modal-close" onclick="closeModal('modal-event')">×</button></div>
+    <div class="modal-header"><h3 id="modal-event-title">Log Event</h3><button class="modal-close" command="close" commandfor="modal-event">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/events" onsubmit="return prepareLocalTimestamps(this)">
       <div class="form-group"><label>Type</label>
         <select name="event_type">
@@ -549,24 +549,24 @@
       <div class="form-group"><label>Amount (gallons / dose)</label><input type="number" step="0.1" name="amount"></div>
       <div class="form-group"><label>Timestamp</label><input type="datetime-local" class="dt-local"><input type="hidden" name="timestamp" class="dt-utc"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="3"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-event')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-event">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-observation" class="modal" style="display:none">
+<dialog id="modal-observation" class="modal" aria-labelledby="modal-observation-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Observation</h3><button type="button" class="modal-close" onclick="closeModal('modal-observation')">×</button></div>
+    <div class="modal-header"><h3 id="modal-observation-title">Add Observation</h3><button type="button" class="modal-close" command="close" commandfor="modal-observation">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/observations">
       <div class="form-group"><label>Observation</label><textarea name="text" rows="5" placeholder="What did you notice?"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-observation')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-observation">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-purchase" class="modal" style="display:none">
+<dialog id="modal-purchase" class="modal" aria-labelledby="modal-purchase-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Log Purchase</h3><button class="modal-close" onclick="closeModal('modal-purchase')">×</button></div>
+    <div class="modal-header"><h3 id="modal-purchase-title">Log Purchase</h3><button class="modal-close" command="close" commandfor="modal-purchase">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/purchases">
       <div class="form-group"><label>Item</label><input type="text" name="item" required></div>
       <div class="form-group"><label>Category</label>
@@ -585,34 +585,34 @@
       <div class="form-group"><label>Cost ($)</label><input type="number" step="0.01" name="cost"></div>
       <div class="form-group"><label>Purchase Date</label><input type="date" name="purchase_date"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-purchase')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-purchase">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-reset" class="modal" style="display:none">
+<dialog id="modal-reset" class="modal" aria-labelledby="modal-reset-title">
   <div class="modal-box modal-box-sm">
-    <div class="modal-header"><h3>Reset Tank Data</h3><button class="modal-close" onclick="closeModal('modal-reset')">×</button></div>
+    <div class="modal-header"><h3 id="modal-reset-title">Reset Tank Data</h3><button class="modal-close" command="close" commandfor="modal-reset">×</button></div>
     <p>This will permanently delete all data for <strong>{{ tank.name }}</strong> — test results, events, inhabitants, purchases, observations, issues, goals, equipment, plants, hardscape, and schedule entries. Only the tank record itself is kept.</p>
     <form method="post" action="/tanks/{{ tank.id }}/reset" onsubmit="return checkConfirm(this,'{{ tank.name }}','reset-err')">
       <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" autocomplete="off"></div>
       <div id="reset-err" class="form-error" style="display:none">Name does not match — please try again.</div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-reset')">Cancel</button><button class="btn btn-danger" type="submit">Reset Data</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-reset">Cancel</button><button class="btn btn-danger" type="submit">Reset Data</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-delete" class="modal" style="display:none">
+<dialog id="modal-delete" class="modal" aria-labelledby="modal-delete-title">
   <div class="modal-box modal-box-sm">
-    <div class="modal-header"><h3>Delete Tank</h3><button class="modal-close" onclick="closeModal('modal-delete')">×</button></div>
+    <div class="modal-header"><h3 id="modal-delete-title">Delete Tank</h3><button class="modal-close" command="close" commandfor="modal-delete">×</button></div>
     <p>This will permanently delete <strong>{{ tank.name }}</strong> and ALL associated data. This cannot be undone.</p>
     <form method="post" action="/tanks/{{ tank.id }}/delete" onsubmit="return checkConfirm(this,'{{ tank.name }}','delete-err')">
       <div class="form-group"><label>Type <strong>{{ tank.name }}</strong> to confirm</label><input type="text" name="confirmation" autocomplete="off"></div>
       <div id="delete-err" class="form-error" style="display:none">Name does not match — please try again.</div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-delete')">Cancel</button><button class="btn btn-danger" type="submit">Delete Tank</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-delete">Cancel</button><button class="btn btn-danger" type="submit">Delete Tank</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
 <a href="/tanks/{{ tank.id }}/import-page" style="display:none" id="import-page-link"></a>
 {% endblock %}

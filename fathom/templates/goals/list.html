@@ -129,11 +129,11 @@
 </div>
 {% endif %}
 
-<div id="modal-goal-form" class="modal" style="display:none">
+<dialog id="modal-goal-form" class="modal" aria-labelledby="goal-form-heading">
   <div class="modal-box modal-box-lg">
     <div class="modal-header">
       <h3 id="goal-form-heading">New Goal</h3>
-      <button class="modal-close" onclick="closeModal('modal-goal-form')">×</button>
+      <button class="modal-close" command="close" commandfor="modal-goal-form">×</button>
     </div>
     <form id="goal-form" method="post" action="/tanks/{{ tank.id }}/goals">
       <input type="hidden" name="update_deps" id="goal-update-deps" value="">
@@ -189,7 +189,7 @@
       </div>
 
       <div class="modal-footer" id="goal-form-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-goal-form')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-goal-form">Cancel</button>
         {# Create: type=button + onclick (Safari-safe; form submit + async handlers are unreliable).
            Edit mode swaps this to type=submit via openEditGoalModal. #}
         <button class="btn btn-primary" type="button" id="goal-form-submit" onclick="startGoalReview()">Review Goal</button>
@@ -202,32 +202,32 @@
       </div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-achieve-goal" class="modal" style="display:none">
+<dialog id="modal-achieve-goal" class="modal" aria-labelledby="modal-achieve-goal-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Mark Achieved</h3><button class="modal-close" onclick="closeModal('modal-achieve-goal')">×</button></div>
+    <div class="modal-header"><h3 id="modal-achieve-goal-title">Mark Achieved</h3><button class="modal-close" command="close" commandfor="modal-achieve-goal">×</button></div>
     <form id="achieve-goal-form" method="post">
       <input type="hidden" name="status" value="achieved">
       <input type="hidden" name="title" id="achieve-goal-title">
       <div class="form-group"><label>Achieved on</label><input type="date" name="achieved_at" id="achieve-goal-date" required></div>
       <div class="form-group"><label>Note (optional)</label><textarea name="comment" rows="3" placeholder="What sealed it?"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-achieve-goal')">Cancel</button><button class="btn btn-primary" type="submit">Mark Achieved</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-achieve-goal">Cancel</button><button class="btn btn-primary" type="submit">Mark Achieved</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-add-note-goal" class="modal" style="display:none">
+<dialog id="modal-add-note-goal" class="modal" aria-labelledby="modal-add-note-goal-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Note</h3><button class="modal-close" onclick="closeModal('modal-add-note-goal')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-note-goal-title">Add Note</h3><button class="modal-close" command="close" commandfor="modal-add-note-goal">×</button></div>
     <form id="add-note-goal-form" method="post" onsubmit="return prepareGoalNoteSubmit(this)">
       <input type="hidden" name="status" id="add-note-goal-status">
       <input type="hidden" name="title" id="add-note-goal-title">
       <div class="form-group"><label>Note</label><textarea name="comment" id="add-note-goal-text" rows="4" required placeholder="Progress update…"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-note-goal')">Cancel</button><button class="btn btn-primary" type="submit">Add Note</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-note-goal">Cancel</button><button class="btn btn-primary" type="submit">Add Note</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

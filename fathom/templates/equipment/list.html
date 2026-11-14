@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header">
   <h1>Equipment — {{ tank.name }}</h1>
-  <button class="btn btn-primary" onclick="openModal('modal-add-eq')">+ Add Equipment</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-eq">+ Add Equipment</button>
 </div>
 
 {% if equipment %}
@@ -51,13 +51,13 @@
 {% else %}
 <div class="empty-state">
   <h2>No equipment recorded</h2>
-  <button class="btn btn-primary" onclick="openModal('modal-add-eq')">Add Equipment</button>
+  <button class="btn btn-primary" command="show-modal" commandfor="modal-add-eq">Add Equipment</button>
 </div>
 {% endif %}
 
-<div id="modal-add-eq" class="modal" style="display:none">
+<dialog id="modal-add-eq" class="modal" aria-labelledby="modal-add-eq-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Equipment</h3><button class="modal-close" onclick="closeModal('modal-add-eq')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-eq-title">Add Equipment</h3><button class="modal-close" command="close" commandfor="modal-add-eq">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/equipment">
       <div class="form-grid">
         <div class="form-group"><label>Category *</label>
@@ -83,14 +83,14 @@
       </div>
       <div class="form-group"><label>Specs</label><textarea name="specs" rows="2" placeholder="e.g. 500 gph, 20W"></textarea></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-eq')">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-eq">Cancel</button><button class="btn btn-primary" type="submit">Add</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-eq" class="modal" style="display:none">
+<dialog id="modal-edit-eq" class="modal" aria-labelledby="modal-edit-eq-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit Equipment</h3><button class="modal-close" onclick="closeModal('modal-edit-eq')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-eq-title">Edit Equipment</h3><button class="modal-close" command="close" commandfor="modal-edit-eq">×</button></div>
     <form id="edit-eq-form" method="post" action="">
       <div class="form-grid">
         <div class="form-group"><label>Category *</label>
@@ -117,10 +117,10 @@
       </div>
       <div class="form-group"><label>Specs</label><textarea name="specs" rows="2" id="edit-eq-specs"></textarea></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="edit-eq-notes"></textarea></div>
-      <div class="modal-footer"><button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-eq')">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
+      <div class="modal-footer"><button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-eq">Cancel</button><button class="btn btn-primary" type="submit">Save</button></div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}

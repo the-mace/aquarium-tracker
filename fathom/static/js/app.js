@@ -18,17 +18,24 @@ function closeSidebar() {
 
 function openModal(id) {
   const el = document.getElementById(id);
-  if (el) el.style.display = '';
+  if (el && !el.open) el.showModal();
 }
 function closeModal(id) {
-  const el = document.getElementById(id);
-  if (el) el.style.display = 'none';
+  document.getElementById(id)?.close();
 }
+// Invoker Commands (command/commandfor) need Safari 26.2+; this covers the two commands the templates use.
+if (!('commandForElement' in HTMLButtonElement.prototype)) {
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('button[commandfor]');
+    if (!btn) return;
+    const cmd = btn.getAttribute('command');
+    if (cmd === 'show-modal') openModal(btn.getAttribute('commandfor'));
+    else if (cmd === 'close') closeModal(btn.getAttribute('commandfor'));
+  });
+}
+// Native <dialog> handles Esc for modals; this is only for the chat side panel.
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
-    closeChatPanel();
-  }
+  if (e.key === 'Escape') closeChatPanel();
 });
 
 let activeConversationId = null;

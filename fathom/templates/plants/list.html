@@ -6,8 +6,8 @@
 <div class="page-header">
   <h1>Plants & Hardscape — {{ tank.name }}</h1>
   <div class="header-actions">
-    <button class="btn btn-ghost" onclick="openModal('modal-add-plant')">+ Plant</button>
-    <button class="btn btn-primary" onclick="openModal('modal-add-hardscape')">+ Hardscape</button>
+    <button class="btn btn-ghost" command="show-modal" commandfor="modal-add-plant">+ Plant</button>
+    <button class="btn btn-primary" command="show-modal" commandfor="modal-add-hardscape">+ Hardscape</button>
   </div>
 </div>
 
@@ -201,9 +201,9 @@
 </div>
 {% endif %}
 
-<div id="modal-edit-plant" class="modal" style="display:none">
+<dialog id="modal-edit-plant" class="modal" aria-labelledby="modal-edit-plant-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit Plant</h3><button class="modal-close" onclick="closeModal('modal-edit-plant')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-plant-title">Edit Plant</h3><button class="modal-close" command="close" commandfor="modal-edit-plant">×</button></div>
     <form method="post" id="form-edit-plant">
       <div class="form-group"><label>Common Name</label><input type="text" name="common_name" id="ep-common_name"></div>
       <div class="form-group"><label>Species</label><input type="text" name="species" id="ep-species"></div>
@@ -211,16 +211,16 @@
       <div class="form-group"><label>Source</label><input type="text" name="source" id="ep-source"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="ep-notes"></textarea></div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-plant')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-plant">Cancel</button>
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-edit-hardscape" class="modal" style="display:none">
+<dialog id="modal-edit-hardscape" class="modal" aria-labelledby="modal-edit-hardscape-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Edit Hardscape</h3><button class="modal-close" onclick="closeModal('modal-edit-hardscape')">×</button></div>
+    <div class="modal-header"><h3 id="modal-edit-hardscape-title">Edit Hardscape</h3><button class="modal-close" command="close" commandfor="modal-edit-hardscape">×</button></div>
     <form method="post" id="form-edit-hardscape">
       <div class="form-group"><label>Item *</label><input type="text" name="item" id="eh-item" required></div>
       <div class="form-group"><label>Quantity</label><input type="number" name="quantity" id="eh-quantity" min="1"></div>
@@ -229,21 +229,21 @@
       <div class="form-group"><label>Date Added</label><input type="date" name="added_date" id="eh-added_date"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" id="eh-notes"></textarea></div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-edit-hardscape')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-edit-hardscape">Cancel</button>
         <button class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-ref-info" class="modal" style="display:none">
+<dialog id="modal-ref-info" class="modal" aria-labelledby="ref-modal-title">
   <div class="modal-box">
     <div class="modal-header">
       <div>
         <h3 id="ref-modal-title"></h3>
         <em id="ref-modal-scientific" class="muted" style="font-size:.85rem;display:none"></em>
       </div>
-      <button class="modal-close" onclick="closeModal('modal-ref-info')">×</button>
+      <button class="modal-close" command="close" commandfor="modal-ref-info">×</button>
     </div>
     <div class="ref-modal-body">
       <div id="ref-modal-img-wrap"></div>
@@ -263,15 +263,15 @@
       <button class="btn btn-ghost" id="ref-modal-set-image" type="button" style="white-space:nowrap">Set Image</button>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" type="button" onclick="closeModal('modal-ref-info')">Close</button>
+      <button class="btn btn-ghost" type="button" command="close" commandfor="modal-ref-info">Close</button>
       <button class="btn btn-ghost" id="ref-modal-refresh" type="button">Refresh Info</button>
     </div>
   </div>
-</div>
+</dialog>
 
-<div id="modal-add-plant" class="modal" style="display:none">
+<dialog id="modal-add-plant" class="modal" aria-labelledby="modal-add-plant-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Plant</h3><button class="modal-close" onclick="closeModal('modal-add-plant')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-plant-title">Add Plant</h3><button class="modal-close" command="close" commandfor="modal-add-plant">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/plants">
       <div class="form-group"><label>Common Name</label><input type="text" name="common_name" placeholder="Java Moss"></div>
       <div class="form-group"><label>Species</label><input type="text" name="species" placeholder="Taxiphyllum barbieri"></div>
@@ -279,16 +279,16 @@
       <div class="form-group"><label>Source</label><input type="text" name="source" placeholder="LFS, online…"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-plant')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-plant">Cancel</button>
         <button class="btn btn-primary" type="submit">Add Plant</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 
-<div id="modal-add-hardscape" class="modal" style="display:none">
+<dialog id="modal-add-hardscape" class="modal" aria-labelledby="modal-add-hardscape-title">
   <div class="modal-box">
-    <div class="modal-header"><h3>Add Hardscape</h3><button class="modal-close" onclick="closeModal('modal-add-hardscape')">×</button></div>
+    <div class="modal-header"><h3 id="modal-add-hardscape-title">Add Hardscape</h3><button class="modal-close" command="close" commandfor="modal-add-hardscape">×</button></div>
     <form method="post" action="/tanks/{{ tank.id }}/hardscape">
       <div class="form-group"><label>Item *</label><input type="text" name="item" required placeholder="Driftwood, rock…"></div>
       <div class="form-group"><label>Quantity</label><input type="number" name="quantity" value="1" min="1"></div>
@@ -297,12 +297,12 @@
       <div class="form-group"><label>Date Added</label><input type="date" name="added_date"></div>
       <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" type="button" onclick="closeModal('modal-add-hardscape')">Cancel</button>
+        <button class="btn btn-ghost" type="button" command="close" commandfor="modal-add-hardscape">Cancel</button>
         <button class="btn btn-primary" type="submit">Add Hardscape</button>
       </div>
     </form>
   </div>
-</div>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
