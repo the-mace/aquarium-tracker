@@ -1,8 +1,9 @@
 """Structured write tools for Ask AI.
 
-Chat can record notes and events; it cannot run arbitrary SQL writes.
-All mutations are tank- or culture-scoped, append-only for notes, and never
-delete rows or change water tests / inhabitant counts.
+Chat can record notes, events, and livestock changes; it cannot run arbitrary
+SQL writes. All mutations are tank- or culture-scoped, append-only for notes,
+and never delete rows or edit water tests. Inhabitant counts change only through
+population events, the same way the Inhabitants page records them.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ TANK_NOTE_TARGETS = ("equipment", "schedule", "issue", "tank")
 CULTURE_NOTE_TARGETS = ("culture", "vessel")
 ISSUE_STATUSES = ("open", "monitoring", "resolved")
 CULTURE_LOG_KINDS = ("look", "other")
+POPULATION_EVENT_TYPES = ("added", "died", "removed", "born")
 MAX_TEXT_LEN = 2000
 
 _WRITE_RULE = (
@@ -42,10 +44,17 @@ _WRITE_RULE = (
     "A short \"note that\" about equipment (e.g. UV back on schedule) should "
     "add_observation (linked to that equipment) AND append_notes on that "
     "equipment. Do not only append standing notes.\n"
+    "- add_inhabitant: when the user says they added livestock that is not "
+    "already in the Inhabitants list (e.g. \"added 3 pearl gourami\"), create "
+    "the row. Do not only write a note about it.\n"
+    "- record_population_event: when livestock already in the list was added "
+    "to, died, was removed, or bred. This updates the count. Use the inhabitant "
+    "id from the context when you have it.\n"
+    "Only change livestock when the user states it happened; do not guess counts. "
+    "If the count is unclear, ask.\n"
     "Do not write unless the user asked to record, log, note, save, or update. "
-    "Questions stay read-only. Do not delete rows, change inhabitant counts, "
-    "edit water tests, or resolve/close an issue unless the user explicitly "
-    "asked. After a successful write, confirm in one short sentence what was "
+    "Questions stay read-only. Do not delete rows, edit water tests, or "
+    "resolve/close an issue unless the user explicitly asked. After a successful write, confirm in one short sentence what was "
     "saved and where. If a write fails, say so and do not claim it was recorded."
 )
 
@@ -147,6 +156,58 @@ def tank_write_tools():
                     },
                 },
                 "required": ["target", "note"],
+            },
+        },
+        {
+            "name": "add_inhabitant",
+            "description": (
+                "Add new livestock to this tank's Inhabitants list (fish, shrimp, "
+                "snails, etc.) and record the matching 'added' population event. "
+                "Use only for a species not already listed; for more of an "
+                "existing one use record_population_event."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "common_name": {"type": "string", "description": "e.g. Pearl Gourami."},
+                    "species": {
+                        "type": "string",
+                        "description": "Scientific name if known, e.g. Trichopodus leerii.",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "How many. Omit only when uncountable (snails, many).",
+                    },
+                    "source": {"type": "string", "description": "Where they came from, if said."},
+                    "notes": {"type": "string"},
+                    "added_date": {
+                        "type": "string",
+                        "description": "YYYY-MM-DD if not today.",
+                    },
+                },
+                "required": ["common_name"],
+            },
+        },
+        {
+            "name": "record_population_event",
+            "description": (
+                "Record that livestock already in the Inhabitants list was added "
+                "(more of the same), died, was removed, or was born. Adjusts the "
+                "inhabitant's count."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "Inhabitant id (preferred)."},
+                    "name": {
+                        "type": "string",
+                        "description": "Common or scientific name if id is unknown.",
+                    },
+                    "event_type": {"type": "string", "enum": list(POPULATION_EVENT_TYPES)},
+                    "count": {"type": "integer", "description": "How many (default 1)."},
+                    "notes": {"type": "string"},
+                },
+                "required": ["event_type"],
             },
         },
     ]
@@ -506,11 +567,143 @@ def _append_tank_notes(conn, tank_id: int, inp: dict) -> dict:
     }
 
 
+def _optional_text(inp: dict, field: str) -> str | None | dict:
+    if not str(inp.get(field) or "").strip():
+        return None
+    return _clean_text(inp.get(field), field)
+
+
+def _positive_count(value, default=None):
+    if value is None or value == "":
+        return default, None
+    count = _int_or_none(value)
+    if count is None or count < 1:
+        return None, "count must be a positive whole number."
+    return count, None
+
+
+def _live(rows):
+    return [r for r in rows if r.get("count") is None or r["count"] > 0]
+
+
+def _resolve_inhabitant(conn, tank_id: int, inh_id=None, name=None):
+    inh_id = _int_or_none(inh_id)
+    if inh_id is not None:
+        row = row_to_dict(conn.execute(
+            "SELECT * FROM inhabitants WHERE id=? AND tank_id=?", (inh_id, tank_id),
+        ).fetchone())
+        if not row:
+            return None, "No inhabitant with that id on this tank."
+        return row, None
+    needle = (name or "").strip()
+    if not needle:
+        return None, "Provide inhabitant id or name."
+    like = f"%{needle}%"
+    rows = rows_to_list(conn.execute(
+        """SELECT * FROM inhabitants WHERE tank_id=?
+           AND (IFNULL(common_name,'') LIKE ? OR IFNULL(species,'') LIKE ?)""",
+        (tank_id, like, like),
+    ).fetchall())
+    # Rows at count 0 stay in the table after everything died; prefer the live one.
+    if len(rows) > 1 and len(_live(rows)) == 1:
+        rows = _live(rows)
+    return _one_match(rows, "inhabitant")
+
+
+def _add_inhabitant(conn, tank_id: int, inp: dict) -> dict:
+    common_name = _clean_text(inp.get("common_name"), "common_name")
+    if isinstance(common_name, dict):
+        return common_name
+    fields = {}
+    for field in ("species", "source", "notes"):
+        value = _optional_text(inp, field)
+        if isinstance(value, dict):
+            return value
+        fields[field] = value
+    count, err = _positive_count(inp.get("count"))
+    if err:
+        return {"error": err}
+    added_date = (inp.get("added_date") or "").strip() or date.today().isoformat()
+    try:
+        date.fromisoformat(added_date)
+    except ValueError:
+        return {"error": "added_date must be YYYY-MM-DD."}
+
+    names = [n.lower() for n in (common_name, fields["species"]) if n]
+    existing = _live(rows_to_list(conn.execute(
+        "SELECT * FROM inhabitants WHERE tank_id=?", (tank_id,),
+    ).fetchall()))
+    for row in existing:
+        row_names = {(row.get(k) or "").strip().lower() for k in ("common_name", "species")}
+        if row_names.intersection(names):
+            return {"error": (
+                f"Already on this tank as {_row_label(row)}. Use "
+                "record_population_event with event_type=added instead."
+            )}
+
+    cur = conn.execute(
+        """INSERT INTO inhabitants
+           (tank_id, species, common_name, count, added_date, source, notes)
+           VALUES (?,?,?,?,?,?,?)""",
+        (tank_id, fields["species"], common_name, count, added_date,
+         fields["source"], fields["notes"]),
+    )
+    inh_id = cur.lastrowid
+    conn.execute(
+        "INSERT INTO population_events (tank_id, inhabitant_id, event_type, count) VALUES (?,?,?,?)",
+        (tank_id, inh_id, "added", count or 0),
+    )
+    return {
+        "ok": True, "tool": "add_inhabitant", "id": inh_id,
+        "common_name": common_name, "count": count,
+    }
+
+
+def _record_population_event(conn, tank_id: int, inp: dict) -> dict:
+    event_type = (inp.get("event_type") or "").strip()
+    if event_type not in POPULATION_EVENT_TYPES:
+        return {"error": f"event_type must be one of {', '.join(POPULATION_EVENT_TYPES)}."}
+    count, err = _positive_count(inp.get("count"), default=1)
+    if err:
+        return {"error": err}
+    notes = _optional_text(inp, "notes")
+    if isinstance(notes, dict):
+        return notes
+    row, err = _resolve_inhabitant(conn, tank_id, inp.get("id"), inp.get("name"))
+    if err:
+        return {"error": err}
+
+    old = row.get("count")
+    # An uncounted ("many") inhabitant stays uncounted; the event still records what happened.
+    if old is None:
+        new_count = None
+    elif event_type in ("died", "removed"):
+        new_count = max(0, old - count)
+    else:
+        new_count = old + count
+    cur = conn.execute(
+        """INSERT INTO population_events (tank_id, inhabitant_id, event_type, count, notes)
+           VALUES (?,?,?,?,?)""",
+        (tank_id, row["id"], event_type, count, notes),
+    )
+    conn.execute(
+        "UPDATE inhabitants SET count=?, updated_at=datetime('now') WHERE id=? AND tank_id=?",
+        (new_count, row["id"], tank_id),
+    )
+    return {
+        "ok": True, "tool": "record_population_event", "id": cur.lastrowid,
+        "inhabitant_id": row["id"], "label": _row_label(row),
+        "event_type": event_type, "count": count, "new_count": new_count,
+    }
+
+
 def apply_tank_write(tank_id: int, name: str, inp: dict) -> dict:
     handlers = {
         "add_observation": _add_observation,
         "log_event": _log_event,
         "append_notes": _append_tank_notes,
+        "add_inhabitant": _add_inhabitant,
+        "record_population_event": _record_population_event,
     }
     fn = handlers.get(name)
     if not fn:

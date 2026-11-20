@@ -313,7 +313,7 @@ _KEEPER_LOG_RULE = (
 )
 
 
-def _fmt_inhabitants(rows):
+def _fmt_inhabitants(rows, with_ids=False):
     if not rows:
         return "  None"
     lines = []
@@ -323,7 +323,8 @@ def _fmt_inhabitants(rows):
         count_str = "many" if count is None else str(count)
         added = r.get("added_date")
         added_str = f" (added {added})" if added else ""
-        lines.append(f"  {count_str}x {name}{added_str}")
+        id_str = f" [id={r['id']}]" if with_ids and r.get("id") is not None else ""
+        lines.append(f"  {count_str}x {name}{added_str}{id_str}")
     return "\n".join(lines)
 
 

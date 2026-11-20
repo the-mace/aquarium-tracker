@@ -244,7 +244,10 @@ def test_chat_write_tool_loop_persists(client, tank_id, monkeypatch):
     assert "Logged the UV" in body["reply"]
     assert len(body["writes"]) == 3
     names = [t["name"] for t in msgs.calls[0]["tools"]]
-    assert names == ["query_db", "add_observation", "log_event", "append_notes"]
+    assert names == [
+        "query_db", "add_observation", "log_event", "append_notes",
+        "add_inhabitant", "record_population_event",
+    ]
 
     conn = sqlite3.connect(_db.DB_PATH)
     obs = conn.execute(
@@ -351,3 +354,87 @@ def test_culture_chat_write_tool_loop(client, monkeypatch):
     ).fetchone()[0]
     conn.close()
     assert n == 1
+
+
+def _inhabitant_rows(tank_id):
+    conn = sqlite3.connect(_db.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        inh = [dict(r) for r in conn.execute(
+            "SELECT * FROM inhabitants WHERE tank_id=? ORDER BY id", (tank_id,),
+        )]
+        events = [dict(r) for r in conn.execute(
+            "SELECT * FROM population_events WHERE tank_id=? ORDER BY id", (tank_id,),
+        )]
+    finally:
+        conn.close()
+    return inh, events
+
+
+def test_add_inhabitant_creates_row_and_added_event(tank_id):
+    result = apply_tank_write(tank_id, "add_inhabitant", {
+        "common_name": "Pearl Gourami", "species": "Trichopodus leerii", "count": 3,
+    })
+    assert result["ok"] is True
+    inh, events = _inhabitant_rows(tank_id)
+    assert len(inh) == 1
+    assert inh[0]["common_name"] == "Pearl Gourami"
+    assert inh[0]["count"] == 3
+    assert inh[0]["added_date"]
+    assert [(e["inhabitant_id"], e["event_type"], e["count"]) for e in events] == [
+        (inh[0]["id"], "added", 3),
+    ]
+
+
+def test_add_inhabitant_refuses_duplicate_live_species(tank_id):
+    apply_tank_write(tank_id, "add_inhabitant", {"common_name": "Pearl Gourami", "count": 3})
+    result = apply_tank_write(tank_id, "add_inhabitant", {"common_name": "pearl gourami", "count": 2})
+    assert "error" in result
+    assert "record_population_event" in result["error"]
+    inh, _ = _inhabitant_rows(tank_id)
+    assert len(inh) == 1
+
+
+def test_add_inhabitant_rejects_bad_count(tank_id):
+    result = apply_tank_write(tank_id, "add_inhabitant", {"common_name": "Otocinclus", "count": 0})
+    assert "error" in result
+    assert _inhabitant_rows(tank_id)[0] == []
+
+
+def test_population_event_adjusts_count_by_name(tank_id):
+    apply_tank_write(tank_id, "add_inhabitant", {"common_name": "Pearl Gourami", "count": 3})
+    died = apply_tank_write(tank_id, "record_population_event", {
+        "name": "gourami", "event_type": "died", "notes": "found in the morning",
+    })
+    assert died["ok"] is True
+    assert died["new_count"] == 2
+    added = apply_tank_write(tank_id, "record_population_event", {
+        "id": died["inhabitant_id"], "event_type": "added", "count": 2,
+    })
+    assert added["new_count"] == 4
+    inh, events = _inhabitant_rows(tank_id)
+    assert inh[0]["count"] == 4
+    assert [(e["event_type"], e["count"]) for e in events] == [
+        ("added", 3), ("died", 1), ("added", 2),
+    ]
+    assert events[1]["notes"] == "found in the morning"
+
+
+def test_population_event_keeps_uncounted_inhabitant_uncounted(tank_id):
+    apply_tank_write(tank_id, "add_inhabitant", {"common_name": "Bladder Snail"})
+    result = apply_tank_write(tank_id, "record_population_event", {
+        "name": "snail", "event_type": "removed", "count": 5,
+    })
+    assert result["ok"] is True
+    inh, _ = _inhabitant_rows(tank_id)
+    assert inh[0]["count"] is None
+
+
+def test_population_event_is_tank_scoped(make_tank, tank_id):
+    other_id = make_tank(name="Other")
+    added = apply_tank_write(other_id, "add_inhabitant", {"common_name": "Neon Tetra", "count": 6})
+    result = apply_tank_write(tank_id, "record_population_event", {
+        "id": added["id"], "event_type": "died",
+    })
+    assert "error" in result
+    assert _inhabitant_rows(other_id)[0][0]["count"] == 6

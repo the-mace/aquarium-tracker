@@ -277,7 +277,7 @@ def _build_system_prompt(tank, latest_test, inhabitants, plants, hardscape, open
     parts.append(_HOME_WATER_PROMPT_RULE)
 
     if inhabitants:
-        parts.append("\nInhabitants:\n" + _fmt_inhabitants(inhabitants))
+        parts.append("\nInhabitants:\n" + _fmt_inhabitants(inhabitants, with_ids=True))
     else:
         parts.append("\nInhabitants: none recorded")
 
@@ -390,7 +390,7 @@ def _gather_tank_context(conn, tank_id: int) -> dict:
         ).fetchone()),
         "latest_test": load_latest_test(conn, tank_id),
         "inhabitants": rows_to_list(conn.execute(
-            "SELECT common_name, species, count, added_date FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
+            "SELECT id, common_name, species, count, added_date FROM inhabitants WHERE tank_id = ? ORDER BY common_name, species",
             (tank_id,),
         ).fetchall()),
         "plants": rows_to_list(conn.execute(
